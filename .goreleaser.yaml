@@ -1,15 +1,15 @@
 version: 2
 
-project_name: template-go
+project_name: incus-gh-runner
 
 before:
   hooks:
     - go test ./...
 
 builds:
-  - id: template-go
-    main: ./cmd/template-go
-    binary: template-go
+  - id: incus-gh-runner
+    main: ./cmd/incus-gh-runner
+    binary: incus-gh-runner
     env:
       - CGO_ENABLED=0
     goos:
@@ -28,9 +28,9 @@ builds:
     mod_timestamp: '{{ .CommitTimestamp }}'
 
 archives:
-  - id: template-go
+  - id: incus-gh-runner
     ids:
-      - template-go
+      - incus-gh-runner
     formats:
       - binary
     name_template: >-

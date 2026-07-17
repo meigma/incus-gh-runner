@@ -1,4 +1,4 @@
-# mise: tool + environment management for template-go.
+# mise: tool + environment management for incus-gh-runner.
 #
 # mise REPLACES Proto (the former .prototools + .moon/proto/*). The committed
 # mise.lock records per-platform download URLs + checksums; for aqua-backed tools
@@ -52,7 +52,7 @@ locked = true
 # equivalent. melange needs Linux, so `--runner docker` makes `image-local` work on
 # macOS too (Docker Desktop runs the Linux build container).
 [tasks.image-local]
-description = "Build the apko image for the host arch and load it into Docker as template-go:dev"
+description = "Build the apko image for the host arch and load it into Docker as incus-gh-runner:dev"
 run = '''
 set -euo pipefail
 arch="$(go env GOARCH)"
@@ -63,8 +63,8 @@ printf 'version: "dev"\ncommit: "%s"\ndate: "%s"\n' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .melange-vars.local.yaml
 melange build melange.yaml --arch "$arch" --signing-key melange.rsa --runner docker \
   --source-dir . --vars-file .melange-vars.local.yaml
-apko build apko.yaml template-go:dev image.tar --arch "$arch" --keyring-append ./melange.rsa.pub
+apko build apko.yaml incus-gh-runner:dev image.tar --arch "$arch" --keyring-append ./melange.rsa.pub
 docker load < image.tar
-docker tag "template-go:dev-$arch" template-go:dev
-echo "loaded template-go:dev (host arch $arch)"
+docker tag "incus-gh-runner:dev-$arch" incus-gh-runner:dev
+echo "loaded incus-gh-runner:dev (host arch $arch)"
 '''

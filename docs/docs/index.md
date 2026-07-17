@@ -1,16 +1,18 @@
 ---
-title: template-go Docs
+title: incus-gh-runner documentation
 slug: /
-description: Starting point for Meigma Go projects.
+description: Incus-backed ephemeral GitHub Actions runners.
 ---
 
-# template-go Docs
+# incus-gh-runner
 
-This repository is the starting point for Meigma Go projects.
+`incus-gh-runner` is an early-stage controller for running one-job GitHub
+Actions runners in Incus virtual machines.
 
-Generated projects should replace this page with project-specific documentation after bootstrapping:
+The current repository foundation provides the renamed CLI, locked development
+toolchain, CI gates, and isolated GitHub and Incus client adapters. Controller,
+guest-image, deployment, and troubleshooting documentation will grow from
+working lifecycle slices.
 
-- project summary
-- quick start
-- operating notes
-- support and security paths
+See the repository [README](https://github.com/meigma/incus-gh-runner#readme)
+for current scope and development instructions.

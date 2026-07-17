@@ -1,8 +1,8 @@
-site_name: template-go
-site_description: Meigma Go repository template
-site_url: https://meigma.github.io/template-go/
-repo_name: meigma/template-go
-repo_url: https://github.com/meigma/template-go
+site_name: incus-gh-runner
+site_description: Incus-backed ephemeral GitHub Actions runners
+site_url: https://meigma.github.io/incus-gh-runner/
+repo_name: meigma/incus-gh-runner
+repo_url: https://github.com/meigma/incus-gh-runner
 edit_uri: edit/master/docs/docs/
 docs_dir: docs
 site_dir: build
