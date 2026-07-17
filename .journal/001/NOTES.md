@@ -18,3 +18,8 @@ Design direction to explore: Prefer the official Go `actions/scaleset` client fo
 Created `TECHNICAL_PROPOSAL.md` for an Incus-backed runner scale-set controller and reusable VM image. The v1 boundary assumes a preconfigured Incus environment and limits controller ownership to image readiness plus explicitly marked runner instances.
 Key decisions: use `actions/scaleset` and `github.com/lxc/incus/v7/client`; run one scale set from a systemd-supervised controller; start at zero idle runners; use one JIT configuration and one job per VM; let the guest power off after the runner exits; reconstruct state from GitHub and Incus rather than adding a database.
 Next proof: build the smallest Incus lifecycle spike with fake demand and a pre-imported image, then replace fake demand with one real scale-set job. The JIT injection mechanism and release-asset import path remain deliberate prototype questions.
+
+## 2026-07-17 15:04 — Hot standby runners clarified
+Confirmed that `actions/scaleset` supports pre-provisioned `minRunners`. A true hot pool consists of fully booted, JIT-registered, connected, idle Incus VMs; desired capacity is `min(maxRunners, minRunners + TotalAssignedJobs)`.
+Each standby remains ephemeral: once assigned, it runs one job, powers off, is deleted, and the controller creates a replacement to restore the idle floor. A booted-but-unregistered warm pool is possible but has higher dispatch latency and more lifecycle complexity.
+The proposal's zero-idle choice remains the first proof slice rather than an architectural constraint; add `min_runners` after the single-runner lifecycle is proven.
