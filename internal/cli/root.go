@@ -8,8 +8,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/meigma/template-go/internal/config"
-	"github.com/meigma/template-go/internal/templateinfo"
+	"github.com/meigma/incus-gh-runner/internal/config"
+	"github.com/meigma/incus-gh-runner/internal/projectinfo"
 )
 
 // BuildInfo describes linker-injected build metadata printed by --version.
@@ -36,7 +36,7 @@ type Options struct {
 	Viper *viper.Viper
 }
 
-// NewRootCommand creates the template-go Cobra command tree.
+// NewRootCommand creates the incus-gh-runner Cobra command tree.
 func NewRootCommand(options Options) *cobra.Command {
 	if options.In == nil {
 		options.In = strings.NewReader("")
@@ -53,8 +53,8 @@ func NewRootCommand(options Options) *cobra.Command {
 	options.Build = options.Build.withDefaults()
 
 	root := &cobra.Command{
-		Use:           "template-go",
-		Short:         "Meigma Go repository template application",
+		Use:           "incus-gh-runner",
+		Short:         projectinfo.Summary(),
 		Version:       options.Build.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -68,7 +68,7 @@ func NewRootCommand(options Options) *cobra.Command {
 	}
 	root.SetVersionTemplate(
 		fmt.Sprintf(
-			"template-go %s (%s) built %s\n",
+			"incus-gh-runner %s (%s) built %s\n",
 			options.Build.Version,
 			options.Build.Commit,
 			options.Build.Date,
@@ -77,7 +77,7 @@ func NewRootCommand(options Options) *cobra.Command {
 	root.SetIn(options.In)
 	root.SetOut(options.Out)
 	root.SetErr(options.Err)
-	root.PersistentFlags().String("message", templateinfo.Summary(), "message to print")
+	root.PersistentFlags().String("message", projectinfo.Summary(), "message to print")
 	return root
 }
 
@@ -95,7 +95,7 @@ func (b BuildInfo) withDefaults() BuildInfo {
 }
 
 func initializeConfig(cmd *cobra.Command, vp *viper.Viper) error {
-	vp.SetEnvPrefix("TEMPLATE_GO")
+	vp.SetEnvPrefix("INCUS_GH_RUNNER")
 	vp.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))
 	vp.AutomaticEnv()
 

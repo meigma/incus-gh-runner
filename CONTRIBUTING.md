@@ -1,50 +1,38 @@
 # Contributing
 
-Thank you for your interest in contributing.
-This repository is a Go project template, so changes should keep the generated-project path simple and predictable.
-For private vulnerability reporting, use [SECURITY.md](SECURITY.md) instead of public channels.
+Thank you for contributing to `incus-gh-runner`. Keep changes small enough to
+prove one behavior, and revise the working design when implementation evidence
+shows a better path.
 
-## Reporting Bugs
+For private vulnerability reporting, use [SECURITY.md](SECURITY.md) instead of
+public channels.
 
-Report non-security bugs through GitHub issues.
-Include the following details when possible:
-
-- version, commit, or environment details
-- steps to reproduce
-- expected behavior
-- actual behavior
-- logs, screenshots, or a minimal reproduction
-
-If you are reporting a security issue, stop and follow [SECURITY.md](SECURITY.md) instead.
-
-## Pull Requests
+## Pull requests
 
 Contributors should:
 
-1. Keep changes focused and scoped to a single problem.
-2. Add or update tests when behavior changes.
+1. Keep changes focused on one evidence-producing slice.
+2. Add or update tests when observable behavior changes.
 3. Update documentation when user-facing behavior changes.
-4. Use Conventional Commit subjects, such as `feat: add config loader` or `fix: handle empty input`.
-5. Make sure `moon run root:check` passes before requesting review.
+4. Use Conventional Commit subjects, such as `feat(controller): reconcile demand`.
+5. Run `moon run root:check` before requesting review.
 
-## Local Setup
+## Local setup
 
 ```sh
-mise install         # provision the pinned toolchain (Go, Moon, the dev CLIs)
+mise install
 moon run root:check
 ```
 
-Useful project commands:
+Useful focused commands are:
 
 ```sh
 moon run root:format
 moon run root:lint
 moon run root:build
 moon run root:test
-go run ./cmd/template-go --version
+go run ./cmd/incus-gh-runner --version
 ```
 
-## Release Changes
-
-Release Please reads Conventional Commit subjects to build changelogs and release PRs.
-Keep release-impacting commits clear; routine docs, CI, and maintenance commits should use the appropriate non-release type.
+Release Please uses Conventional Commit subjects to prepare release notes and
+version updates. Integration happens through squash-merged GitHub pull requests.

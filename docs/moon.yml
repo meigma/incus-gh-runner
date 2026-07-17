@@ -7,8 +7,8 @@ tags:
   - 'uv'
 
 project:
-  title: 'template-go docs'
-  description: 'MkDocs documentation site for the Meigma Go repository template.'
+  title: 'incus-gh-runner docs'
+  description: 'Documentation site for incus-gh-runner.'
   owner: 'meigma'
   maintainers:
     - 'meigma'

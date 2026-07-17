@@ -1,5 +1,5 @@
 # Minimal, multi-arch, nonroot runtime image assembled from the locally-built
-# template-go apk (melange.yaml) plus the Wolfi base packages. Mirrors the former
+# incus-gh-runner apk (melange.yaml) plus the Wolfi base packages. Mirrors the former
 # gcr.io/distroless/static-debian12:nonroot posture (uid 65532, ca-certs, tzdata,
 # no shell). The Wolfi base intentionally floats to the latest (fresh CA
 # bundle/timezones, low CVE surface); the exact resolved versions are recorded in
@@ -16,10 +16,10 @@ contents:
     - wolfi-baselayout
     - ca-certificates-bundle
     - tzdata
-    - template-go@local
+    - incus-gh-runner@local
 
 entrypoint:
-  command: /usr/bin/template-go
+  command: /usr/bin/incus-gh-runner
 
 # Create the nonroot user/group (uid/gid 65532) and run as it — Wolfi has no
 # `nonroot` package; the user is defined here, mirroring distroless:nonroot.
@@ -38,7 +38,7 @@ archs:
   - arm64
 
 annotations:
-  org.opencontainers.image.title: template-go
-  org.opencontainers.image.description: Meigma Go repository template application
-  org.opencontainers.image.source: https://github.com/meigma/template-go
-  org.opencontainers.image.version: "0.1.1" # x-release-please-version
+  org.opencontainers.image.title: incus-gh-runner
+  org.opencontainers.image.description: Incus-backed GitHub Actions runner controller
+  org.opencontainers.image.source: https://github.com/meigma/incus-gh-runner
+  org.opencontainers.image.version: "0.0.0" # x-release-please-version
