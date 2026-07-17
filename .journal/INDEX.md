@@ -2,4 +2,4 @@
 
 | ID  | Date       | Title | Status | Summary |
 |-----|------------|-------|--------|---------|
-| 001 | 2026-07-17 | Incus runner kickoff | in-progress | Opened the initial journal session for upcoming `incus-gh-runner` work; the substantive goal is pending. |
+| 001 | 2026-07-17 | Incus runner v1 design | complete | Defined the controller, optional reference image, and evidence-based implementation plan for the full v1 slice. |

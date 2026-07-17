@@ -49,3 +49,8 @@ Implementation remains intentionally sliced around evidence: prove the concurren
 ## 2026-07-17 16:18 — v1 implementation plan recorded
 Created `V1_IMPLEMENTATION_PLAN.md` as the roadmap for future implementation sessions. The plan covers the repository foundation, fake-port controller core, reference image and guest contract, real Incus lifecycle, one real GitHub scale-set job, hot standby and restart recovery, systemd hardening, and release readiness.
 The phases are evidence gates rather than a fixed waterfall: image and controller work may overlap, each session should choose the smallest useful proof, and later work should be revised when observed behavior changes an assumption. Functional lifecycle evidence remains the v1 confidence bar.
+
+## 2026-07-17 16:24 — Close
+Session 001 closed with its architecture and planning goal met. No implementation branch or PR was created; `master` remained clean at `151746d` and matched `origin/master`.
+The handoff artifacts are `V1_IMPLEMENTATION_PLAN.md` as the primary roadmap, `CONTROLLER_PROPOSAL.md` and `IMAGE_PROPOSAL.md` as the current focused designs, `TECHNICAL_PROPOSAL.md` as historical umbrella context, and this `NOTES.md` as the chronological research trail. The focused documents supersede the umbrella proposal's zero-idle v1 assumption.
+Durable architecture decisions were promoted to `.journal/TECH_NOTES.md`. Future implementation sessions should begin with the earliest unsatisfied evidence gate in phase 0 of the v1 plan and revise later phases when a prototype changes an assumption.
