@@ -37,6 +37,8 @@ fileGroups:
     - '.github/workflows.disabled/**/*.yml'
   imageSources:
     - 'image/**/*'
+  systemdSources:
+    - 'deploy/systemd/**/*'
 
 workspace:
   inheritedTasks:
@@ -80,6 +82,7 @@ tasks:
       - 'root:build'
       - 'root:test'
       - 'root:image-contract-test'
+      - 'root:systemd-unit-test'
       - 'docs:build'
     inputs:
       - '@group(goSources)'
@@ -93,6 +96,16 @@ tasks:
     command: 'bash image/tests/guest-entrypoint-test.sh'
     inputs:
       - '@group(imageSources)'
+      - 'mise.toml'
+      - 'mise.lock'
+    options:
+      cache: false
+      runInCI: true
+
+  systemd-unit-test:
+    command: 'bash deploy/systemd/verify.sh'
+    inputs:
+      - '@group(systemdSources)'
       - 'mise.toml'
       - 'mise.lock'
     options:

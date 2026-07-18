@@ -27,7 +27,9 @@ preconnected standby dispatch and replacement. Phase 6 hardening now recreates
 failed GitHub message sessions with capped reconnect backoff while preserving
 fail-fast startup preflight. Application supervision also bounds cancellation
 across both controller shutdown windows and fails the process when a component
-remains wedged.
+remains wedged. The checked-in systemd deployment loads the GitHub App key as a
+service credential, creates protected diagnostics storage, and applies a
+validated dynamic-user sandbox around the required Incus socket access.
 
 See the repository [README](https://github.com/meigma/incus-gh-runner#readme)
 for current scope and development instructions.

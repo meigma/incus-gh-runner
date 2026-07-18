@@ -1,0 +1,26 @@
+github:
+  config_url: https://github.com/example
+  scale_set: incus-linux-x64
+  runner_group: default
+  app:
+    client_id: Iv1.example
+    installation_id: 12345678
+incus:
+  project: github-runners
+  image: incus-gh-runner:v0.1.0
+  profiles: [default, github-runner]
+  owner: incus-gh-runner-production
+  bootstrap_timeout: 5m
+  diagnostics_dir: /var/log/incus-gh-runner/runners
+capacity:
+  min_runners: 1
+  max_runners: 4
+concurrency:
+  incus_operations: 2
+reconcile_interval: 1s
+timeouts:
+  incus_operation: 5m
+  shutdown: 30s
+retry:
+  initial: 1s
+  maximum: 30s

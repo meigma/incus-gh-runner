@@ -14,8 +14,9 @@ Phase 4 wires persistent GitHub scale-set resolution, message polling, demand
 statistics, and fresh per-VM JIT configuration into that lifecycle.
 The phase 4 hardware proof ran one genuine job on Incus 7.2 and returned the
 owned inventory to zero. Phase 5 proved hot-standby replacement and restart
-reconciliation for the primary live path. Phase 6 is hardening unattended
-service behavior, beginning with bounded GitHub message-session recovery.
+reconciliation for the primary live path. Phase 6 hardens unattended operation
+with GitHub session recovery, bounded shutdown escalation, and a protected
+systemd deployment.
 
 ## v1 boundaries
 
@@ -102,6 +103,10 @@ waits through the controller's graceful and forced-cancellation shutdown
 windows. If either component still has not returned after twice
 `timeouts.shutdown`, the process exits with an error so its supervisor can
 restart it instead of leaving a wedged service indefinitely.
+
+The checked-in hardened unit, example configuration, credential boundary, and
+installation procedure are documented in the
+[systemd deployment guide](https://meigma.github.io/incus-gh-runner/deployment/).
 
 CI runs the same aggregate gate with `moon ci --summary minimal`.
 
