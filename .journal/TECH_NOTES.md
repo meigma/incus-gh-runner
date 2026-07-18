@@ -3,6 +3,7 @@
 - Use hexagonal architecture at all times. Keep business logic isolated from CLI, filesystem, network, storage, and other external adapters.
 - Prefer functional testing before calling any feature complete. Unit tests are useful, but they do not prove the tool works the way the design intends.
 - Take an agile approach to development. Avoid waterfall: underspecify when useful, prototype early, learn from the result, and refine from working behavior.
+- Add concise, identifier-led Godoc comments to every Go type, function, and method, including unexported declarations and test helpers, so IntelliSense exposes intent during review.
 - The v1 controller uses `github.com/actions/scaleset v0.4.0` with `github.com/lxc/incus/v7 v7.2.0`, manages one scale set in a preconfigured Incus environment, and mutates only explicitly owned runner instances. Incus `v7.0.0` failed hosted security analysis with nine unmitigated critical/high CVEs and must not be restored.
 - Hot standby is required for v1: target capacity is `min(max_runners, min_runners + TotalAssignedJobs)`, and standby capacity must be JIT-registered, connected, and idle.
 - Keep synchronous scale-set callbacks free of Incus I/O. Coalesce demand into a single-owner reconciler and execute Incus work through a bounded worker pool.
