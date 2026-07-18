@@ -20,3 +20,6 @@ The developer clarified the house style: every Go type, function, and method sho
 
 ## 2026-07-17 17:29 — Phase 1 draft PR
 Pushed `feat/controller-core` at reviewed head `ca6d6d6` and opened draft PR [#8](https://github.com/meigma/incus-gh-runner/pull/8), titled `feat(controller): prove phase 1 controller core`, against `master` at `468c0a9`. The PR body records the phase 1 scope, intentional deferral of real GitHub/Incus lifecycle wiring, `moon run root:check`, and repeated race-detector evidence. CI, GitHub Pages, and Kusari Inspector checks started on the exact PR head.
+
+## 2026-07-17 17:45 — Close
+PR [#8](https://github.com/meigma/incus-gh-runner/pull/8) initially exposed one hosted-only lint correction: use `slog.DiscardHandler` for the default no-op logger. The developer approved the focused fix, final head `544c78d` passed CI, GitHub Pages, and Kusari Inspector, and the PR squash-merged to `master` as `9bd37f7`. The local `master` checkout is fast-forwarded and clean; the implementation worktree and local/remote feature branches are removed. Phase 1 is complete, and phase 2's guest/image contract is the next planned evidence slice.
