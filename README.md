@@ -175,15 +175,19 @@ INCUS_GH_RUNNER_GITHUB_TOKEN="$(gh auth token)" \
 scripts/live/phase5-hot-standby.sh \
   meigma/incus-gh-runner \
   incus-gh-runner-phase5 \
+  runner-test \
+  phase5-live-20260718 \
   /path/to/incus-gh-runner \
   /path/to/config.yaml \
   /var/log/incus-gh-runner/phase5-hot-standby
 ```
 
-The token must be able to run workflows and list repository self-hosted
-runners. The harness preserves controller logs from each process lifetime,
-runner snapshots, workflow output, and a correlation manifest in the evidence
-directory.
+The token must be able to run and inspect repository workflows. Readiness is
+proven from the exact-owner Incus inventory and the guest runner journal;
+workflow-job state proves which runner accepted each job without requiring
+organization-wide runner administration permission. The harness preserves
+controller logs from each process lifetime, runner snapshots, workflow output,
+and a correlation manifest in the evidence directory.
 
 ## Packaging
 

@@ -2,19 +2,21 @@
 set -Eeuo pipefail
 
 usage() {
-  printf 'usage: %s <owner/repository> <runner-label> <controller> <config> [evidence-directory]\n' "$0" >&2
+  printf 'usage: %s <owner/repository> <runner-label> <incus-project> <incus-owner> <controller> <config> [evidence-directory]\n' "$0" >&2
 }
 
-if [[ "$#" -lt 4 || "$#" -gt 5 ]]; then
+if [[ "$#" -lt 6 || "$#" -gt 7 ]]; then
   usage
   exit 2
 fi
 
 repository="$1"
 runner_label="$2"
-controller="$3"
-config="$4"
-evidence_directory="${5:-phase5-hot-standby-evidence}"
+incus_project="$3"
+incus_owner="$4"
+controller="$5"
+config="$6"
+evidence_directory="${7:-phase5-hot-standby-evidence}"
 
 [[ "$repository" =~ ^[^/]+/[^/]+$ ]] || {
   printf 'repository must use owner/name form: %s\n' "$repository" >&2
@@ -32,7 +34,7 @@ evidence_directory="${5:-phase5-hot-standby-evidence}"
   printf 'INCUS_GH_RUNNER_GITHUB_TOKEN is required\n' >&2
   exit 1
 }
-for command_name in gh jq; do
+for command_name in gh incus jq; do
   command -v "$command_name" >/dev/null || {
     printf 'required command is unavailable: %s\n' "$command_name" >&2
     exit 1
@@ -58,6 +60,8 @@ idle_restart_snapshot="${evidence_directory}/idle-restart-runners.json"
 busy_restart_snapshot="${evidence_directory}/busy-restart-runners.json"
 cleanup_snapshot="${evidence_directory}/cleanup-runners.json"
 controller_pid=''
+observed_runner=''
+observed_run_id=''
 
 stop_controller() {
   if [[ -n "$controller_pid" ]] && kill -0 "$controller_pid" 2>/dev/null; then
@@ -95,10 +99,19 @@ require_controller() {
 }
 
 runner_snapshot() {
-  GH_TOKEN="$INCUS_GH_RUNNER_GITHUB_TOKEN" \
-    gh api "repos/${repository}/actions/runners?per_page=100" \
-    | jq --arg label "$runner_label" \
-      '[.runners[] | select(any(.labels[]; .name == $label))]'
+  incus --project "$incus_project" list --format json \
+    | jq --arg owner "$incus_owner" \
+      '[.[]
+        | select(.config["user.incus-gh-runner.owner"] == $owner)
+        | {name, status}]'
+}
+
+runner_is_ready() {
+  local runner_name="$1"
+
+  incus --project "$incus_project" exec "$runner_name" -- \
+    journalctl -u incus-gh-runner-guest --no-pager 2>/dev/null \
+    | grep -Fq 'Listening for Jobs'
 }
 
 wait_for_single_idle() {
@@ -107,19 +120,19 @@ wait_for_single_idle() {
   local snapshot
   local runner_name
 
+  observed_runner=''
   for ((attempt = 1; attempt <= 180; attempt++)); do
     require_controller
     snapshot="$(runner_snapshot)"
     runner_name="$(jq -r \
       --arg expected "$expected_name" \
       'if length == 1 and
-          .[0].status == "online" and
-          (.[0].busy | not) and
+          .[0].status == "Running" and
           ($expected == "" or .[0].name == $expected)
        then .[0].name else empty end' <<<"$snapshot")"
-    if [[ -n "$runner_name" ]]; then
+    if [[ -n "$runner_name" ]] && runner_is_ready "$runner_name"; then
       printf '%s\n' "$snapshot" >"$output"
-      printf '%s\n' "$runner_name"
+      observed_runner="$runner_name"
       return 0
     fi
     sleep 2
@@ -131,14 +144,16 @@ wait_for_single_idle() {
 
 wait_for_busy() {
   local runner_name="$1"
-  local output="$2"
+  local run_id="$2"
+  local output="$3"
   local snapshot
 
   for ((attempt = 1; attempt <= 90; attempt++)); do
     require_controller
-    snapshot="$(runner_snapshot)"
+    snapshot="$(GH_TOKEN="$INCUS_GH_RUNNER_GITHUB_TOKEN" \
+      gh api "repos/${repository}/actions/runs/${run_id}/jobs?per_page=100")"
     if jq -e --arg name "$runner_name" \
-      'any(.[]; .name == $name and .status == "online" and .busy)' \
+      'any(.jobs[]; .runner_name == $name and .status == "in_progress")' \
       <<<"$snapshot" >/dev/null; then
       printf '%s\n' "$snapshot" >"$output"
       return 0
@@ -156,15 +171,16 @@ wait_for_replacement() {
   local snapshot
   local replacement_name
 
+  observed_runner=''
   for ((attempt = 1; attempt <= 180; attempt++)); do
     require_controller
     snapshot="$(runner_snapshot)"
     replacement_name="$(jq -r --arg consumed "$consumed_name" \
-      '[.[] | select(.name != $consumed and .status == "online" and (.busy | not))]
+      '[.[] | select(.name != $consumed and .status == "Running")]
        | if length == 1 then .[0].name else empty end' <<<"$snapshot")"
-    if [[ -n "$replacement_name" ]]; then
+    if [[ -n "$replacement_name" ]] && runner_is_ready "$replacement_name"; then
       printf '%s\n' "$snapshot" >"$output"
-      printf '%s\n' "$replacement_name"
+      observed_runner="$replacement_name"
       return 0
     fi
     sleep 2
@@ -217,6 +233,7 @@ dispatch_workflow() {
   local runs
   local run_id
 
+  observed_run_id=''
   dispatch_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   GH_TOKEN="$INCUS_GH_RUNNER_GITHUB_TOKEN" gh workflow run runner-functional.yml \
     --repo "$repository" \
@@ -239,7 +256,7 @@ dispatch_workflow() {
       '[.[] | select(.displayTitle == $title and .createdAt >= $started)]
        | sort_by(.createdAt) | last | .databaseId // empty' <<<"$runs")"
     if [[ -n "$run_id" ]]; then
-      printf '%s\n' "$run_id"
+      observed_run_id="$run_id"
       return 0
     fi
     sleep 2
@@ -256,29 +273,33 @@ GH_TOKEN="$INCUS_GH_RUNNER_GITHUB_TOKEN" gh auth status >/dev/null
 "$controller" --config "$config" >"$controller_log" 2>&1 &
 controller_pid="$!"
 
-initial_runner="$(wait_for_single_idle "$initial_snapshot")"
-run_id="$(dispatch_workflow "$proof_id" 30)"
+wait_for_single_idle "$initial_snapshot"
+initial_runner="$observed_runner"
+dispatch_workflow "$proof_id" 30
+run_id="$observed_run_id"
 
-wait_for_busy "$initial_runner" "$busy_snapshot"
-replacement_runner="$(wait_for_replacement "$initial_runner" "$replacement_snapshot")"
+wait_for_busy "$initial_runner" "$run_id" "$busy_snapshot"
+wait_for_replacement "$initial_runner" "$replacement_snapshot"
+replacement_runner="$observed_runner"
 
 GH_TOKEN="$INCUS_GH_RUNNER_GITHUB_TOKEN" gh run watch "$run_id" \
   --repo "$repository" \
   --exit-status \
   | tee "$workflow_log"
 
-wait_for_single_idle "$final_snapshot" "$replacement_runner" >/dev/null
+wait_for_single_idle "$final_snapshot" "$replacement_runner"
 wait_for_deletion_log "$initial_runner"
 stop_controller_checked
 
 controller_log="$idle_restart_log"
 "$controller" --config "$config" --min-runners 0 --max-runners 1 >"$controller_log" 2>&1 &
 controller_pid="$!"
-wait_for_single_idle "$idle_restart_snapshot" "$replacement_runner" >/dev/null
+wait_for_single_idle "$idle_restart_snapshot" "$replacement_runner"
 
 cleanup_proof_id="${proof_id}-cleanup"
-cleanup_run_id="$(dispatch_workflow "$cleanup_proof_id" 30)"
-wait_for_busy "$replacement_runner" "$busy_restart_snapshot"
+dispatch_workflow "$cleanup_proof_id" 30
+cleanup_run_id="$observed_run_id"
+wait_for_busy "$replacement_runner" "$cleanup_run_id" "$busy_restart_snapshot"
 stop_controller_checked
 
 controller_log="$busy_restart_log"
