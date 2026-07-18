@@ -11,4 +11,4 @@
 | 007 | 2026-07-17 | Package hosting proposal | in-progress | Draft and review the meigma-wide signed apt/yum package hosting proposal (Cloudflare R2 + pkgs.meigma.dev) for incus-gh-runner and future projects. |
 | 008 | 2026-07-18 | Continue phase 5 hot pool recovery | complete | Proved live hot-standby replacement and restart safety while carrying bounded concurrent and edge-state live gates forward. |
 | 009 | 2026-07-18 | Continue phase 6 service hardening | complete | Landed and proved predictable systemd, timeout, outage, signal, credential, ownership, and operation-retry behavior. |
-| 010 | 2026-07-18 | Continue phase 7 release readiness | in-progress | Prepare publishable controller and reference-image artifacts, operator documentation, and consolidated v1 acceptance evidence. |
+| 010 | 2026-07-18 | Continue phase 7 release readiness | complete | Landed and proved release-ready controller and reference-image automation while deliberately leaving `v1.0.0` unpublished. |
