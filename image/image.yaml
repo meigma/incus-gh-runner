@@ -155,8 +155,7 @@ actions:
       grub-install \
         --uefi-secure-boot \
         --target=x86_64-efi \
-        --no-nvram \
-        --removable
+        --no-nvram
       update-grub
       sed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_UUID}#g" /boot/grub/grub.cfg
 
