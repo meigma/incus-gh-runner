@@ -3,6 +3,7 @@ package incus
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -29,6 +30,7 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 	server, err := ConnectUnix(testContext, os.Getenv("INCUS_GH_RUNNER_TEST_SOCKET"), project)
 	require.NoError(t, err)
 
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	mailbox := controller.NewMailbox()
 	probeSecret := "phase3-probe-" + uuid.NewString()
 	diagnosticsObserved := make(chan Diagnostics, 1)
@@ -37,6 +39,7 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 		Profiles:         splitProfiles(os.Getenv("INCUS_GH_RUNNER_TEST_PROFILES")),
 		Owner:            "phase3-functional-" + uuid.NewString(),
 		BootstrapTimeout: 5 * time.Minute,
+		Logger:           logger,
 		Payloads: PayloadSourceFunc(func(context.Context, string) (Payload, error) {
 			return Payload{Version: 1, JITConfig: probeSecret}, nil
 		}),
@@ -55,6 +58,7 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 	ctrl, err := controller.New(controller.Options{
 		Backend:           backend,
 		Demand:            mailbox.Updates(),
+		Logger:            logger,
 		MinRunners:        0,
 		MaxRunners:        1,
 		Workers:           1,
