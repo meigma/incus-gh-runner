@@ -97,6 +97,38 @@ func TestControllerAppliesMinimumAndMaximumCapacity(t *testing.T) {
 	require.NoError(t, receiveError(t, errCh))
 }
 
+func TestControllerReplacesConsumedHotStandby(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend(controller.Runner{ID: "standby", State: controller.RunnerBusy})
+	backend.createState = controller.RunnerProvisioning
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{
+		MinRunners: 1,
+		MaxRunners: 2,
+		Workers:    2,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	mailbox.Publish(controller.Demand{AssignedJobs: 1})
+	require.Eventually(t, func() bool {
+		return backend.runnerCount() == 2 && backend.hasRunner("runner-1")
+	}, time.Second, time.Millisecond, "expected assigned work to provision a replacement standby")
+
+	mailbox.Publish(controller.Demand{})
+	backend.setRunnerState("standby", controller.RunnerTerminal)
+	require.Eventually(t, func() bool {
+		return backend.runnerCount() == 1 &&
+			!backend.hasRunner("standby") &&
+			backend.hasRunner("runner-1")
+	}, time.Second, time.Millisecond, "expected the consumed runner to be deleted while its replacement remains")
+	assert.Equal(t, 1, backend.createAttempts(), "replacement must not duplicate capacity")
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
 func TestControllerPreservesBusyCapacityWhileScalingDown(t *testing.T) {
 	t.Parallel()
 
@@ -136,23 +168,72 @@ func TestControllerRefreshesInventoryAndDeletesTerminalRunner(t *testing.T) {
 	require.NoError(t, receiveError(t, errCh))
 }
 
-func TestControllerRestartPreservesProvisioningCapacity(t *testing.T) {
+func TestControllerRestartReconcilesExistingCapacity(t *testing.T) {
 	t.Parallel()
 
-	backend := newFakeBackend(controller.Runner{ID: "runner-1", State: controller.RunnerProvisioning})
-	mailbox := controller.NewMailbox()
-	ctrl := newController(t, backend, mailbox, controller.Options{Workers: 1})
-	mailbox.Publish(controller.Demand{AssignedJobs: 1})
-	ctx, cancel := context.WithCancel(context.Background())
-	errCh := runController(ctx, ctrl)
+	tests := []struct {
+		name          string
+		state         controller.RunnerState
+		wantExisting  bool
+		wantCreates   int
+		wantInventory int
+	}{
+		{
+			name:          "provisioning capacity is preserved",
+			state:         controller.RunnerProvisioning,
+			wantExisting:  true,
+			wantInventory: 2,
+		},
+		{
+			name:          "idle capacity is preserved",
+			state:         controller.RunnerIdle,
+			wantExisting:  true,
+			wantInventory: 2,
+		},
+		{
+			name:          "busy capacity is preserved",
+			state:         controller.RunnerBusy,
+			wantExisting:  true,
+			wantInventory: 2,
+		},
+		{
+			name:         "terminal capacity is deleted and replaced",
+			state:        controller.RunnerTerminal,
+			wantExisting: false,
+			wantCreates:  1,
+		},
+	}
 
-	require.Eventually(t, func() bool {
-		return backend.listAttempts() >= 2
-	}, time.Second, time.Millisecond, "expected restart inventory to be refreshed")
-	assert.Zero(t, backend.createAttempts(), "existing provisioning capacity must prevent duplication")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	cancel()
-	require.NoError(t, receiveError(t, errCh))
+			backend := newFakeBackend(controller.Runner{ID: "existing", State: tt.state})
+			mailbox := controller.NewMailbox()
+			ctrl := newController(t, backend, mailbox, controller.Options{
+				MinRunners: 1,
+				MaxRunners: 1,
+				Workers:    1,
+			})
+			ctx, cancel := context.WithCancel(context.Background())
+			errCh := runController(ctx, ctrl)
+
+			if tt.wantExisting {
+				require.Eventually(t, func() bool {
+					return backend.listAttempts() >= tt.wantInventory
+				}, time.Second, time.Millisecond, "expected restart inventory to be refreshed")
+			} else {
+				require.Eventually(t, func() bool {
+					return !backend.hasRunner("existing") && backend.runnerCount() == 1
+				}, time.Second, time.Millisecond, "expected terminal capacity to be replaced")
+			}
+			assert.Equal(t, tt.wantExisting, backend.hasRunner("existing"))
+			assert.Equal(t, tt.wantCreates, backend.createAttempts())
+
+			cancel()
+			require.NoError(t, receiveError(t, errCh))
+		})
+	}
 }
 
 func TestControllerBoundsShutdownOfSlowOperation(t *testing.T) {
@@ -242,6 +323,7 @@ type fakeBackend struct {
 	mu                    sync.Mutex
 	runners               map[string]controller.Runner
 	createGate            <-chan struct{}
+	createState           controller.RunnerState
 	failCreates           int
 	createSequence        int
 	createAttemptCount    int
@@ -315,9 +397,13 @@ func (f *fakeBackend) Create(ctx context.Context) (controller.Runner, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.createSequence++
+	state := f.createState
+	if state == "" {
+		state = controller.RunnerIdle
+	}
 	runner := controller.Runner{
 		ID:    fmt.Sprintf("runner-%d", f.createSequence),
-		State: controller.RunnerIdle,
+		State: state,
 	}
 	f.runners[runner.ID] = runner
 	return runner, nil
