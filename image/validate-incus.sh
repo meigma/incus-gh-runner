@@ -36,11 +36,11 @@ incus_cmd() {
 
 incus project show "$project" >/dev/null
 
-minimum_server_version=6.5
+minimum_server_version=7.0
 server_version="$(incus version | sed -n 's/^Server version: //p')"
 if [[ -z "$server_version" ]] || \
   [[ "$(printf '%s\n%s\n' "$minimum_server_version" "$server_version" | sort -V | head -n 1)" != "$minimum_server_version" ]]; then
-  printf 'Incus server %s or newer is required for VM console history; found %s\n' \
+  printf 'Incus server %s or newer is required; found %s\n' \
     "$minimum_server_version" \
     "${server_version:-unknown}" >&2
   exit 1

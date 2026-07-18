@@ -111,8 +111,8 @@ uses explicitly disposable infrastructure:
 - Incus testing targets a dedicated project on a local or otherwise isolated
   daemon. The project, image, profiles, network, and storage must already exist;
   tests must never point cleanup logic at an unrelated or shared project.
-- Live VM diagnostics require Incus 6.5 or newer; Ubuntu 24.04's native Incus
-  6.0 package does not expose virtual-machine console history.
+- Live VM diagnostics require Incus 7.0 or newer. Incus 6 releases are not
+  supported.
 - GitHub scale-set testing targets a dedicated private repository or
   organization and a uniquely named test scale set. Do not use production
   repositories, runner groups, or credentials for development experiments.
