@@ -73,7 +73,10 @@ jobs:
           checksum=${archive}.sha256
           test -s "$archive"
           test -s "$checksum"
-          sha256sum --check "$checksum"
+          (
+            cd "$(dirname "$archive")"
+            sha256sum --check "$(basename "$checksum")"
+          )
 
           mkdir -p build/reference-image-inspection
           tar --extract --xz --file "$archive" \
