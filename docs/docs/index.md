@@ -20,9 +20,10 @@ that existing Incus lifecycle.
 The current repository foundation provides the renamed CLI, locked development
 toolchain, CI gates, and isolated GitHub and Incus client adapters. Controller,
 guest-image, deployment, and troubleshooting documentation will grow from
-working lifecycle slices. The remaining phase 4 acceptance boundary is one
-genuine workflow job through registration, poweroff, diagnostics, and deletion
-on a disposable Incus-capable host.
+working lifecycle slices. The phase 4 hardware gate completed one genuine job
+through registration, poweroff, diagnostics, and deletion on Incus 7.2. Phase
+5 now adds deterministic hot-pool recovery coverage and a repeatable live proof
+for preconnected standby dispatch and replacement.
 
 See the repository [README](https://github.com/meigma/incus-gh-runner#readme)
 for current scope and development instructions.
