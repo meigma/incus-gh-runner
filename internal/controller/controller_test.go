@@ -72,6 +72,31 @@ func TestControllerRetriesWorkerFailure(t *testing.T) {
 	require.NoError(t, receiveError(t, errCh))
 }
 
+func TestControllerAppliesMinimumAndMaximumCapacity(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{
+		MinRunners: 2,
+		MaxRunners: 3,
+		Workers:    2,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	require.Eventually(t, func() bool {
+		return backend.runnerCount() == 2
+	}, time.Second, time.Millisecond, "expected the idle floor to be created")
+	mailbox.Publish(controller.Demand{AssignedJobs: 10})
+	require.Eventually(t, func() bool {
+		return backend.runnerCount() == 3
+	}, time.Second, time.Millisecond, "expected assigned demand to stop at the maximum")
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
 func TestControllerPreservesBusyCapacityWhileScalingDown(t *testing.T) {
 	t.Parallel()
 
@@ -137,6 +162,10 @@ func newController(
 	}
 	if overrides.Workers != 0 {
 		options.Workers = overrides.Workers
+	}
+	if overrides.MaxRunners != 0 {
+		options.MinRunners = overrides.MinRunners
+		options.MaxRunners = overrides.MaxRunners
 	}
 	if overrides.ShutdownTimeout != 0 {
 		options.ShutdownTimeout = overrides.ShutdownTimeout

@@ -3,11 +3,16 @@ package cli
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/meigma/incus-gh-runner/internal/config"
 )
 
 func TestVersionFlagPrintsBuildMetadata(t *testing.T) {
@@ -31,29 +36,83 @@ func TestVersionFlagPrintsBuildMetadata(t *testing.T) {
 	assert.Empty(t, stderr.String())
 }
 
-func TestRootCommandPrintsConfiguredMessage(t *testing.T) {
-	t.Parallel()
+func TestRootCommandLoadsFileEnvironmentAndFlagPrecedence(t *testing.T) {
+	t.Setenv("INCUS_GH_RUNNER_CAPACITY_MAX_RUNNERS", "3")
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`capacity:
+  min_runners: 1
+  max_runners: 2
+concurrency:
+  incus_operations: 1
+reconcile_interval: 2s
+timeouts:
+  incus_operation: 1m
+  shutdown: 10s
+`), 0o600))
 
-	var stdout bytes.Buffer
+	var received config.Config
 	root := NewRootCommand(Options{
-		Out:   &stdout,
 		Viper: viper.New(),
+		Run: func(_ context.Context, cfg config.Config) error {
+			received = cfg
+			return nil
+		},
 	})
-	root.SetArgs([]string{"--message", "hello from cobra"})
+	root.SetArgs([]string{"--config", configPath, "--max-runners", "4"})
 
 	require.NoError(t, root.ExecuteContext(context.Background()))
-	assert.Equal(t, "hello from cobra\n", stdout.String())
+	assert.Equal(t, 1, received.Capacity.MinRunners)
+	assert.Equal(t, 4, received.Capacity.MaxRunners)
+	assert.Equal(t, 1, received.Concurrency.IncusOperations)
+	assert.Equal(t, 2*time.Second, received.ReconcileInterval)
+	assert.Equal(t, time.Minute, received.Timeouts.IncusOperation)
+	assert.Equal(t, 10*time.Second, received.Timeouts.Shutdown)
 }
 
-func TestRootCommandReadsMessageFromEnvironment(t *testing.T) {
-	t.Setenv("INCUS_GH_RUNNER_MESSAGE", "hello from viper")
+func TestRootCommandAllowsMissingOptionalConfig(t *testing.T) {
+	t.Parallel()
 
-	var stdout bytes.Buffer
+	var received config.Config
 	root := NewRootCommand(Options{
-		Out:   &stdout,
-		Viper: viper.New(),
+		Viper:             viper.New(),
+		DefaultConfigPath: filepath.Join(t.TempDir(), "missing.yaml"),
+		Run: func(_ context.Context, cfg config.Config) error {
+			received = cfg
+			return nil
+		},
 	})
 
 	require.NoError(t, root.ExecuteContext(context.Background()))
-	assert.Equal(t, "hello from viper\n", stdout.String())
+	assert.Equal(t, config.Defaults(), received)
+}
+
+func TestRootCommandRejectsMissingExplicitConfig(t *testing.T) {
+	t.Parallel()
+
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
+	root := NewRootCommand(Options{Viper: viper.New()})
+	root.SetArgs([]string{"--config", missing})
+
+	err := root.ExecuteContext(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read configuration")
+	assert.Contains(t, err.Error(), missing)
+}
+
+func TestRootCommandPassesExecutionContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	root := NewRootCommand(Options{
+		Viper:             viper.New(),
+		DefaultConfigPath: filepath.Join(t.TempDir(), "missing.yaml"),
+		Run: func(ctx context.Context, _ config.Config) error {
+			assert.ErrorIs(t, ctx.Err(), context.Canceled)
+			return nil
+		},
+	})
+
+	require.NoError(t, root.ExecuteContext(ctx))
 }
