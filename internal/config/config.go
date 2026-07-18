@@ -35,9 +35,9 @@ const (
 	KeyOperationTimeout = "timeouts.incus_operation"
 	// KeyShutdownTimeout identifies the graceful shutdown timeout.
 	KeyShutdownTimeout = "timeouts.shutdown"
-	// KeyRetryInitial identifies the first GitHub reconnect delay.
+	// KeyRetryInitial identifies the first transient-failure retry delay.
 	KeyRetryInitial = "retry.initial"
-	// KeyRetryMaximum identifies the capped GitHub reconnect delay.
+	// KeyRetryMaximum identifies the capped transient-failure retry delay.
 	KeyRetryMaximum = "retry.maximum"
 	// KeyGitHubConfigURL identifies the repository or organization registration URL.
 	KeyGitHubConfigURL = "github.config_url"
@@ -82,7 +82,7 @@ type Config struct {
 	ReconcileInterval time.Duration `mapstructure:"reconcile_interval"`
 	// Timeouts bounds lifecycle operations and shutdown.
 	Timeouts Timeouts `mapstructure:"timeouts"`
-	// Retry controls transient GitHub reconnect backoff.
+	// Retry controls transient GitHub and Incus operation backoff.
 	Retry Retry `mapstructure:"retry"`
 }
 
@@ -150,11 +150,11 @@ type Timeouts struct {
 	Shutdown time.Duration `mapstructure:"shutdown"`
 }
 
-// Retry contains bounded transient-failure retry settings.
+// Retry contains shared bounded transient-failure retry settings.
 type Retry struct {
-	// Initial is the first delay before recreating a failed GitHub message session.
+	// Initial is the first delay after a transient external operation failure.
 	Initial time.Duration `mapstructure:"initial"`
-	// Maximum caps the delay between GitHub message-session recreation attempts.
+	// Maximum caps delay growth across consecutive external operation failures.
 	Maximum time.Duration `mapstructure:"maximum"`
 }
 

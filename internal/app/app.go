@@ -64,6 +64,8 @@ func New(options Options) (*Application, error) {
 		Workers:           options.Config.Concurrency.IncusOperations,
 		ReconcileInterval: options.Config.ReconcileInterval,
 		OperationTimeout:  options.Config.Timeouts.IncusOperation,
+		RetryInitial:      options.Config.Retry.Initial,
+		RetryMaximum:      options.Config.Retry.Maximum,
 		ShutdownTimeout:   options.Config.Timeouts.Shutdown,
 	})
 	if err != nil {

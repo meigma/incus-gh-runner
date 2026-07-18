@@ -69,6 +69,10 @@ type Options struct {
 	ReconcileInterval time.Duration
 	// OperationTimeout bounds each backend lifecycle operation.
 	OperationTimeout time.Duration
+	// RetryInitial is the first cooldown after a failed backend operation.
+	RetryInitial time.Duration
+	// RetryMaximum caps cooldown growth across consecutive backend failures.
+	RetryMaximum time.Duration
 	// ShutdownTimeout allows in-flight operations to finish before cancellation.
 	ShutdownTimeout time.Duration
 }
