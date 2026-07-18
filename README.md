@@ -5,9 +5,10 @@ Actions jobs in Incus virtual machines. The controller will consume GitHub
 runner scale-set demand, maintain a bounded pool of hot standby runners, and
 delete each VM after its one assigned job.
 
-The project is currently establishing its implementation foundation. The CLI,
-release metadata, and external client seams exist; the controller lifecycle is
-not implemented yet.
+The phase 1 controller core now reconciles coalesced demand through a bounded
+worker pool using explicit demand-source and runner-backend ports. Typed startup
+configuration and signal-aware supervision are in place. Real GitHub and Incus
+lifecycle adapters are intentionally not wired into the executable yet.
 
 ## v1 boundaries
 
@@ -41,13 +42,35 @@ moon run root:test
 go run ./cmd/incus-gh-runner --version
 ```
 
+The controller configuration boundary currently covers the settings needed by
+the fake-demand proof:
+
+```yaml
+capacity:
+  min_runners: 0
+  max_runners: 4
+concurrency:
+  incus_operations: 2
+reconcile_interval: 1s
+timeouts:
+  incus_operation: 5m
+  shutdown: 30s
+```
+
+Configuration precedence is flags, environment variables, the selected YAML
+file, then defaults. `--config` selects a required file; otherwise
+`/etc/incus-gh-runner/config.yaml` is optional. Environment variables use the
+`INCUS_GH_RUNNER` prefix, such as
+`INCUS_GH_RUNNER_CAPACITY_MAX_RUNNERS`.
+
 CI runs the same aggregate gate with `moon ci --summary minimal`.
 
-The initial integration seams pin
+The integration seams pin
 [`actions/scaleset`](https://github.com/actions/scaleset) and the
 [`incus/v7` Go client](https://github.com/lxc/incus). Third-party client types
-stay in `internal/adapters`; controller behavior will define its own ports as
-the first reconciliation slice is implemented.
+stay in `internal/adapters`; controller-owned ports live with the orchestration
+core. The deterministic fake application test is the current functional proof
+until the real lifecycle slices begin.
 
 ## Functional test environments
 
