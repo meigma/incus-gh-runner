@@ -17,3 +17,6 @@ Completed the phase 1 implementation on `feat/controller-core` through commits `
 
 ## 2026-07-17 17:19 — Private declaration Godoc convention
 The developer clarified the house style: every Go type, function, and method should have concise identifier-led Godoc even when unexported, including test helpers, because IntelliSense is part of the review workflow. Applied the convention across the phase 1 implementation and the existing command entrypoint, and recorded it in `TECH_NOTES.md` for future sessions.
+
+## 2026-07-17 17:29 — Phase 1 draft PR
+Pushed `feat/controller-core` at reviewed head `ca6d6d6` and opened draft PR [#8](https://github.com/meigma/incus-gh-runner/pull/8), titled `feat(controller): prove phase 1 controller core`, against `master` at `468c0a9`. The PR body records the phase 1 scope, intentional deferral of real GitHub/Incus lifecycle wiring, `moon run root:check`, and repeated race-detector evidence. CI, GitHub Pages, and Kusari Inspector checks started on the exact PR head.
