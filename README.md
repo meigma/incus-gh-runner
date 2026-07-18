@@ -96,7 +96,10 @@ opened. After startup, a listener or session failure closes the old session and
 creates a fresh one using capped exponential backoff. Successful GitHub polling,
 including a healthy long-poll expiry with no message, resets the delay to
 `retry.initial`; `retry.maximum` prevents a prolonged outage from producing an
-unbounded retry interval.
+unbounded retry interval. The controller applies the same bounds to failed Incus
+inventory, create, and delete operations. An inventory failure pauses mutations
+until a fresh owned-runner snapshot succeeds; create cooldown is shared, while
+delete cooldown is isolated to the exact runner so unrelated cleanup can proceed.
 
 On SIGINT or SIGTERM, the application cancels both long-lived components and
 waits through the controller's graceful and forced-cancellation shutdown

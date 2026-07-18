@@ -58,15 +58,89 @@ func TestControllerRetriesWorkerFailure(t *testing.T) {
 	backend := newFakeBackend()
 	backend.failCreates = 1
 	mailbox := controller.NewMailbox()
-	ctrl := newController(t, backend, mailbox, controller.Options{Workers: 2})
+	ctrl := newController(t, backend, mailbox, controller.Options{
+		Workers:      1,
+		RetryInitial: 80 * time.Millisecond,
+		RetryMaximum: 80 * time.Millisecond,
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := runController(ctx, ctrl)
 
-	mailbox.Publish(controller.Demand{AssignedJobs: 2})
+	mailbox.Publish(controller.Demand{AssignedJobs: 1})
 	require.Eventually(t, func() bool {
-		return backend.runnerCount() == 2
+		return backend.createAttempts() == 1
+	}, time.Second, time.Millisecond, "expected the initial create attempt")
+	assert.Never(t, func() bool {
+		return backend.createAttempts() > 1
+	}, 40*time.Millisecond, 2*time.Millisecond, "expected failed create to remain in cooldown")
+	require.Eventually(t, func() bool {
+		return backend.runnerCount() == 1
 	}, time.Second, time.Millisecond, "expected periodic reconciliation to retry the failed create")
-	assert.GreaterOrEqual(t, backend.createAttempts(), 3)
+	assert.Equal(t, 2, backend.createAttempts())
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
+func TestControllerIsolatesDeleteFailureCooldownByRunner(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend(
+		controller.Runner{ID: "protected", State: controller.RunnerTerminal},
+		controller.Runner{ID: "deletable", State: controller.RunnerTerminal},
+	)
+	backend.failDeletes["protected"] = 1
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{
+		Workers:      2,
+		RetryInitial: 80 * time.Millisecond,
+		RetryMaximum: 80 * time.Millisecond,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	require.Eventually(t, func() bool {
+		return backend.deleteAttempts("protected") == 1 && !backend.hasRunner("deletable")
+	}, time.Second, time.Millisecond, "expected unrelated terminal runner deletion to proceed")
+	assert.Never(t, func() bool {
+		return backend.deleteAttempts("protected") > 1
+	}, 40*time.Millisecond, 2*time.Millisecond, "expected protected runner deletion to remain in cooldown")
+	require.Eventually(t, func() bool {
+		return !backend.hasRunner("protected")
+	}, time.Second, time.Millisecond, "expected protected runner deletion to recover after cooldown")
+	assert.Equal(t, 2, backend.deleteAttempts("protected"))
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
+func TestControllerPausesMutationsAfterInventoryFailure(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{
+		Workers:      1,
+		RetryInitial: 80 * time.Millisecond,
+		RetryMaximum: 80 * time.Millisecond,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	require.Eventually(t, func() bool {
+		return backend.listAttempts() >= 1
+	}, time.Second, time.Millisecond, "expected startup inventory")
+	backend.setListFailures(1)
+	require.Eventually(t, func() bool {
+		return backend.listAttempts() >= 2
+	}, time.Second, time.Millisecond, "expected injected periodic inventory failure")
+	mailbox.Publish(controller.Demand{AssignedJobs: 1})
+	assert.Never(t, func() bool {
+		return backend.createAttempts() > 0
+	}, 40*time.Millisecond, 2*time.Millisecond, "expected stale inventory to pause mutations")
+	require.Eventually(t, func() bool {
+		return backend.runnerCount() == 1
+	}, time.Second, time.Millisecond, "expected mutation to resume after inventory recovery")
 
 	cancel()
 	require.NoError(t, receiveError(t, errCh))
@@ -278,6 +352,8 @@ func newController(
 		Workers:           2,
 		ReconcileInterval: 5 * time.Millisecond,
 		OperationTimeout:  time.Second,
+		RetryInitial:      10 * time.Millisecond,
+		RetryMaximum:      20 * time.Millisecond,
 		ShutdownTimeout:   50 * time.Millisecond,
 	}
 	if overrides.Workers != 0 {
@@ -289,6 +365,12 @@ func newController(
 	}
 	if overrides.ShutdownTimeout != 0 {
 		options.ShutdownTimeout = overrides.ShutdownTimeout
+	}
+	if overrides.RetryInitial != 0 {
+		options.RetryInitial = overrides.RetryInitial
+	}
+	if overrides.RetryMaximum != 0 {
+		options.RetryMaximum = overrides.RetryMaximum
 	}
 
 	ctrl, err := controller.New(options)
@@ -324,9 +406,12 @@ type fakeBackend struct {
 	runners               map[string]controller.Runner
 	createGate            <-chan struct{}
 	createState           controller.RunnerState
+	failLists             int
 	failCreates           int
+	failDeletes           map[string]int
 	createSequence        int
 	createAttemptCount    int
+	deleteAttemptCounts   map[string]int
 	listAttemptCount      int
 	concurrentCreateCount int
 	maximumCreateCount    int
@@ -335,7 +420,11 @@ type fakeBackend struct {
 
 // newFakeBackend creates an in-memory backend containing runners.
 func newFakeBackend(runners ...controller.Runner) *fakeBackend {
-	backend := &fakeBackend{runners: make(map[string]controller.Runner, len(runners))}
+	backend := &fakeBackend{
+		runners:             make(map[string]controller.Runner, len(runners)),
+		failDeletes:         make(map[string]int),
+		deleteAttemptCounts: make(map[string]int),
+	}
 	for _, runner := range runners {
 		backend.runners[runner.ID] = runner
 	}
@@ -347,12 +436,23 @@ func (f *fakeBackend) ListOwned(context.Context) ([]controller.Runner, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.listAttemptCount++
+	if f.failLists > 0 {
+		f.failLists--
+		return nil, errors.New("injected list failure")
+	}
 
 	runners := make([]controller.Runner, 0, len(f.runners))
 	for _, runner := range f.runners {
 		runners = append(runners, runner)
 	}
 	return runners, nil
+}
+
+// setListFailures configures the number of upcoming inventory failures.
+func (f *fakeBackend) setListFailures(count int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failLists = count
 }
 
 // setRunnerState changes the observed lifecycle state for a fake runner.
@@ -413,8 +513,20 @@ func (f *fakeBackend) Create(ctx context.Context) (controller.Runner, error) {
 func (f *fakeBackend) Delete(_ context.Context, runnerID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.deleteAttemptCounts[runnerID]++
+	if f.failDeletes[runnerID] > 0 {
+		f.failDeletes[runnerID]--
+		return errors.New("injected delete failure")
+	}
 	delete(f.runners, runnerID)
 	return nil
+}
+
+// deleteAttempts returns the number of delete calls for id.
+func (f *fakeBackend) deleteAttempts(id string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.deleteAttemptCounts[id]
 }
 
 // runnerCount returns the current fake inventory size.

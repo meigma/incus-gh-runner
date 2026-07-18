@@ -37,6 +37,12 @@ func New(options Options) (*Controller, error) {
 	if options.OperationTimeout <= 0 {
 		return nil, errors.New("operation timeout must be positive")
 	}
+	if options.RetryInitial <= 0 {
+		return nil, errors.New("retry initial must be positive")
+	}
+	if options.RetryMaximum < options.RetryInitial {
+		return nil, errors.New("retry maximum must be at least retry initial")
+	}
 	if options.ShutdownTimeout <= 0 {
 		return nil, errors.New("shutdown timeout must be positive")
 	}
@@ -193,14 +199,28 @@ type operationResult struct {
 	err       error
 }
 
+// failureKey identifies one independently retryable backend operation target.
+type failureKey struct {
+	kind     operationKind
+	runnerID string
+}
+
+// failureBackoff records the current delay and earliest allowed retry time.
+type failureBackoff struct {
+	delay   time.Duration
+	retryAt time.Time
+}
+
 // reconcileState is the single owner of desired and observed runner capacity.
 type reconcileState struct {
-	options    Options
-	runners    map[string]Runner
-	operations map[uint64]operation
-	deleting   map[string]uint64
-	target     int
-	nextID     uint64
+	options        Options
+	runners        map[string]Runner
+	operations     map[uint64]operation
+	deleting       map[string]uint64
+	failures       map[failureKey]failureBackoff
+	inventoryStale bool
+	target         int
+	nextID         uint64
 }
 
 // newReconcileState validates inventory and creates the initial reconciliation state.
@@ -210,6 +230,7 @@ func newReconcileState(options Options, runners []Runner) (*reconcileState, erro
 		runners:    make(map[string]Runner, len(runners)),
 		operations: make(map[uint64]operation),
 		deleting:   make(map[string]uint64),
+		failures:   make(map[failureKey]failureBackoff),
 		target:     options.MinRunners,
 	}
 
@@ -241,7 +262,7 @@ func (s *reconcileState) refresh(work chan<- operation) {
 
 // reconcile schedules the operations needed to move current capacity toward the target.
 func (s *reconcileState) reconcile(work chan<- operation) {
-	if s.inventorying() {
+	if s.inventoryStale || s.inventorying() {
 		return
 	}
 
@@ -270,6 +291,9 @@ func (s *reconcileState) reconcile(work chan<- operation) {
 
 // trySchedule records item only when a worker can accept it immediately.
 func (s *reconcileState) trySchedule(work chan<- operation, item operation) bool {
+	if s.retryBlocked(item, time.Now()) {
+		return false
+	}
 	if item.runnerID != "" {
 		if _, exists := s.deleting[item.runnerID]; exists {
 			return false
@@ -308,13 +332,7 @@ func (s *reconcileState) apply(result operationResult) bool {
 	}
 
 	if result.err != nil {
-		s.options.Logger.Warn(
-			"runner operation failed",
-			"operation", item.kind,
-			"operation_id", item.id,
-			"runner_id", item.runnerID,
-			"error", result.err,
-		)
+		s.recordFailure(item, result.err)
 		return false
 	}
 
@@ -322,27 +340,21 @@ func (s *reconcileState) apply(result operationResult) bool {
 	case operationList:
 		inventory, err := validatedInventory(result.runners)
 		if err != nil {
-			s.options.Logger.Warn(
-				"runner inventory returned invalid state",
-				"operation_id", item.id,
-				"error", err,
-			)
+			s.recordFailure(item, err)
 			return false
 		}
 		s.runners = inventory
+		s.inventoryStale = false
 	case operationCreate:
 		if err := validateRunner(result.runner); err != nil {
-			s.options.Logger.Warn(
-				"runner create returned invalid state",
-				"operation_id", item.id,
-				"error", err,
-			)
+			s.recordFailure(item, err)
 			return false
 		}
 		s.runners[result.runner.ID] = result.runner
 	case operationDelete:
 		delete(s.runners, item.runnerID)
 	}
+	delete(s.failures, keyFor(item))
 
 	runnerID := item.runnerID
 	if item.kind == operationCreate {
@@ -355,6 +367,45 @@ func (s *reconcileState) apply(result operationResult) bool {
 		"runner_id", runnerID,
 	)
 	return true
+}
+
+// retryBlocked reports whether item is still inside its failure cooldown.
+func (s *reconcileState) retryBlocked(item operation, now time.Time) bool {
+	failure, exists := s.failures[keyFor(item)]
+	return exists && now.Before(failure.retryAt)
+}
+
+// recordFailure advances item cooldown and requires a fresh inventory before mutation.
+func (s *reconcileState) recordFailure(item operation, err error) {
+	key := keyFor(item)
+	previous := s.failures[key]
+	delay := nextFailureDelay(previous.delay, s.options.RetryInitial, s.options.RetryMaximum)
+	s.failures[key] = failureBackoff{delay: delay, retryAt: time.Now().Add(delay)}
+	s.inventoryStale = true
+	s.options.Logger.Warn(
+		"runner operation failed",
+		"operation", item.kind,
+		"operation_id", item.id,
+		"runner_id", item.runnerID,
+		"retry_after", delay,
+		"error", err,
+	)
+}
+
+// keyFor maps an operation to its independently retryable failure target.
+func keyFor(item operation) failureKey {
+	return failureKey{kind: item.kind, runnerID: item.runnerID}
+}
+
+// nextFailureDelay doubles previous up to maximum and starts at initial.
+func nextFailureDelay(previous, initial, maximum time.Duration) time.Duration {
+	if previous <= 0 {
+		return initial
+	}
+	if previous >= maximum/2 {
+		return maximum
+	}
+	return min(previous+previous, maximum)
 }
 
 // inventorying reports whether a refresh currently owns the observed-state boundary.

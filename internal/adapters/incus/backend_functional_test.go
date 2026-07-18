@@ -64,6 +64,8 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 		Workers:           1,
 		ReconcileInterval: time.Second,
 		OperationTimeout:  5 * time.Minute,
+		RetryInitial:      time.Second,
+		RetryMaximum:      30 * time.Second,
 		ShutdownTimeout:   30 * time.Second,
 	})
 	require.NoError(t, err)
