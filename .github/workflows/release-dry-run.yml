@@ -251,4 +251,72 @@ jobs:
           docker tag incus-gh-runner:dry-run-amd64 incus-gh-runner:dry-run
 
           docker run --rm incus-gh-runner:dry-run --version
-          docker run --rm incus-gh-runner:dry-run --message "hello from container"
+          docker run --rm incus-gh-runner:dry-run --help >/dev/null
+
+  reference-image-dry-run:
+    name: Reference Image Dry Run
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install distrobuilder VM dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            btrfs-progs \
+            build-essential \
+            debootstrap \
+            dosfstools \
+            genisoimage \
+            gpg \
+            libwin-hivex-perl \
+            qemu-kvm \
+            rsync \
+            squashfs-tools \
+            wimtools
+
+      - name: Setup mise
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: 2026.6.14
+          cache: true
+
+      - name: Build unified Incus VM image
+        run: mise exec -- image/build.sh build/reference-image
+
+      - name: Stage and inspect dry-run assets
+        env:
+          DRY_RUN_TAG: v0.0.0-dryrun.${{ github.run_id }}.${{ github.run_attempt }}
+          DRY_RUN_VERSION: 0.0.0-dryrun.${{ github.run_id }}.${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+
+          python3 .github/scripts/stage_reference_image_release.py --tag "$DRY_RUN_TAG"
+          asset="incus-gh-runner-reference-image_${DRY_RUN_VERSION}_ubuntu-24.04_x86_64.tar.xz"
+          archive="dist/reference-image/${asset}"
+          test -s "$archive"
+          test -s "${archive}.sha256"
+          test -s dist/reference-image/checksums.txt
+          cmp "${archive}.sha256" dist/reference-image/checksums.txt
+          (
+            cd "$(dirname "$archive")"
+            sha256sum --check "$(basename "$archive").sha256"
+          )
+
+          mkdir -p build/reference-image-inspection
+          tar --extract --xz --file "$archive" \
+            --directory build/reference-image-inspection \
+            metadata.yaml rootfs.img
+          qemu-img info --output=json build/reference-image-inspection/rootfs.img \
+            >build/reference-image-inspection/qemu-info.json
+          jq --exit-status \
+            '.format == "qcow2" and .["virtual-size"] == 8589934592' \
+            build/reference-image-inspection/qemu-info.json >/dev/null
