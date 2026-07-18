@@ -4,6 +4,9 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -15,6 +18,8 @@ const (
 	defaultReconcileInterval = time.Second
 	defaultOperationTimeout  = 5 * time.Minute
 	defaultShutdownTimeout   = 30 * time.Second
+	defaultBootstrapTimeout  = 5 * time.Minute
+	defaultRunnerGroup       = "default"
 
 	// KeyMinRunners identifies the configured idle capacity floor.
 	KeyMinRunners = "capacity.min_runners"
@@ -28,10 +33,41 @@ const (
 	KeyOperationTimeout = "timeouts.incus_operation"
 	// KeyShutdownTimeout identifies the graceful shutdown timeout.
 	KeyShutdownTimeout = "timeouts.shutdown"
+	// KeyGitHubConfigURL identifies the repository or organization registration URL.
+	KeyGitHubConfigURL = "github.config_url"
+	// KeyGitHubScaleSet identifies the persistent runner scale-set name.
+	KeyGitHubScaleSet = "github.scale_set"
+	// KeyGitHubRunnerGroup identifies the runner group containing the scale set.
+	KeyGitHubRunnerGroup = "github.runner_group"
+	// KeyGitHubAppClientID identifies the GitHub App client ID.
+	KeyGitHubAppClientID = "github.app.client_id"
+	// KeyGitHubAppInstallationID identifies the GitHub App installation ID.
+	KeyGitHubAppInstallationID = "github.app.installation_id"
+	// KeyGitHubAppPrivateKeyFile identifies the protected GitHub App private-key path.
+	KeyGitHubAppPrivateKeyFile = "github.app.private_key_file"
+	// KeyIncusSocket identifies an optional Incus Unix socket path.
+	KeyIncusSocket = "incus.socket"
+	// KeyIncusProject identifies the preconfigured Incus project.
+	KeyIncusProject = "incus.project"
+	// KeyIncusImage identifies the existing runner image alias or fingerprint.
+	KeyIncusImage = "incus.image"
+	// KeyIncusOwner identifies the exact durable instance ownership marker.
+	KeyIncusOwner = "incus.owner"
+	// KeyIncusBootstrapTimeout identifies the guest readiness deadline.
+	KeyIncusBootstrapTimeout = "incus.bootstrap_timeout"
+	// KeyIncusDiagnosticsDir identifies the directory for terminal runner evidence.
+	KeyIncusDiagnosticsDir = "incus.diagnostics_dir"
+
+	// EnvGitHubToken is the environment-only development PAT credential.
+	EnvGitHubToken = "INCUS_GH_RUNNER_GITHUB_TOKEN" //nolint:gosec // This is an environment variable name, not a credential.
 )
 
 // Config contains immutable phase 1 controller settings.
 type Config struct {
+	// GitHub configures one persistent runner scale set and its credentials.
+	GitHub GitHub `mapstructure:"github"`
+	// Incus configures the pre-existing environment used for runner VMs.
+	Incus Incus `mapstructure:"incus"`
 	// Capacity controls the minimum and maximum owned runner counts.
 	Capacity Capacity `mapstructure:"capacity"`
 	// Concurrency bounds external lifecycle operations.
@@ -40,6 +76,48 @@ type Config struct {
 	ReconcileInterval time.Duration `mapstructure:"reconcile_interval"`
 	// Timeouts bounds lifecycle operations and shutdown.
 	Timeouts Timeouts `mapstructure:"timeouts"`
+}
+
+// GitHub contains the runner scale-set registration and credential settings.
+type GitHub struct {
+	// ConfigURL is the repository or organization URL that owns the scale set.
+	ConfigURL string `mapstructure:"config_url"`
+	// ScaleSet is the persistent runner scale-set name and default runner label.
+	ScaleSet string `mapstructure:"scale_set"`
+	// RunnerGroup is the existing GitHub runner group containing the scale set.
+	RunnerGroup string `mapstructure:"runner_group"`
+	// App contains preferred GitHub App credentials.
+	App GitHubApp `mapstructure:"app"`
+	// Token contains the environment-only development PAT and is never decoded from a file.
+	Token string `mapstructure:"-"`
+}
+
+// GitHubApp identifies a GitHub App installation and protected private key.
+type GitHubApp struct {
+	// ClientID is the GitHub App client ID or application ID.
+	ClientID string `mapstructure:"client_id"`
+	// InstallationID is the GitHub App installation ID.
+	InstallationID int64 `mapstructure:"installation_id"`
+	// PrivateKeyFile is a protected PEM file read only during startup.
+	PrivateKeyFile string `mapstructure:"private_key_file"`
+}
+
+// Incus contains references to the preconfigured runner environment.
+type Incus struct {
+	// Socket optionally selects a non-default local Incus Unix socket.
+	Socket string `mapstructure:"socket"`
+	// Project is the existing Incus project used for runner VMs.
+	Project string `mapstructure:"project"`
+	// Image is an existing local runner image alias or fingerprint.
+	Image string `mapstructure:"image"`
+	// Profiles are existing profiles applied to every runner VM.
+	Profiles []string `mapstructure:"profiles"`
+	// Owner is the exact durable marker authorizing runner instance mutation.
+	Owner string `mapstructure:"owner"`
+	// BootstrapTimeout bounds how long an unready VM counts as capacity.
+	BootstrapTimeout time.Duration `mapstructure:"bootstrap_timeout"`
+	// DiagnosticsDir optionally stores terminal serial-console evidence before deletion.
+	DiagnosticsDir string `mapstructure:"diagnostics_dir"`
 }
 
 // Capacity contains desired runner capacity limits.
@@ -68,24 +146,38 @@ type Timeouts struct {
 func ConfigureViper(vp *viper.Viper) error {
 	defaultConfig := Defaults()
 	defaults := map[string]any{
-		KeyMinRunners:        defaultConfig.Capacity.MinRunners,
-		KeyMaxRunners:        defaultConfig.Capacity.MaxRunners,
-		KeyIncusOperations:   defaultConfig.Concurrency.IncusOperations,
-		KeyReconcileInterval: defaultConfig.ReconcileInterval,
-		KeyOperationTimeout:  defaultConfig.Timeouts.IncusOperation,
-		KeyShutdownTimeout:   defaultConfig.Timeouts.Shutdown,
+		KeyMinRunners:            defaultConfig.Capacity.MinRunners,
+		KeyMaxRunners:            defaultConfig.Capacity.MaxRunners,
+		KeyIncusOperations:       defaultConfig.Concurrency.IncusOperations,
+		KeyReconcileInterval:     defaultConfig.ReconcileInterval,
+		KeyOperationTimeout:      defaultConfig.Timeouts.IncusOperation,
+		KeyShutdownTimeout:       defaultConfig.Timeouts.Shutdown,
+		KeyGitHubRunnerGroup:     defaultConfig.GitHub.RunnerGroup,
+		KeyIncusBootstrapTimeout: defaultConfig.Incus.BootstrapTimeout,
 	}
 	for key, value := range defaults {
 		vp.SetDefault(key, value)
 	}
 
 	environment := map[string]string{
-		KeyMinRunners:        "INCUS_GH_RUNNER_CAPACITY_MIN_RUNNERS",
-		KeyMaxRunners:        "INCUS_GH_RUNNER_CAPACITY_MAX_RUNNERS",
-		KeyIncusOperations:   "INCUS_GH_RUNNER_CONCURRENCY_INCUS_OPERATIONS",
-		KeyReconcileInterval: "INCUS_GH_RUNNER_RECONCILE_INTERVAL",
-		KeyOperationTimeout:  "INCUS_GH_RUNNER_TIMEOUTS_INCUS_OPERATION",
-		KeyShutdownTimeout:   "INCUS_GH_RUNNER_TIMEOUTS_SHUTDOWN",
+		KeyMinRunners:              "INCUS_GH_RUNNER_CAPACITY_MIN_RUNNERS",
+		KeyMaxRunners:              "INCUS_GH_RUNNER_CAPACITY_MAX_RUNNERS",
+		KeyIncusOperations:         "INCUS_GH_RUNNER_CONCURRENCY_INCUS_OPERATIONS",
+		KeyReconcileInterval:       "INCUS_GH_RUNNER_RECONCILE_INTERVAL",
+		KeyOperationTimeout:        "INCUS_GH_RUNNER_TIMEOUTS_INCUS_OPERATION",
+		KeyShutdownTimeout:         "INCUS_GH_RUNNER_TIMEOUTS_SHUTDOWN",
+		KeyGitHubConfigURL:         "INCUS_GH_RUNNER_GITHUB_CONFIG_URL",
+		KeyGitHubScaleSet:          "INCUS_GH_RUNNER_GITHUB_SCALE_SET",
+		KeyGitHubRunnerGroup:       "INCUS_GH_RUNNER_GITHUB_RUNNER_GROUP",
+		KeyGitHubAppClientID:       "INCUS_GH_RUNNER_GITHUB_APP_CLIENT_ID",
+		KeyGitHubAppInstallationID: "INCUS_GH_RUNNER_GITHUB_APP_INSTALLATION_ID",
+		KeyGitHubAppPrivateKeyFile: "INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE",
+		KeyIncusSocket:             "INCUS_GH_RUNNER_INCUS_SOCKET",
+		KeyIncusProject:            "INCUS_GH_RUNNER_INCUS_PROJECT",
+		KeyIncusImage:              "INCUS_GH_RUNNER_INCUS_IMAGE",
+		KeyIncusOwner:              "INCUS_GH_RUNNER_INCUS_OWNER",
+		KeyIncusBootstrapTimeout:   "INCUS_GH_RUNNER_INCUS_BOOTSTRAP_TIMEOUT",
+		KeyIncusDiagnosticsDir:     "INCUS_GH_RUNNER_INCUS_DIAGNOSTICS_DIR",
 	}
 	for key, name := range environment {
 		if err := vp.BindEnv(key, name); err != nil {
@@ -99,6 +191,8 @@ func ConfigureViper(vp *viper.Viper) error {
 // Defaults returns the phase 1 controller defaults.
 func Defaults() Config {
 	return Config{
+		GitHub: GitHub{RunnerGroup: defaultRunnerGroup},
+		Incus:  Incus{BootstrapTimeout: defaultBootstrapTimeout},
 		Capacity: Capacity{
 			MinRunners: 0,
 			MaxRunners: defaultMaxRunners,
@@ -118,11 +212,94 @@ func Load(vp *viper.Viper) (Config, error) {
 	if err := vp.Unmarshal(&cfg); err != nil {
 		return Config{}, fmt.Errorf("decode configuration: %w", err)
 	}
+	cfg.GitHub.Token = strings.TrimSpace(os.Getenv(EnvGitHubToken))
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
 
 	return cfg, nil
+}
+
+// ValidateRuntime checks the external adapter settings needed by the executable.
+func (c Config) ValidateRuntime() error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if err := validateGitHub(c.GitHub); err != nil {
+		return err
+	}
+	return validateIncus(c.Incus)
+}
+
+// validateGitHub checks scale-set identity and exactly one complete credential type.
+func validateGitHub(settings GitHub) error {
+	if err := validateConfigURL(settings.ConfigURL); err != nil {
+		return err
+	}
+	if strings.TrimSpace(settings.ScaleSet) == "" {
+		return errors.New("github.scale_set is required")
+	}
+	if strings.TrimSpace(settings.RunnerGroup) == "" {
+		return errors.New("github.runner_group is required")
+	}
+
+	appConfigured := settings.App.ClientID != "" ||
+		settings.App.InstallationID != 0 ||
+		settings.App.PrivateKeyFile != ""
+	tokenConfigured := settings.Token != ""
+	if appConfigured && tokenConfigured {
+		return errors.New("configure either github.app or INCUS_GH_RUNNER_GITHUB_TOKEN, not both")
+	}
+	if !appConfigured && !tokenConfigured {
+		return errors.New("github credentials are required")
+	}
+	if !appConfigured {
+		return nil
+	}
+	if strings.TrimSpace(settings.App.ClientID) == "" {
+		return errors.New("github.app.client_id is required")
+	}
+	if settings.App.InstallationID <= 0 {
+		return errors.New("github.app.installation_id must be positive")
+	}
+	if strings.TrimSpace(settings.App.PrivateKeyFile) == "" {
+		return errors.New("github.app.private_key_file is required")
+	}
+
+	return nil
+}
+
+// validateIncus checks preconfigured environment references and lifecycle settings.
+func validateIncus(settings Incus) error {
+	if strings.TrimSpace(settings.Project) == "" {
+		return errors.New("incus.project is required")
+	}
+	if strings.TrimSpace(settings.Image) == "" {
+		return errors.New("incus.image is required")
+	}
+	if strings.TrimSpace(settings.Owner) == "" {
+		return errors.New("incus.owner is required")
+	}
+	if settings.BootstrapTimeout <= 0 {
+		return errors.New("incus.bootstrap_timeout must be positive")
+	}
+	for _, profile := range settings.Profiles {
+		if strings.TrimSpace(profile) == "" {
+			return errors.New("incus.profiles must not contain empty names")
+		}
+	}
+
+	return nil
+}
+
+// validateConfigURL checks that the GitHub registration target is an absolute HTTP URL.
+func validateConfigURL(raw string) error {
+	parsed, err := url.ParseRequestURI(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		return errors.New("github.config_url must be an absolute HTTP URL")
+	}
+
+	return nil
 }
 
 // Validate checks controller configuration invariants.
