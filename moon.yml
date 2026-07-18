@@ -35,6 +35,8 @@ fileGroups:
     - 'release-please-config.json'
     - '.release-please-manifest.json'
     - '.github/workflows.disabled/**/*.yml'
+  imageSources:
+    - 'image/**/*'
 
 workspace:
   inheritedTasks:
@@ -77,11 +79,22 @@ tasks:
       - 'root:lint'
       - 'root:build'
       - 'root:test'
+      - 'root:image-contract-test'
       - 'docs:build'
     inputs:
       - '@group(goSources)'
       - '@group(lintConfig)'
       - '@group(releaseConfig)'
+    options:
+      cache: false
+      runInCI: true
+
+  image-contract-test:
+    command: 'bash image/tests/guest-entrypoint-test.sh'
+    inputs:
+      - '@group(imageSources)'
+      - 'mise.toml'
+      - 'mise.lock'
     options:
       cache: false
       runInCI: true

@@ -5,10 +5,11 @@ Actions jobs in Incus virtual machines. The controller will consume GitHub
 runner scale-set demand, maintain a bounded pool of hot standby runners, and
 delete each VM after its one assigned job.
 
-The phase 1 controller core now reconciles coalesced demand through a bounded
-worker pool using explicit demand-source and runner-backend ports. Typed startup
-configuration and signal-aware supervision are in place. Real GitHub and Incus
-lifecycle adapters are intentionally not wired into the executable yet.
+The phase 1 controller core reconciles coalesced demand through a bounded worker
+pool using explicit demand-source and runner-backend ports. Phase 2 adds a
+checksummed, offline-built reference VM image and a versioned one-shot guest
+contract. Real GitHub and Incus lifecycle adapters are intentionally not wired
+into the executable yet.
 
 ## v1 boundaries
 
@@ -64,6 +65,17 @@ file, then defaults. `--config` selects a required file; otherwise
 `INCUS_GH_RUNNER_CAPACITY_MAX_RUNNERS`.
 
 CI runs the same aggregate gate with `moon ci --summary minimal`.
+
+## Reference runner image
+
+The `image/` tree defines an Ubuntu 24.04 x86_64 Incus VM with a pinned Actions
+Runner and a one-shot systemd guest service. The hosted `Reference Image`
+workflow proves that distrobuilder can assemble the unified VM artifact without
+starting a VM or requiring KVM acceleration. Real boot validation remains a
+separate Incus-capable functional gate.
+
+See the [reference image and guest contract](https://meigma.github.io/incus-gh-runner/reference-image/)
+for the payload, readiness, diagnostic, cleanup, and poweroff behavior.
 
 The integration seams pin
 [`actions/scaleset`](https://github.com/actions/scaleset) and the

@@ -35,6 +35,7 @@ theme:
 
 nav:
   - Home: index.md
+  - Reference runner image: reference-image.md
 
 plugins:
   - search
