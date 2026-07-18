@@ -14,3 +14,6 @@ Inspection found that the initial GitHub message-session preflight was fail-fast
 
 ## 2026-07-18 11:57 — Exact-head hosted verification
 PR #16 exact head `3f280476cd885f67f41a2e67b94e08dac7d7f392` passed hosted CI run `29656843615`, GitHub Pages, and Kusari Inspector. The slice is ready for review; it has not been merged.
+
+## 2026-07-18 12:03 — Reconnect and bounded-supervision slices merged
+PR #16 was squash-merged as `a76994b`. A second phase 6 slice on PR #17 added application-level shutdown escalation: after cancellation, the supervisor now waits across the controller's graceful and forced-cancellation windows, then returns `app.ErrShutdownTimeout` if a long-lived component still has not stopped. This prevents a cancellation-ignoring demand source from wedging the process forever and preserves the triggering component error on unsolicited failure. PR #17 exact head `141c297b36a0397e39733d1f7ffeb99571390b46` passed hosted CI run `29657015485`, GitHub Pages, and Kusari Inspector, then squash-merged as `439ca19`. Both implementation worktrees and remote feature branches were removed; local `master` is clean and synchronized.
