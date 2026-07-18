@@ -10,8 +10,11 @@ description: Incus-backed ephemeral GitHub Actions runners.
 Actions runners in Incus virtual machines.
 
 Phase 1 provides the typed configuration, signal-aware application supervisor,
-coalesced demand reconciliation, and bounded runner-operation core. GitHub and
-Incus lifecycle integration follows in later evidence-producing slices.
+coalesced demand reconciliation, and bounded runner-operation core. Phase 2
+adds the reference VM and one-shot guest contract. Phase 3 adds ownership-scoped
+Incus inventory and the real create, start, guest-payload, observation,
+diagnostic, and delete lifecycle. GitHub scale-set demand and genuine JIT
+registration remain the next integration boundary.
 
 The current repository foundation provides the renamed CLI, locked development
 toolchain, CI gates, and isolated GitHub and Incus client adapters. Controller,

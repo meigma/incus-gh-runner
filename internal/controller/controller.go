@@ -96,6 +96,7 @@ func (c *Controller) Run(ctx context.Context) error {
 				state.reconcile(work)
 			}
 		case <-ticker.C:
+			state.refresh(work)
 			state.reconcile(work)
 		}
 	}
@@ -127,6 +128,8 @@ func (c *Controller) runWorker(
 		operationContext, cancel := context.WithTimeout(ctx, c.options.OperationTimeout)
 		result := operationResult{operation: item}
 		switch item.kind {
+		case operationList:
+			result.runners, result.err = c.options.Backend.ListOwned(operationContext)
 		case operationCreate:
 			result.runner, result.err = c.options.Backend.Create(operationContext)
 		case operationDelete:
@@ -170,6 +173,7 @@ func (c *Controller) waitForWorkers(workers *sync.WaitGroup, cancelOperations co
 type operationKind string
 
 const (
+	operationList   operationKind = "list"
 	operationCreate operationKind = "create"
 	operationDelete operationKind = "delete"
 )
@@ -184,6 +188,7 @@ type operation struct {
 // operationResult carries a backend lifecycle outcome to the reconciler.
 type operationResult struct {
 	operation operation
+	runners   []Runner
 	runner    Runner
 	err       error
 }
@@ -225,8 +230,21 @@ func (s *reconcileState) setDemand(demand Demand) {
 	s.options.Logger.Info("runner demand updated", "assigned_jobs", assignedJobs, "target", s.target)
 }
 
+// refresh schedules a new owned-runner inventory when no lifecycle operation is in flight.
+func (s *reconcileState) refresh(work chan<- operation) {
+	if len(s.operations) != 0 {
+		return
+	}
+
+	s.trySchedule(work, operation{kind: operationList})
+}
+
 // reconcile schedules the operations needed to move current capacity toward the target.
 func (s *reconcileState) reconcile(work chan<- operation) {
+	if s.inventorying() {
+		return
+	}
+
 	for id, runner := range s.runners {
 		if runner.State == RunnerTerminal {
 			s.trySchedule(work, operation{kind: operationDelete, runnerID: id})
@@ -301,6 +319,17 @@ func (s *reconcileState) apply(result operationResult) bool {
 	}
 
 	switch item.kind {
+	case operationList:
+		inventory, err := validatedInventory(result.runners)
+		if err != nil {
+			s.options.Logger.Warn(
+				"runner inventory returned invalid state",
+				"operation_id", item.id,
+				"error", err,
+			)
+			return false
+		}
+		s.runners = inventory
 	case operationCreate:
 		if err := validateRunner(result.runner); err != nil {
 			s.options.Logger.Warn(
@@ -326,6 +355,30 @@ func (s *reconcileState) apply(result operationResult) bool {
 		"runner_id", runnerID,
 	)
 	return true
+}
+
+// inventorying reports whether a refresh currently owns the observed-state boundary.
+func (s *reconcileState) inventorying() bool {
+	for _, item := range s.operations {
+		if item.kind == operationList {
+			return true
+		}
+	}
+
+	return false
+}
+
+// validatedInventory converts an observed snapshot into reconciler-owned state.
+func validatedInventory(runners []Runner) (map[string]Runner, error) {
+	inventory := make(map[string]Runner, len(runners))
+	for _, runner := range runners {
+		if err := validateRunner(runner); err != nil {
+			return nil, fmt.Errorf("inventory owned runner: %w", err)
+		}
+		inventory[runner.ID] = runner
+	}
+
+	return inventory, nil
 }
 
 // liveCapacity counts usable and in-flight capacity after scheduled deletions.
