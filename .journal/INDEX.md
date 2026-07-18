@@ -10,3 +10,4 @@
 | 006 | 2026-07-17 | Continue phase 4 GitHub lifecycle | complete | Landed the real GitHub scale-set/JIT lifecycle and proved one genuine job through a disposable Incus 7 VM with exact cleanup. |
 | 007 | 2026-07-17 | Package hosting proposal | in-progress | Draft and review the meigma-wide signed apt/yum package hosting proposal (Cloudflare R2 + pkgs.meigma.dev) for incus-gh-runner and future projects. |
 | 008 | 2026-07-18 | Continue phase 5 hot pool recovery | complete | Proved live hot-standby replacement and restart safety while carrying bounded concurrent and edge-state live gates forward. |
+| 009 | 2026-07-18 | Continue phase 6 service hardening | in-progress | Harden the controller's systemd, timeout, outage, signal, and protected deployment behavior from observed failure paths. |
