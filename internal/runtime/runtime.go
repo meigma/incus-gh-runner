@@ -26,10 +26,9 @@ type BuildInfo struct {
 	Commit string
 }
 
-// components contains the prepared production application and its external session.
+// components contains the prepared production application and resolved scale-set identity.
 type components struct {
 	application *app.Application
-	session     *scaleset.MessageSessionClient
 	scaleSetID  int
 }
 
@@ -64,8 +63,6 @@ func Run(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.L
 	if prepareErr != nil {
 		return prepareErr
 	}
-	defer closeMessageSession(prepared.session, cfg.Timeouts.Shutdown, logger)
-
 	logger.InfoContext(
 		ctx,
 		"incus-gh-runner started",
@@ -100,18 +97,21 @@ func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *sl
 	payloads.scaleSet = resolved
 
 	sessionOwner := resolveSessionOwner(ctx, logger)
-	session, sessionErr := githubClient.MessageSessionClient(ctx, resolved.ID(), sessionOwner)
-	if sessionErr != nil {
-		return nil, fmt.Errorf("create GitHub message session: %w", sessionErr)
-	}
-	demandSource, sourceErr := githubadapter.NewDemandSource(session, githubadapter.DemandSourceOptions{
-		ScaleSetID: resolved.ID(),
-		MinRunners: cfg.Capacity.MinRunners,
-		MaxRunners: cfg.Capacity.MaxRunners,
-		Logger:     logger.WithGroup("github_listener"),
-	})
+	demandSource, sourceErr := githubadapter.NewResilientDemandSource(
+		ctx,
+		githubClient,
+		sessionOwner,
+		githubadapter.DemandSourceOptions{
+			ScaleSetID:          resolved.ID(),
+			MinRunners:          cfg.Capacity.MinRunners,
+			MaxRunners:          cfg.Capacity.MaxRunners,
+			Logger:              logger.WithGroup("github_listener"),
+			ReconnectInitial:    cfg.Retry.Initial,
+			ReconnectMaximum:    cfg.Retry.Maximum,
+			SessionCloseTimeout: cfg.Timeouts.Shutdown,
+		},
+	)
 	if sourceErr != nil {
-		closeMessageSession(session, cfg.Timeouts.Shutdown, logger)
 		return nil, sourceErr
 	}
 	application, applicationErr := app.New(app.Options{
@@ -121,11 +121,11 @@ func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *sl
 		Logger:        logger.WithGroup("controller"),
 	})
 	if applicationErr != nil {
-		closeMessageSession(session, cfg.Timeouts.Shutdown, logger)
+		closePreparedDemandSource(demandSource, cfg.Timeouts.Shutdown, logger)
 		return nil, fmt.Errorf("construct application: %w", applicationErr)
 	}
 
-	return &components{application: application, session: session, scaleSetID: resolved.ID()}, nil
+	return &components{application: application, scaleSetID: resolved.ID()}, nil
 }
 
 // newIncusBackend constructs and preflights the ownership-scoped VM lifecycle adapter.
@@ -239,11 +239,15 @@ func newGitHubClient(settings config.GitHub, build BuildInfo) (*scaleset.Client,
 	return client, nil
 }
 
-// closeMessageSession closes the active session within a bounded fresh context.
-func closeMessageSession(session *scaleset.MessageSessionClient, timeout time.Duration, logger *slog.Logger) {
+// closePreparedDemandSource releases an unused startup session within a bounded fresh context.
+func closePreparedDemandSource(
+	source *githubadapter.ResilientDemandSource,
+	timeout time.Duration,
+	logger *slog.Logger,
+) {
 	closeContext, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	if err := session.Close(closeContext); err != nil {
+	if err := source.Close(closeContext); err != nil {
 		logger.Warn("failed to close GitHub message session", "error", err)
 	}
 }

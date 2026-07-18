@@ -13,8 +13,9 @@ for create, start, payload injection, observation, diagnostics, and deletion.
 Phase 4 wires persistent GitHub scale-set resolution, message polling, demand
 statistics, and fresh per-VM JIT configuration into that lifecycle.
 The phase 4 hardware proof ran one genuine job on Incus 7.2 and returned the
-owned inventory to zero. Phase 5 is proving hot standby, replacement, bounded
-concurrent demand, and restart reconciliation.
+owned inventory to zero. Phase 5 proved hot-standby replacement and restart
+reconciliation for the primary live path. Phase 6 is hardening unattended
+service behavior, beginning with bounded GitHub message-session recovery.
 
 ## v1 boundaries
 
@@ -71,6 +72,9 @@ reconcile_interval: 1s
 timeouts:
   incus_operation: 5m
   shutdown: 30s
+retry:
+  initial: 1s
+  maximum: 30s
 ```
 
 Configuration precedence is flags, environment variables, the selected YAML
@@ -85,6 +89,13 @@ path accepts a PAT only through `INCUS_GH_RUNNER_GITHUB_TOKEN`; the token is not
 decoded from YAML and has no CLI flag. The process resolves or creates the
 configured scale set and leaves that persistent scale set in place across
 controller restarts.
+
+Startup still fails fast when the initial GitHub message session cannot be
+opened. After startup, a listener or session failure closes the old session and
+creates a fresh one using capped exponential backoff. Successful GitHub polling,
+including a healthy long-poll expiry with no message, resets the delay to
+`retry.initial`; `retry.maximum` prevents a prolonged outage from producing an
+unbounded retry interval.
 
 CI runs the same aggregate gate with `moon ci --summary minimal`.
 
