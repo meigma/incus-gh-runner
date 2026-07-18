@@ -27,6 +27,45 @@ day.
 An offline build proves construction only. Boot and guest-lifecycle validation
 must run separately against a disposable Incus project.
 
+## Release artifact
+
+Each tagged release builds the reference image from the tagged source and adds
+these versioned assets to the draft GitHub release:
+
+```text
+incus-gh-runner-reference-image_<version>_ubuntu-24.04_x86_64.tar.xz
+incus-gh-runner-reference-image_<version>_ubuntu-24.04_x86_64.tar.xz.sha256
+```
+
+The release workflow verifies the build-generated checksum, stages the
+versioned archive, checks the qcow2 format and 8 GiB virtual size, and records
+GitHub build provenance for the archive through the isolated attestation
+workflow. Release PRs execute the same construction and inspection path without
+uploading an asset.
+
+Download and verify a published image before importing it:
+
+```sh
+version=0.1.0
+tag="v${version}"
+asset="incus-gh-runner-reference-image_${version}_ubuntu-24.04_x86_64.tar.xz"
+
+gh release download "$tag" \
+  --repo meigma/incus-gh-runner \
+  --pattern "$asset" \
+  --pattern "$asset.sha256"
+sha256sum --check "$asset.sha256"
+gh attestation verify "$asset" \
+  --repo meigma/incus-gh-runner \
+  --signer-workflow meigma/incus-gh-runner/.github/workflows/attest.yml \
+  --source-ref "refs/tags/$tag" \
+  --deny-self-hosted-runners
+```
+
+The checksum detects transfer corruption, while the attestation binds the
+archive digest to the repository, tag, and isolated release builder. Boot
+validation below remains the functional acceptance gate.
+
 ## Incus boot validation
 
 On an Incus-capable host, validate the built artifact against an explicitly

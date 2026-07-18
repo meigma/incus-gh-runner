@@ -173,6 +173,120 @@ jobs:
     with:
       checksums-artifact: release-checksums
 
+  reference-image-release:
+    name: Reference Image Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    needs:
+      - resolve-release
+    permissions:
+      contents: write
+    outputs:
+      asset: ${{ steps.stage.outputs.asset }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check out requested tag
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          RELEASE_TAG: ${{ needs.resolve-release.outputs.tag }}
+        run: git checkout --detach "$RELEASE_TAG"
+
+      - name: Install distrobuilder VM dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            btrfs-progs \
+            build-essential \
+            debootstrap \
+            dosfstools \
+            genisoimage \
+            gpg \
+            libwin-hivex-perl \
+            qemu-kvm \
+            rsync \
+            squashfs-tools \
+            wimtools
+
+      - name: Setup mise
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: 2026.6.14
+          cache: false
+
+      - name: Build unified Incus VM image
+        run: mise exec -- image/build.sh build/reference-image
+
+      - name: Stage versioned reference-image assets
+        id: stage
+        env:
+          RELEASE_TAG: ${{ needs.resolve-release.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.resolve-release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          python3 .github/scripts/stage_reference_image_release.py --tag "$RELEASE_TAG"
+          asset="incus-gh-runner-reference-image_${RELEASE_VERSION}_ubuntu-24.04_x86_64.tar.xz"
+          archive="dist/reference-image/${asset}"
+          test -s "$archive"
+          test -s "${archive}.sha256"
+          test -s dist/reference-image/checksums.txt
+
+          echo "asset=${asset}" >> "$GITHUB_OUTPUT"
+          echo "archive=${archive}" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect staged image artifact
+        env:
+          ARCHIVE: ${{ steps.stage.outputs.archive }}
+        run: |
+          set -euo pipefail
+
+          (
+            cd "$(dirname "$ARCHIVE")"
+            sha256sum --check "$(basename "$ARCHIVE").sha256"
+          )
+
+          mkdir -p build/reference-image-inspection
+          tar --extract --xz --file "$ARCHIVE" \
+            --directory build/reference-image-inspection \
+            metadata.yaml rootfs.img
+          qemu-img info --output=json build/reference-image-inspection/rootfs.img \
+            >build/reference-image-inspection/qemu-info.json
+          jq --exit-status \
+            '.format == "qcow2" and .["virtual-size"] == 8589934592' \
+            build/reference-image-inspection/qemu-info.json >/dev/null
+
+      - name: Upload assets to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-release.outputs.tag }}
+          ARCHIVE: ${{ steps.stage.outputs.archive }}
+        run: gh release upload "$RELEASE_TAG" "$ARCHIVE" "${ARCHIVE}.sha256" --clobber
+
+      - name: Upload checksums for isolated attestation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reference-image-checksums
+          path: dist/reference-image/checksums.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  attest-reference-image:
+    needs:
+      - reference-image-release
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+      packages: write
+    uses: ./.github/workflows/attest.yml
+    with:
+      checksums-artifact: reference-image-checksums
+
   # Build the per-arch signed apk on a native runner (no QEMU). Each runner mints
   # its own ephemeral melange key (distinct filename) and uploads its apk plus its
   # PUBLIC key; the private key never leaves the runner.
@@ -415,6 +529,8 @@ jobs:
       - container-image-release
       - attest-binaries
       - attest-image
+      - reference-image-release
+      - attest-reference-image
     permissions: {}
     steps:
       - name: Write inspection summary
@@ -423,6 +539,7 @@ jobs:
           RELEASE_VERSION: ${{ needs.resolve-release.outputs.version }}
           IMAGE_NAME: ${{ needs.container-image-release.outputs.image-name }}
           IMAGE_DIGEST: ${{ needs.container-image-release.outputs.image-digest }}
+          REFERENCE_IMAGE_ASSET: ${{ needs.reference-image-release.outputs.asset }}
         run: |
           {
             echo "## Draft release ready for inspection"
@@ -446,6 +563,15 @@ jobs:
             echo "docker run --rm \"${IMAGE_NAME}:${RELEASE_TAG}\" --version"
             echo "gh attestation verify \"oci://${IMAGE_NAME}@${IMAGE_DIGEST}\" --repo \"$GITHUB_REPOSITORY\" --signer-workflow \"$GITHUB_REPOSITORY/.github/workflows/attest.yml\" --source-ref \"refs/tags/$RELEASE_TAG\" --deny-self-hosted-runners"
             echo "cosign verify \"${IMAGE_NAME}@${IMAGE_DIGEST}\" --certificate-identity-regexp \"^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@.*\" --certificate-oidc-issuer https://token.actions.githubusercontent.com"
+            echo '```'
+            echo
+            echo "Reference image verification commands:"
+            echo
+            echo '```sh'
+            echo "gh release download $RELEASE_TAG --repo $GITHUB_REPOSITORY --pattern \"$REFERENCE_IMAGE_ASSET\" --pattern \"$REFERENCE_IMAGE_ASSET.sha256\""
+            echo "sha256sum --check \"$REFERENCE_IMAGE_ASSET.sha256\""
+            echo "gh attestation verify \"$REFERENCE_IMAGE_ASSET\" --repo \"$GITHUB_REPOSITORY\" --signer-workflow \"$GITHUB_REPOSITORY/.github/workflows/attest.yml\" --source-ref \"refs/tags/$RELEASE_TAG\" --deny-self-hosted-runners"
+            echo "image/validate-incus.sh <disposable-project> \"$REFERENCE_IMAGE_ASSET\""
             echo '```'
             echo
             echo "Publish or reject the draft release manually after inspection. The container image is already available at ${IMAGE_NAME}:${RELEASE_TAG} because GHCR does not have a draft release state."

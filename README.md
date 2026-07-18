@@ -216,9 +216,19 @@ and a correlation manifest in the evidence directory.
 
 ## Packaging
 
-The repository retains its GoReleaser binary path and melange/apko container
-path. These assets are renamed for `incus-gh-runner`, but they are not considered
-release-proven until the v1 packaging phase exercises them.
+Release Please prepares version bumps, tags, and a draft GitHub release. The
+tag-triggered release workflow then builds and attests four GoReleaser binaries,
+publishes and signs the multi-architecture controller OCI image, and attaches a
+versioned Incus reference-image archive plus checksum to that draft. The draft
+remains a deliberate human publication decision after the workflow inspection
+summary has been reviewed.
+
+Release PRs rehearse the controller binary, OCI image, and reference VM build
+paths without uploading GitHub release assets. See the
+[reference-image release instructions](https://meigma.github.io/incus-gh-runner/reference-image/#release-artifact)
+for download, checksum, provenance, and Incus boot verification commands. The
+first public v1 release remains pending until the complete phase 7 acceptance
+scenario succeeds.
 
 ## Contributing and security
 

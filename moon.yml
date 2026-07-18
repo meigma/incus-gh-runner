@@ -34,7 +34,8 @@ fileGroups:
     - 'ghd.toml'
     - 'release-please-config.json'
     - '.release-please-manifest.json'
-    - '.github/workflows.disabled/**/*.yml'
+    - '.github/scripts/**/*.py'
+    - '.github/workflows/**/*.yml'
   imageSources:
     - 'image/**/*'
   systemdSources:
@@ -82,6 +83,7 @@ tasks:
       - 'root:build'
       - 'root:test'
       - 'root:image-contract-test'
+      - 'root:release-config-test'
       - 'root:systemd-unit-test'
       - 'docs:build'
     inputs:
@@ -98,6 +100,14 @@ tasks:
       - '@group(imageSources)'
       - 'mise.toml'
       - 'mise.lock'
+    options:
+      cache: false
+      runInCI: true
+
+  release-config-test:
+    command: "python -m unittest discover -s .github/scripts -p 'test_*.py'"
+    inputs:
+      - '@group(releaseConfig)'
     options:
       cache: false
       runInCI: true
