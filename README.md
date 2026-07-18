@@ -12,6 +12,9 @@ contract. Phase 3 adds periodic ownership inventory and the real Incus backend
 for create, start, payload injection, observation, diagnostics, and deletion.
 Phase 4 wires persistent GitHub scale-set resolution, message polling, demand
 statistics, and fresh per-VM JIT configuration into that lifecycle.
+The phase 4 hardware proof ran one genuine job on Incus 7.2 and returned the
+owned inventory to zero. Phase 5 is proving hot standby, replacement, bounded
+concurrent demand, and restart reconciliation.
 
 ## v1 boundaries
 
@@ -158,6 +161,29 @@ assembles the transfer bundle under `build/live-phase4`. On a fresh Ubuntu
 24.04 Incus-capable host, `phase4-host-prepare.sh` installs the native Incus and
 QEMU packages, creates a non-default project, and runs the phase 2 and phase 3
 live gates before the controller is started for the genuine phase 4 job.
+
+The phase 5 hot-standby harness starts the controller, waits for GitHub to
+report exactly one connected idle runner, dispatches a held one-shot job,
+observes that runner become busy and a different idle replacement connect,
+then verifies job success and exact deletion. It restarts around the idle
+replacement and its cleanup job before returning the scale set and Incus
+inventory to zero. Use a dedicated repository scale set with
+`min_runners: 1`, `max_runners: 2`, and at least two Incus operations:
+
+```sh
+INCUS_GH_RUNNER_GITHUB_TOKEN="$(gh auth token)" \
+scripts/live/phase5-hot-standby.sh \
+  meigma/incus-gh-runner \
+  incus-gh-runner-phase5 \
+  /path/to/incus-gh-runner \
+  /path/to/config.yaml \
+  /var/log/incus-gh-runner/phase5-hot-standby
+```
+
+The token must be able to run workflows and list repository self-hosted
+runners. The harness preserves controller logs from each process lifetime,
+runner snapshots, workflow output, and a correlation manifest in the evidence
+directory.
 
 ## Packaging
 

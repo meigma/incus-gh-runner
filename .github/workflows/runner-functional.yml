@@ -1,4 +1,5 @@
 name: Runner Functional Proof
+run-name: Phase 5 runner proof (${{ inputs.proof_id }})
 
 on:
   workflow_dispatch:
@@ -7,11 +8,21 @@ on:
         description: Exact label of the disposable runner scale set
         required: true
         type: string
+      proof_id:
+        description: Correlation ID for the live proof
+        required: false
+        default: manual
+        type: string
+      hold_seconds:
+        description: Seconds to keep the runner busy for lifecycle observation
+        required: false
+        default: 0
+        type: number
 
 permissions: {}
 
 concurrency:
-  group: runner-functional-${{ inputs.runner_label }}
+  group: runner-functional-${{ inputs.runner_label }}-${{ inputs.proof_id }}
   cancel-in-progress: false
 
 jobs:
@@ -23,6 +34,9 @@ jobs:
     steps:
       - name: Prove the disposable Linux runner
         shell: bash
+        env:
+          HOLD_SECONDS: ${{ inputs.hold_seconds }}
+          PROOF_ID: ${{ inputs.proof_id }}
         run: |
           set -euo pipefail
 
@@ -36,4 +50,9 @@ jobs:
             "$GITHUB_RUN_ATTEMPT" \
             "$RUNNER_NAME" \
             >"$proof_dir/evidence.txt"
+          printf 'proof_id=%s\n' "$PROOF_ID" >>"$proof_dir/evidence.txt"
+          [[ "$HOLD_SECONDS" =~ ^[0-9]+$ ]]
+          if (( HOLD_SECONDS > 0 )); then
+            sleep "$HOLD_SECONDS"
+          fi
           sha256sum "$proof_dir/evidence.txt"
