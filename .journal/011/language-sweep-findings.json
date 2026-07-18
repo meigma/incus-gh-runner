@@ -1,0 +1,906 @@
+{
+  "leftover": [
+    {
+      "file": "README.md",
+      "line": 8,
+      "quote": "The phase 1 controller core reconciles coalesced demand through a bounded worker",
+      "verdict": "leftover",
+      "rationale": "Narrates build history by numbered development phase. A first-time user has no context for 'phase 1' and it exposes internal staging.",
+      "suggested_action": "Rewrite the entire intro paragraph (lines 8-19) in present tense as a flat feature list with no phase numbers: the controller reconciles coalesced demand through a bounded worker pool via explicit demand-source and runner-backend ports; ships a checksummed offline-built reference VM image and a versioned one-shot guest contract; runs periodic ownership inventory over an Incus backend (create/start/payload injection/observation/diagnostics/deletion); resolves a persistent GitHub scale set with message polling, demand statistics, and per-VM JIT config; supports hot-standby replacement and restart reconciliation; and hardens unattended operation with GitHub session recovery, bounded shutdown escalation, and a protected systemd deployment.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 9,
+      "quote": "pool using explicit demand-source and runner-backend ports. Phase 2 adds a",
+      "verdict": "leftover",
+      "rationale": "'Phase 2' is a build milestone; the reference image and guest contract are shipped features.",
+      "suggested_action": "Folded into the rewritten paragraph above; drop 'Phase 2 adds' and state the reference VM image and one-shot guest contract as existing capabilities.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 11,
+      "quote": "contract. Phase 3 adds periodic ownership inventory and the real Incus backend",
+      "verdict": "leftover",
+      "rationale": "'Phase 3' is a build milestone; ownership inventory and the Incus backend are shipped.",
+      "suggested_action": "Drop 'Phase 3 adds'; describe periodic ownership inventory and the Incus backend as present features. Also drop 'real' (contrasts with an earlier fake backend \u2014 internal framing).",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 13,
+      "quote": "Phase 4 wires persistent GitHub scale-set resolution, message polling, demand",
+      "verdict": "leftover",
+      "rationale": "'Phase 4' is a build milestone; scale-set resolution and polling are shipped.",
+      "suggested_action": "Drop 'Phase 4 wires'; describe persistent scale-set resolution, message polling, demand statistics, and per-VM JIT configuration as present features.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 15,
+      "quote": "The phase 4 hardware proof ran one genuine job on Incus 7.2 and returned the",
+      "verdict": "leftover",
+      "rationale": "Describes a one-off internal hardware-proof milestone; a fresh reader has no use for this build history.",
+      "suggested_action": "Delete the sentence (lines 15-16 through 'zero.'), or replace with a general validation statement such as 'The controller has been validated end-to-end against Incus 7.2.'",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 16,
+      "quote": "owned inventory to zero. Phase 5 proved hot-standby replacement and restart",
+      "verdict": "leftover",
+      "rationale": "'Phase 5 proved' frames hot-standby replacement as a phase validation event rather than product behavior.",
+      "suggested_action": "Remove 'Phase 5 proved'; state that the controller performs hot-standby replacement and restart reconciliation on the primary live path.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 17,
+      "quote": "reconciliation for the primary live path. Phase 6 hardens unattended operation",
+      "verdict": "leftover",
+      "rationale": "'Phase 6' is a build milestone.",
+      "suggested_action": "Remove 'Phase 6 hardens'; describe unattended-operation hardening (GitHub session recovery, bounded shutdown escalation, protected systemd deployment) as present features.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 58,
+      "quote": "  scale_set: incus-gh-runner-phase4",
+      "verdict": "leftover",
+      "rationale": "Config example reuses a phase-numbered scale-set name from internal testing.",
+      "suggested_action": "Rename to a generic example, e.g. 'scale_set: incus-gh-runner-example' (or 'my-runners'). Keep it consistent with the owner value on line 64.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 64,
+      "quote": "  owner: incus-gh-runner-phase4",
+      "verdict": "leftover",
+      "rationale": "Config example reuses the phase-numbered owner tag.",
+      "suggested_action": "Rename to match the example scale set, e.g. 'owner: incus-gh-runner-example'.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 88,
+      "quote": "The initial development",
+      "verdict": "leftover",
+      "rationale": "'The initial development path' frames PAT auth as a temporary/dev-only stopgap rather than a supported testing mode; the quote begins at the end of line 88 and the clause continues on line 89.",
+      "suggested_action": "Rewrite lines 88-90 as e.g. 'A personal access token supplied through INCUS_GH_RUNNER_GITHUB_TOKEN is also accepted for local testing; the token is not decoded from YAML and has no CLI flag.'",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 153,
+      "quote": "INCUS_GH_RUNNER_TEST_GITHUB_SCALE_SET=incus-gh-runner-phase4 \\",
+      "verdict": "leftover",
+      "rationale": "Test command example uses a phase-numbered scale-set name.",
+      "suggested_action": "Rename to a generic test name, e.g. 'incus-gh-runner-test'.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 160,
+      "quote": "phase 2 reference image to be imported already:",
+      "verdict": "leftover",
+      "rationale": "Refers to the reference image by its development phase number.",
+      "suggested_action": "Rewrite as 'expects the reference image to be imported already:'.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 180,
+      "quote": "scripts/live/phase4-prepare.sh",
+      "verdict": "leftover",
+      "rationale": "Documented command points at a phase-numbered script that actually exists on disk (scripts/live/phase4-prepare.sh), exposing build-phase scaffolding as a user-facing command.",
+      "suggested_action": "Rename the on-disk script (e.g. scripts/live/runner-proof-prepare.sh) and update this reference to match. The reference alone cannot be changed without renaming the file \u2014 verified scripts/live/phase4-prepare.sh exists.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 183,
+      "quote": "That command cross-compiles the controller and phase 3 functional test, starts",
+      "verdict": "leftover",
+      "rationale": "'phase 3 functional test' is a build-process artifact name.",
+      "suggested_action": "Rewrite as 'cross-compiles the controller and the Incus lifecycle functional test'.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 185,
+      "quote": "assembles the transfer bundle under `build/live-phase4`. On a fresh Ubuntu",
+      "verdict": "leftover",
+      "rationale": "Build output directory is phase-numbered, leaking internal staging structure.",
+      "suggested_action": "Rename the build output directory in the script and docs to a non-phased name, e.g. 'build/live-runner-proof', and update this reference to match.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 186,
+      "quote": "24.04 Incus-capable host, `phase4-host-prepare.sh` installs the native Incus and",
+      "verdict": "leftover",
+      "rationale": "References a phase-numbered script filename that exists on disk (scripts/live/phase4-host-prepare.sh).",
+      "suggested_action": "Rename the on-disk script (e.g. host-prepare.sh) and update this reference to match. Verified the file exists.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 187,
+      "quote": "QEMU packages, creates a non-default project, and runs the phase 2 and phase 3",
+      "verdict": "leftover",
+      "rationale": "'phase 2 and phase 3 live gates' are development checkpoints.",
+      "suggested_action": "Rewrite as 'runs the reference-image and Incus lifecycle live gates'.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 188,
+      "quote": "live gates before the controller is started for the genuine phase 4 job.",
+      "verdict": "leftover",
+      "rationale": "'genuine phase 4 job' refers to a historical hardware-proof milestone.",
+      "suggested_action": "Rewrite as 'before the controller is started to run a real job.'",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 190,
+      "quote": "The phase 5 hot-standby harness starts the controller, waits for GitHub to",
+      "verdict": "leftover",
+      "rationale": "Labels the hot-standby test harness with a phase number; the remainder of the paragraph (through line 215) continues the same proof narrative with 'proven', 'proves', and 'evidence directory'.",
+      "suggested_action": "Rewrite as 'The hot-standby harness starts the controller, ...'. When rewriting, also neutralize the phase framing carried through lines 200-215 (script name, scale-set arg, run id, log path below) and de-emphasize the proof/evidence wording so the whole block reads as an operational test description.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 200,
+      "quote": "scripts/live/phase5-hot-standby.sh \\",
+      "verdict": "leftover",
+      "rationale": "Documented command points at a phase-numbered script that exists on disk (scripts/live/phase5-hot-standby.sh).",
+      "suggested_action": "Rename the on-disk script (e.g. scripts/live/hot-standby-proof.sh) and update this reference to match. Verified the file exists.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 202,
+      "quote": "  incus-gh-runner-phase5 \\",
+      "verdict": "leftover",
+      "rationale": "Example scale-set argument is phase-numbered.",
+      "suggested_action": "Replace with a generic placeholder such as '<scale-set-name>' or 'incus-gh-runner-hotstandby'.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 204,
+      "quote": "  phase5-live-20260718 \\",
+      "verdict": "leftover",
+      "rationale": "Example correlation-manifest/run identifier is phase-numbered, tying it to a specific internal proof run.",
+      "suggested_action": "Replace with a generic placeholder such as '<run-id>'.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 207,
+      "quote": "  /var/log/incus-gh-runner/phase5-hot-standby",
+      "verdict": "leftover",
+      "rationale": "Example log directory path is phase-numbered.",
+      "suggested_action": "Replace with a generic path such as '/var/log/incus-gh-runner/hot-standby'.",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 230,
+      "quote": "first public v1 release remains pending until the complete phase 7 acceptance",
+      "verdict": "leftover",
+      "rationale": "Gates the release on an internal 'phase 7 acceptance scenario', a build-process milestone that should not appear publicly. The sentence continues onto line 231 ('scenario succeeds.').",
+      "suggested_action": "Delete the sentence (lines 230-231) or replace with standard pre-release wording such as 'This project has not yet reached a stable v1 release.'",
+      "group": "root-docs"
+    },
+    {
+      "file": "CONTRIBUTING.md",
+      "line": 4,
+      "quote": "prove one behavior, and revise the working design when implementation evidence",
+      "verdict": "leftover",
+      "rationale": "Instructs contributors in the internal 'prove one behavior with evidence' agent-session methodology rather than standard contribution guidance.",
+      "suggested_action": "Rewrite lines 3-5 as e.g. 'Keep changes small and focused, and be willing to revise the design as you learn more.'",
+      "group": "root-docs"
+    },
+    {
+      "file": "CONTRIBUTING.md",
+      "line": 14,
+      "quote": "1. Keep changes focused on one evidence-producing slice.",
+      "verdict": "leftover",
+      "rationale": "'Evidence-producing slice' is internal agent-session/phase development terminology, not standard contributor guidance.",
+      "suggested_action": "Rewrite as '1. Keep each pull request focused on a single change.'",
+      "group": "root-docs"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 9,
+      "quote": "`incus-gh-runner` is an early-stage controller for running one-job GitHub",
+      "verdict": "leftover",
+      "rationale": "\"early-stage\" frames the project by development maturity, not by what it does. A first-time reader sees a WIP self-assessment. Confirmed against the file.",
+      "suggested_action": "Replace line 9-10 with: \"`incus-gh-runner` is a controller for running one-job GitHub Actions runners in Incus virtual machines.\"",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 12,
+      "quote": "Phase 1 provides the typed configuration, signal-aware application supervisor,",
+      "verdict": "leftover",
+      "rationale": "\"Phase 1\" is a numbered internal build-phase label from the agent-session protocol, meaningless to a user. This whole paragraph (lines 12-18) is a phase-by-phase changelog, not product docs.",
+      "suggested_action": "Rewrite the entire lines 12-18 paragraph as one plain feature list with no phase numbers, e.g.: \"The controller provides typed configuration, a signal-aware application supervisor, coalesced demand reconciliation, a bounded runner-operation core, a reference VM with a one-shot guest contract, ownership-scoped Incus inventory, a full create/start/observe/diagnose/delete lifecycle, and integration with a GitHub runner scale set using fresh one-runner JIT configuration.\"",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 13,
+      "quote": "coalesced demand reconciliation, and bounded runner-operation core. Phase 2",
+      "verdict": "leftover",
+      "rationale": "\"Phase 2\" is a continuation of the same internal numbered-phase narrative. Same run-on changelog sentence.",
+      "suggested_action": "Fold into the lines 12-18 rewrite above; drop \"Phase 2\" and describe the reference VM and one-shot guest contract as current features.",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 14,
+      "quote": "adds the reference VM and one-shot guest contract. Phase 3 adds ownership-scoped",
+      "verdict": "leftover",
+      "rationale": "Contains \"Phase 2\" referent and \"Phase 3\", both internal build-phase labels. Confirmed.",
+      "suggested_action": "Fold into the lines 12-18 rewrite; describe ownership-scoped Incus inventory and the lifecycle without phase numbering.",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 16,
+      "quote": "diagnostic, and delete lifecycle. Phase 4 connects a persistent GitHub runner",
+      "verdict": "leftover",
+      "rationale": "\"Phase 4\" labels when a feature landed during the build, not a product concept. Confirmed.",
+      "suggested_action": "Fold into the lines 12-18 rewrite; present the GitHub runner scale-set integration and JIT configuration as current features.",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 20,
+      "quote": "The current repository foundation provides the renamed CLI, locked development",
+      "verdict": "leftover",
+      "rationale": "\"renamed CLI\" narrates a mid-development rename event, and \"current repository foundation\" plus \"locked development toolchain\" (see missed) frame the whole sentence as internal repo-scaffolding status rather than product.",
+      "suggested_action": "Delete the \"renamed\"/\"repository foundation\" framing. If any of this is user-relevant, reduce to a single plain sentence about the CLI; otherwise remove the sentence. See missed entry for the rest of lines 20-21.",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 22,
+      "quote": "guest-image, deployment, and troubleshooting documentation will grow from",
+      "verdict": "leftover",
+      "rationale": "\"will grow from\" is forward-looking roadmap language about incomplete docs. Confirmed.",
+      "suggested_action": "Delete the sentence spanning lines 22-23. If desired, replace with a factual pointer to the docs that exist now (deployment, reference image).",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 23,
+      "quote": "working lifecycle slices. The phase 4 hardware gate completed one genuine job",
+      "verdict": "leftover",
+      "rationale": "\"lifecycle slices\" is agile/dev-process jargon and \"phase 4 hardware gate ... completed one genuine job\" narrates an internal build-verification run. Confirmed.",
+      "suggested_action": "Delete the sentence spanning lines 23-24. It describes an internal validation milestone, not product behavior.",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 24,
+      "quote": "through registration, poweroff, diagnostics, and deletion on Incus 7.2. Phase",
+      "verdict": "leftover",
+      "rationale": "Tail of the phase-4 hardware-gate narrative and lead-in to \"Phase 5\". Confirmed.",
+      "suggested_action": "Delete as part of removing the lines 23-25 phase-4/phase-5 narrative.",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 25,
+      "quote": "5 adds deterministic hot-pool recovery coverage and a repeatable live proof for",
+      "verdict": "leftover",
+      "rationale": "\"Phase 5\" internal phase label plus \"live proof\" narrating a development validation run. Confirmed.",
+      "suggested_action": "Remove the phase/\"live proof\" framing. If hot-pool recovery and preconnected standby dispatch are real features, state them plainly in the lines 12-18 feature list.",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 26,
+      "quote": "preconnected standby dispatch and replacement. Phase 6 hardening now recreates",
+      "verdict": "leftover",
+      "rationale": "\"Phase 6 hardening\" labels when reconnect-backoff was added during the build. The underlying behavior (recreating failed GitHub message sessions with capped reconnect backoff) is a legitimate feature, but the phase label is scaffolding.",
+      "suggested_action": "Drop \"Phase 6 hardening\"; describe the reconnect behavior as current: \"The controller recreates failed GitHub message sessions with capped reconnect backoff while preserving fail-fast startup preflight.\" (\"GitHub message sessions\" is legitimate domain terminology for scale-set message queues and should stay.)",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 35,
+      "quote": "for current scope and development instructions.",
+      "verdict": "leftover",
+      "rationale": "\"current scope\" signals the project is still being scoped, and \"development instructions\" points at internal build setup. Pointing to a README is fine; the framing is the tell.",
+      "suggested_action": "Rewrite as \"See the repository [README](https://github.com/meigma/incus-gh-runner#readme) for installation, configuration, and contributing details.\"",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/deployment.md",
+      "line": 28,
+      "quote": "Project-restricted remote TLS authorization is the intended future path for reducing this host privilege; v1 does not implement that transport.",
+      "verdict": "leftover",
+      "rationale": "Documenting the local-socket limitation is legitimate and should stay, but \"intended future path\" is explicit roadmap/future-work language. Only the roadmap framing is the problem, not the security fact.",
+      "suggested_action": "Rewrite as a factual limitation without roadmap language: \"The controller connects only through the local Incus Unix socket; remote, project-restricted TLS authorization is not supported.\" (\"v1\" is a legitimate version marker and may be kept or dropped.)",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/reference-image.md",
+      "line": 10,
+      "quote": "## Build proof",
+      "verdict": "leftover",
+      "rationale": "\"Build proof\" frames the section as a development-time verification exercise. A normal reader expects a build/how-to heading here. Confirmed.",
+      "suggested_action": "Rename the heading to \"## Building the image\" (or \"## Build\").",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/reference-image.md",
+      "line": 24,
+      "quote": "archive checksum and qcow2 virtual size, and retains the proof artifact for one",
+      "verdict": "leftover",
+      "rationale": "\"proof artifact\" continues the development-validation framing. It is just the build output archive. Confirmed.",
+      "suggested_action": "Change to \"...and retains the build artifact for one day.\"",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/reference-image.md",
+      "line": 27,
+      "quote": "An offline build proves construction only. Boot and guest-lifecycle validation",
+      "verdict": "leftover",
+      "rationale": "\"proves construction only\" carries the same proof/verification-narrative wording tied to the \"Build proof\" heading. The information conveyed is legitimate; only the wording needs neutralizing.",
+      "suggested_action": "Change to \"An offline build verifies construction only; boot and guest-lifecycle validation must run separately against a disposable Incus project.\"",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/reference-image.md",
+      "line": 93,
+      "quote": "GitHub credential. A genuine Actions Runner JIT registration remains the phase",
+      "verdict": "leftover",
+      "rationale": "\"remains the phase 4 end-to-end proof\" names an internal development phase and validation milestone. Confirmed (phrase continues to line 94).",
+      "suggested_action": "Rewrite lines 92-94 as: \"This probe validates the image boot and guest contract without consuming a GitHub credential. Full end-to-end validation with a genuine Actions Runner JIT registration must be performed separately.\"",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/reference-image.md",
+      "line": 94,
+      "quote": "4 end-to-end proof.",
+      "verdict": "leftover",
+      "rationale": "Tail of \"phase 4 end-to-end proof\", naming the internal milestone. Confirmed.",
+      "suggested_action": "Remove as part of the lines 92-94 rewrite above; keep \"end-to-end validation\" phrasing but drop \"phase 4\" and \"proof\".",
+      "group": "docs-site"
+    },
+    {
+      "file": ".github/workflows/runner-functional.yml",
+      "line": 1,
+      "quote": "name: Runner Functional Proof",
+      "verdict": "leftover",
+      "rationale": "The workflow title frames itself as a milestone 'Proof' rather than an operational check. Paired with the 'Phase 5' run-name directly below and 'proof' language throughout, this is clearly residue of the numbered-phase build process, not product-facing documentation. A first-time reader sees internal scaffolding.",
+      "suggested_action": "Rename to a behavior-focused title, e.g. `name: Runner Functional Check` (or `name: Disposable Runner Smoke Test`), and align the run-name, inputs, and step names below to drop all 'proof' framing.",
+      "group": "workflows"
+    },
+    {
+      "file": ".github/workflows/runner-functional.yml",
+      "line": 2,
+      "quote": "run-name: Phase 5 runner proof (${{ inputs.proof_id }})",
+      "verdict": "leftover",
+      "rationale": "'Phase 5' is a numbered internal implementation-phase label with no meaning to an external reader; 'runner proof' repeats the dev-milestone framing. This is the strongest single artifact of the build process in the sweep.",
+      "suggested_action": "Rewrite as `run-name: Runner functional check (${{ inputs.correlation_id }})`, removing both the 'Phase 5' phrase and the 'proof' wording, and rename the input as noted below.",
+      "group": "workflows"
+    },
+    {
+      "file": ".github/workflows/runner-functional.yml",
+      "line": 11,
+      "quote": "proof_id:",
+      "verdict": "leftover",
+      "rationale": "The input name encodes the 'proving it works' phase framing rather than its actual role, which is a correlation identifier for the dispatch. Its downstream uses (run-name L2, description L12, concurrency group L25, PROOF_ID env L39, evidence field L53) all inherit the framing.",
+      "suggested_action": "Rename the input to `correlation_id` and update every downstream reference: run-name (L2), description (L12), concurrency group key (L25), the `PROOF_ID` env var and its `printf` field (L39, L53). Also rename the `proof_dir` shell variable (see missed).",
+      "group": "workflows"
+    },
+    {
+      "file": ".github/workflows/runner-functional.yml",
+      "line": 12,
+      "quote": "description: Correlation ID for the live proof",
+      "verdict": "leftover",
+      "rationale": "'the live proof' narrates the run as a live development-milestone proof \u2014 historical/process framing that does not belong in a product-facing input description.",
+      "suggested_action": "Reword to `description: Correlation ID for this run` (and rename the underlying input to `correlation_id` as above).",
+      "group": "workflows"
+    },
+    {
+      "file": ".github/workflows/runner-functional.yml",
+      "line": 35,
+      "quote": "name: Prove the disposable Linux runner",
+      "verdict": "leftover",
+      "rationale": "The step name uses 'Prove' \u2014 development-verification language \u2014 instead of describing what it actually asserts (Linux OS, non-root UID, run/attempt/runner identity capture).",
+      "suggested_action": "Rename to a descriptive step name, e.g. `name: Verify disposable Linux runner environment`.",
+      "group": "workflows"
+    },
+    {
+      "file": ".github/workflows/reference-image.yml",
+      "line": 90,
+      "quote": "name: Upload reference image proof",
+      "verdict": "leftover",
+      "rationale": "'proof' echoes the same 'proving it built correctly' phase framing from runner-functional.yml. The artifact is actually the built image plus inspection outputs uploaded for reviewers, not a milestone proof.",
+      "suggested_action": "Rename to `name: Upload reference image build artifacts` (or `... for inspection`) to describe what is uploaded rather than framing it as a proof.",
+      "group": "workflows"
+    },
+    {
+      "file": ".github/scripts/configure_github_repo.py",
+      "line": 734,
+      "quote": "reason = UNSUPPORTED_REASONS.get(key, \"This setting is not applied by the v1 repository configurator.\")",
+      "verdict": "leftover",
+      "rationale": "The fallback reason string labels the tool the \"v1 repository configurator.\" This is genuine user-facing output: extract_unsupported_settings() feeds UnsupportedSetting.reason, which print_report() writes to stdout and the --json-report file. A fresh operator sees an internal versioned-milestone label rather than a scope description. The nine curated entries in UNSUPPORTED_REASONS (lines 60-70) avoid any version framing, so this fallback is inconsistent with the tool's own vocabulary. Line number is correct.",
+      "suggested_action": "Replace the fallback string with a version-free scope statement matching the style of the UNSUPPORTED_REASONS entries, e.g. \"This setting is not applied by the repository configurator.\" (drop the \"v1\" token only; leave the surrounding .get() call unchanged).",
+      "group": "gh-scripts"
+    },
+    {
+      "file": ".github/repository-settings.toml",
+      "line": 121,
+      "quote": "# General settings not currently handled in v1.",
+      "verdict": "leftover",
+      "rationale": "This comment heads the tail of the [unsupported] section and frames those settings against a \"v1\" development milestone rather than explaining why they are unmanaged. Every other comment in this manifest (lines 38, 42, 46-47, 99, 111, 114) describes a technical reason (e.g. no documented REST toggle); this one leaks build-phase terminology into a manifest a first-time operator reads. Line number is correct.",
+      "suggested_action": "Rewrite as a scope statement without the version label, e.g. \"# General settings not currently applied by this configurator.\" Optionally align with the API-limitation phrasing used by the other [unsupported] comments and UNSUPPORTED_REASONS entries.",
+      "group": "gh-scripts"
+    },
+    {
+      "file": "internal/adapters/github/scaleset_functional_test.go",
+      "line": 41,
+      "quote": "session, err := client.MessageSessionClient(testContext, resolved.ID(), \"phase4-functional-preflight\")",
+      "verdict": "leftover",
+      "rationale": "MessageSessionClient and its owner parameter are legitimate GitHub Actions scale-set concepts (see reconnect.go, where owner is a real config-driven identity). But the literal value \"phase4-functional-preflight\" bakes the development-phase number into the session-owner string, which surfaces in GitHub-side session ownership and test output. A first-time reader sees internal build-phase scaffolding. The prefix is arbitrary to the test's behavior.",
+      "suggested_action": "Replace \"phase4-functional-preflight\" with a phase-agnostic owner such as \"incus-gh-runner-functional-preflight\" (or \"functional-preflight\"); the value only needs to be a stable, descriptive session-owner label.",
+      "group": "go-adapters"
+    },
+    {
+      "file": "internal/adapters/github/scaleset_test.go",
+      "line": 34,
+      "quote": "assert.Equal(t, \"incus-phase4\", name)",
+      "verdict": "leftover",
+      "rationale": "This is a test-fixture scale-set name asserted in the getRunnerScaleSet lookup. \"incus-phase4\" encodes the development phase number in a generic example name with no functional meaning; the value flows from the ScaleSetOptions.Name at line 73. Pure dev-process residue.",
+      "suggested_action": "Rename to a phase-neutral fixture name (e.g. \"incus-runner-scale-set\") and apply it consistently across all four occurrences in this file: lines 34, 58, 60, and 73.",
+      "group": "go-adapters"
+    },
+    {
+      "file": "internal/adapters/github/scaleset_test.go",
+      "line": 58,
+      "quote": "Name:          \"incus-phase4\",",
+      "verdict": "leftover",
+      "rationale": "Same leftover phase-numbered fixture name, here as the expected created-scale-set Name in the wantCreated assertion. Encodes the build phase into a generic test value.",
+      "suggested_action": "Rename to the same phase-neutral fixture name chosen for line 34 (e.g. \"incus-runner-scale-set\"); all four occurrences must remain identical for the test to pass since the value is threaded from ScaleSetOptions.Name to the created scale set and its label.",
+      "group": "go-adapters"
+    },
+    {
+      "file": "internal/adapters/github/scaleset_test.go",
+      "line": 60,
+      "quote": "Labels:        []scaleset.Label{{Name: \"incus-phase4\"}},",
+      "verdict": "leftover",
+      "rationale": "Same phase-numbered fixture value used as the expected runner label. resolveScaleSet derives the label from options.Name (scaleset.go line 88), so this must equal whatever the Name fixture is set to.",
+      "suggested_action": "Rename to the same phase-neutral fixture name chosen for the other occurrences (e.g. \"incus-runner-scale-set\").",
+      "group": "go-adapters"
+    },
+    {
+      "file": "internal/adapters/github/scaleset_test.go",
+      "line": 73,
+      "quote": "Name:        \"incus-phase4\",",
+      "verdict": "leftover",
+      "rationale": "Same phase-numbered value, here the ScaleSetOptions.Name under test \u2014 the source value that propagates to the lookup assertion (line 34), the created Name (line 58), and the label (line 60). It is the root fixture to rename.",
+      "suggested_action": "Rename this ScaleSetOptions.Name to a phase-neutral value (e.g. \"incus-runner-scale-set\") and update lines 34, 58, and 60 to match.",
+      "group": "go-adapters"
+    },
+    {
+      "file": "internal/adapters/incus/backend_functional_test.go",
+      "line": 35,
+      "quote": "probeSecret := \"phase3-probe-\" + uuid.NewString()",
+      "verdict": "leftover",
+      "rationale": "probeSecret is a synthetic JIT-config value used to assert the payload never leaks to the console (line 103). The \"phase3-probe-\" prefix encodes the development phase number and has no functional dependency on any phase.",
+      "suggested_action": "Rename the prefix to something phase-agnostic, e.g. \"functional-probe-\"; only the uniqueness and the leak assertion matter, not the phase token.",
+      "group": "go-adapters"
+    },
+    {
+      "file": "internal/adapters/incus/backend_functional_test.go",
+      "line": 40,
+      "quote": "Owner:            \"phase3-functional-\" + uuid.NewString(),",
+      "verdict": "leftover",
+      "rationale": "Owner is the durable ownership-marker identity written into instance config (backend.go ownershipKey). The \"phase3-functional-\" prefix bakes the build-phase number into a runtime identity value; a fresh reader would wrongly infer phase-numbered ownership behavior. Arbitrary to the test.",
+      "suggested_action": "Rename the prefix to something phase-agnostic, e.g. \"incus-gh-runner-functional-\" or \"functional-test-\"; keep the uuid suffix for per-run uniqueness.",
+      "group": "go-adapters"
+    },
+    {
+      "file": "internal/config/config.go",
+      "line": 71,
+      "quote": "// Config contains immutable phase 1 controller settings.",
+      "verdict": "leftover",
+      "rationale": "\"phase 1\" is internal development-phase numbering from the incremental build-out; a first-time reader has no context for what phase 1 means, and it describes build history rather than the product.",
+      "suggested_action": "Replace the comment with \"// Config contains immutable controller settings.\" (drop \"phase 1\").",
+      "group": "go-core"
+    },
+    {
+      "file": "internal/config/config.go",
+      "line": 211,
+      "quote": "// Defaults returns the phase 1 controller defaults.",
+      "verdict": "leftover",
+      "rationale": "Same leftover \"phase 1\" development-phase numbering leaking into a public godoc comment on the exported Defaults function.",
+      "suggested_action": "Replace the comment with \"// Defaults returns the controller defaults.\" (drop \"phase 1\").",
+      "group": "go-core"
+    },
+    {
+      "file": "internal/config/config_test.go",
+      "line": 144,
+      "quote": "ScaleSet:    \"incus-phase4\",",
+      "verdict": "leftover",
+      "rationale": "Test fixture bakes development-phase number \"phase4\" into an example scale-set name, exposing internal build-phase history in a value meant to read as a generic example.",
+      "suggested_action": "Rename the fixture value to a phase-agnostic example, e.g. \"incus-runners\". This value is asserted-against only in root_test.go (a separate copy); config_test.go itself has no matching assertion, so this line can be changed independently.",
+      "group": "go-core"
+    },
+    {
+      "file": "internal/config/config_test.go",
+      "line": 152,
+      "quote": "Owner:            \"phase4-test\",",
+      "verdict": "leftover",
+      "rationale": "Owner marker fixture encodes development-phase number \"phase4\" rather than a neutral example value.",
+      "suggested_action": "Rename the fixture value to a phase-agnostic marker, e.g. \"runner-test-owner\". Not referenced by any assertion in this file, so it can be changed freely.",
+      "group": "go-core"
+    },
+    {
+      "file": "internal/cli/root_test.go",
+      "line": 45,
+      "quote": "  scale_set: incus-phase4",
+      "verdict": "leftover",
+      "rationale": "Embedded YAML config fixture uses a scale-set name derived from internal development phase \"phase4\", the same residue as config_test.go.",
+      "suggested_action": "Rename to a phase-agnostic scale-set name (e.g. \"incus-runners\") and update the dependent assertion at line 83 to the same value. Keep it consistent with the config_test.go fixture rename for repo-wide coherence.",
+      "group": "go-core"
+    },
+    {
+      "file": "internal/cli/root_test.go",
+      "line": 51,
+      "quote": "  owner: phase4-test",
+      "verdict": "leftover",
+      "rationale": "Embedded YAML fixture encodes development-phase number \"phase4\" in the Incus owner marker value.",
+      "suggested_action": "Rename to a phase-agnostic owner marker, e.g. \"runner-test-owner\". No assertion depends on this value, so it can be changed on its own.",
+      "group": "go-core"
+    },
+    {
+      "file": "internal/cli/root_test.go",
+      "line": 83,
+      "quote": "assert.Equal(t, \"incus-phase4\", received.GitHub.ScaleSet)",
+      "verdict": "leftover",
+      "rationale": "Assertion hard-codes the phase-named fixture value defined in the embedded YAML at line 45; it carries the same \"phase4\" residue and must track the fixture rename.",
+      "suggested_action": "Update the expected value to match the renamed phase-agnostic scale-set fixture from line 45 (e.g. \"incus-runners\").",
+      "group": "go-core"
+    },
+    {
+      "file": "image/validate-incus.sh",
+      "line": 125,
+      "quote": "[[ \"$2\" == phase2-probe-* ]]",
+      "verdict": "leftover",
+      "rationale": "This literal lives in the synthetic run.sh heredoc that the validation script pushes into the guest as a stand-in for the real actions-runner run.sh. The prefix 'phase2' is a numbered-development-phase holdover with no product or runtime meaning: it names nothing in the Incus/GitHub-runner domain. The parallel guest contract test in image/tests/guest-entrypoint-test.sh line 53 uses the clean fixture value 'test-jit-secret' for the exact same purpose, confirming 'phase2' is scaffolding residue. A first-time reader would see 'phase2' and infer an internal build-phase numbering.",
+      "suggested_action": "Replace the two coupled literals in the run.sh heredoc (line 125) and the probe_secret assignment (line 131) with a domain-appropriate, non-phase-numbered prefix such as 'incus-validate-probe-' so they still match. Both must change together and stay identical, since line 197 greps the console for the value of probe_secret to assert the secret did not leak; e.g. line 125 becomes [[ \"$2\" == incus-validate-probe-* ]] and line 131 becomes probe_secret=\"incus-validate-probe-${token}\".",
+      "group": "deploy-image"
+    },
+    {
+      "file": "image/validate-incus.sh",
+      "line": 131,
+      "quote": "probe_secret=\"phase2-probe-${token}\"",
+      "verdict": "leftover",
+      "rationale": "Same 'phase2' development-phase naming as line 125. This assignment builds the JIT-config probe secret written into payload.json (line 132-134) and later grep-checked against the serial console (line 197) to prove no leak. The 'probe' portion is legitimate domain wording (it is a validation probe), but 'phase2' is a numbered-phase artifact with no runtime or product significance.",
+      "suggested_action": "Rename to a non-phase prefix consistent with the run.sh literal on line 125, e.g. probe_secret=\"incus-validate-probe-${token}\". Keep it byte-identical to the line 125 glob prefix so the guest's run.sh assertion still passes and the line 197 leak check still targets the right string.",
+      "group": "deploy-image"
+    },
+    {
+      "file": "scripts/live/phase4-host-prepare.sh",
+      "line": 1,
+      "quote": "phase4-host-prepare.sh",
+      "verdict": "leftover",
+      "rationale": "The filename encodes internal build \"phase 4\"; this is not domain terminology (Incus/GitHub have no such phase). It is referenced from phase4-prepare.sh:77/82 and README.md:180,186, so the leak is externally visible.",
+      "suggested_action": "Rename to a phase-neutral name (e.g. live-host-prepare.sh) via git mv, then update the copy/chmod in phase4-prepare.sh lines 77 & 82 and the README.md references at lines 180 & 186.",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase4-host-prepare.sh",
+      "line": 20,
+      "quote": "printf 'phase4-host-prepare.sh must run as root\\n' >&2",
+      "verdict": "leftover",
+      "rationale": "Hardcodes the phase-numbered filename into a user-facing error string, propagating internal phase terminology to output and going stale on rename.",
+      "suggested_action": "Replace the literal with \"$0\" (already used in usage() at line 5): printf '%s must run as root\\n' \"$0\" >&2.",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase4-host-prepare.sh",
+      "line": 51,
+      "quote": "tee \"${evidence_directory}/phase2-image.log\"",
+      "verdict": "leftover",
+      "rationale": "Log artifact name encodes build \"phase 2\", tying evidence to the internal numbered-phase protocol rather than its content.",
+      "suggested_action": "Rename the artifact to image-validation.log. Note the coupled validator image/validate-incus.sh (copied into the bundle by phase4-prepare.sh:76) also emits phase2-probe secrets at lines 125/131 that leak the same numbering; clean those in the same pass.",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase4-host-prepare.sh",
+      "line": 65,
+      "quote": "tee \"${evidence_directory}/phase3-lifecycle.log\"",
+      "verdict": "leftover",
+      "rationale": "Log artifact name encodes build \"phase 3\" from the internal numbered-phase protocol.",
+      "suggested_action": "Rename to a content-descriptive name, e.g. incus-lifecycle.log.",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase4-host-prepare.sh",
+      "line": 67,
+      "quote": "printf 'phase 2 and phase 3 live gates passed in Incus project %s\\n' \"$project\"",
+      "verdict": "leftover",
+      "rationale": "Runtime status message directly narrates the internal numbered build-protocol gates (\"phase 2\", \"phase 3\").",
+      "suggested_action": "Rewrite in product terms, e.g. printf 'image validation and Incus lifecycle checks passed in Incus project %s\\n' \"$project\".",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase4-prepare.sh",
+      "line": 1,
+      "quote": "phase4-prepare.sh",
+      "verdict": "leftover",
+      "rationale": "Filename derives from internal build \"phase 4\" rather than its function (assembling a live-test transfer bundle). Referenced at README.md:180.",
+      "suggested_action": "git mv to a functional name (e.g. prepare-live-bundle.sh) and update README.md:180.",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase4-prepare.sh",
+      "line": 21,
+      "quote": "output=\"${1:-${repo_root}/build/live-phase4}\"",
+      "verdict": "leftover",
+      "rationale": "Default output path bakes the internal phase-numbering (live-phase4) into a build directory. Documented at README.md:185.",
+      "suggested_action": "Change the default to a phase-neutral path, e.g. ${repo_root}/build/live-bundle, and update README.md:185.",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase4-prepare.sh",
+      "line": 77,
+      "quote": "cp \"${repo_root}/scripts/live/phase4-host-prepare.sh\" \"${output}/phase4-host-prepare.sh\"",
+      "verdict": "leftover",
+      "rationale": "References the phase-numbered source and destination filenames.",
+      "suggested_action": "Update both paths to the renamed script from finding #1 (e.g. live-host-prepare.sh).",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase4-prepare.sh",
+      "line": 82,
+      "quote": "\"${output}/phase4-host-prepare.sh\"",
+      "verdict": "leftover",
+      "rationale": "chmod target references the phase-numbered destination filename.",
+      "suggested_action": "Update to the renamed destination filename from finding #1.",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase4-prepare.sh",
+      "line": 98,
+      "quote": "printf 'phase 4 live-test bundle prepared at %s\\n' \"$output\"",
+      "verdict": "leftover",
+      "rationale": "Status message narrates the internal \"phase 4\" build-protocol label.",
+      "suggested_action": "Rewrite as printf 'live-test bundle prepared at %s\\n' \"$output\".",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase5-hot-standby.sh",
+      "line": 1,
+      "quote": "phase5-hot-standby.sh",
+      "verdict": "leftover",
+      "rationale": "Filename encodes internal build \"phase 5\". Referenced at README.md:200.",
+      "suggested_action": "git mv to a functional name (e.g. hot-standby-proof.sh) and update README.md:200.",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase5-hot-standby.sh",
+      "line": 19,
+      "quote": "evidence_directory=\"${7:-phase5-hot-standby-evidence}\"",
+      "verdict": "leftover",
+      "rationale": "Default evidence directory name bakes in the \"phase5\" protocol label.",
+      "suggested_action": "Rename default to hot-standby-evidence. Also update README.md:207, which passes /var/log/incus-gh-runner/phase5-hot-standby as this argument.",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase5-hot-standby.sh",
+      "line": 246,
+      "quote": "run_title=\"Phase 5 runner proof (${correlation_id})\"",
+      "verdict": "leftover",
+      "rationale": "This is an EXTERNALLY VISIBLE GitHub Actions run title (surfaced in the Actions UI). It embeds internal \"Phase 5\" numbering. Critically, it must match .github/workflows/runner-functional.yml:2 (run-name: Phase 5 runner proof (...)) exactly, or the run-lookup jq filter at lines 255-257 fails.",
+      "suggested_action": "Rename to a phase-neutral title (e.g. \"Hot-standby runner proof (${correlation_id})\") AND make the identical change to run-name in .github/workflows/runner-functional.yml:2 so the two strings stay byte-identical.",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase5-hot-standby.sh",
+      "line": 270,
+      "quote": "proof_id=\"phase5-$(date -u +%Y%m%dT%H%M%SZ)-$$\"",
+      "verdict": "leftover",
+      "rationale": "Generated correlation/proof ID embeds the \"phase5\" protocol label; it flows into evidence manifests and the dispatched workflow's proof_id input, so the label propagates into recorded artifacts.",
+      "suggested_action": "Change the prefix to a neutral token, e.g. proof_id=\"hot-standby-$(date -u +%Y%m%dT%H%M%SZ)-$$\".",
+      "group": "scripts-config"
+    },
+    {
+      "file": "scripts/live/phase5-hot-standby.sh",
+      "line": 342,
+      "quote": "printf 'phase 5 hot-standby proof passed; evidence: %s\\n' \"$evidence_directory\"",
+      "verdict": "leftover",
+      "rationale": "Status message narrates the internal \"phase 5\" build-protocol label.",
+      "suggested_action": "Rewrite as printf 'hot-standby proof passed; evidence: %s\\n' \"$evidence_directory\".",
+      "group": "scripts-config"
+    },
+    {
+      "file": ".moon/toolchains.yml",
+      "line": 9,
+      "quote": "#   version: 'REPLACE_ME_RUST_VERSION'",
+      "verdict": "leftover",
+      "rationale": "Literal REPLACE_ME_... placeholder token is unambiguous template-scaffolding residue left in the commented-out rust example inherited from the repo template.",
+      "suggested_action": "Remove the commented rust example block (lines 8-10) entirely; the file already explains all toolchains are mise-managed. If an example must stay as docs, substitute a real version string for the REPLACE_ME token.",
+      "group": "scripts-config"
+    },
+    {
+      "file": ".gitignore",
+      "line": 5,
+      "quote": "# Agent/runtime state",
+      "verdict": "leftover",
+      "rationale": "The section header explicitly frames the following entries as artifacts of the AI-agent / session-driven development workflow. This framing is the actual leak of the internal process, independent of whether the ignore rules stay.",
+      "suggested_action": "Rename the heading to something neutral, e.g. \"# Local tooling and editor state\".",
+      "group": "scripts-config"
+    }
+  ],
+  "missed": [
+    {
+      "file": "README.md",
+      "line": 3,
+      "quote": "`incus-gh-runner` is an early-stage controller for running ephemeral GitHub",
+      "reason": "'early-stage' is development-status/WIP framing in the very first sentence a reader sees. Combined with the phase narrative that follows, it presents the product as unfinished scaffolding rather than a shipped tool.",
+      "suggested_action": "Drop 'early-stage' (or move honest maturity signaling to the existing SECURITY.md 'until the first stable release' language). Describe it plainly, e.g. 'incus-gh-runner is a controller for running ephemeral GitHub Actions jobs in Incus virtual machines.'",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 4,
+      "quote": "Actions jobs in Incus virtual machines. The controller will consume GitHub",
+      "reason": "Future-tense framing ('The controller will consume ... maintain ... and delete', lines 4-6) describes core shipped behavior as not-yet-built, which is WIP narrative inconsistent with the phase paragraph claiming these features are done.",
+      "suggested_action": "Convert to present tense: 'The controller consumes GitHub runner scale-set demand, maintains a bounded pool of hot-standby runners, and deletes each VM after its one assigned job.'",
+      "group": "root-docs"
+    },
+    {
+      "file": "README.md",
+      "line": 170,
+      "quote": "The proof drives one unit of fake demand through the controller, injects a",
+      "reason": "'The proof' has no antecedent for a first-time reader and ties back to the deleted 'hardware proof' phase narrative; it reads as internal proof-run vocabulary for what is simply the Incus lifecycle functional test.",
+      "suggested_action": "Refer to it as the test, e.g. 'The test drives one unit of fake demand through the controller, ...', consistent with renaming the surrounding phase-numbered artifacts.",
+      "group": "root-docs"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 20,
+      "quote": "locked development toolchain, CI gates, and isolated GitHub and Incus client adapters",
+      "reason": "The scanner's line-20 finding only flags \"renamed CLI\". The rest of the same sentence describes internal repo/build infrastructure (\"locked development toolchain\", \"CI gates\", \"repository foundation\") that is scaffolding-status framing, not product a user of the controller needs. A first-time reader sees the project described by its dev-tooling state.",
+      "suggested_action": "Delete the \"current repository foundation provides the ... toolchain, CI gates, ...\" sentence (lines 20-21) entirely, or reduce to at most a single product-relevant sentence. \"isolated GitHub and Incus client adapters\" is architecture and could stay only if reframed as a current design fact rather than repo-foundation status.",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/index.md",
+      "line": 30,
+      "quote": "The checked-in systemd deployment loads the GitHub App key as a service credential",
+      "reason": "\"checked-in\" (also \"The checked-in unit\" in deployment.md line 8) narrates that the artifact lives in the repo, a development-process framing rather than describing behavior. Lower confidence than the phase items but a first-time reader gains nothing from \"checked-in\".",
+      "suggested_action": "Drop \"checked-in\"; say \"The systemd deployment loads the GitHub App key as a service credential ...\". Apply the same change to deployment.md line 8 (\"The checked-in unit\" -> \"The provided unit\" or \"The unit\").",
+      "group": "docs-site"
+    },
+    {
+      "file": "docs/docs/reference-image.md",
+      "line": 67,
+      "quote": "Boot validation below remains the functional acceptance gate.",
+      "reason": "Borderline: \"acceptance gate\" is test/dev-process jargon. It conveys a real point (boot validation is the authoritative check), so it is not clearly scaffolding, but the wording reads as internal QA process language. Flagging for reviewer judgment.",
+      "suggested_action": "Optionally soften to plain language, e.g. \"Boot validation below is the authoritative functional check.\" Leave as-is if \"acceptance gate\" is considered acceptable product wording.",
+      "group": "docs-site"
+    },
+    {
+      "file": ".github/workflows/runner-functional.yml",
+      "line": 46,
+      "quote": "proof_dir=\"$(mktemp -d)\"",
+      "reason": "The local shell variable `proof_dir` carries the same 'proof' phase-narrative framing and was not itemized in the scanner's downstream-rename list (which named description, env var, group key, and evidence-file field but omitted this variable). It is used on lines 46, 47, 52, and 58.",
+      "suggested_action": "Rename the shell variable to a neutral name such as `evidence_dir` (or `work_dir`) and update all references on lines 46, 47, 52, and 58 alongside the `proof_id` -> `correlation_id` rename.",
+      "group": "workflows"
+    },
+    {
+      "file": "mise.toml",
+      "line": 3,
+      "quote": "mise REPLACES Proto (the former .prototools + .moon/proto/*). The committed",
+      "reason": "Historical migration narrative: references Proto, .prototools, and .moon/proto/* \u2014 internal tooling that never ships in this public repo, so a first-time reader has no context. This is exactly the 'historical build narrative / migration storytelling' the sweep targets, and the scanner did not flag it.",
+      "suggested_action": "Rewrite to describe current behavior only, dropping the Proto contrast, e.g. 'mise manages tool + environment versions. The committed mise.lock records per-platform download URLs + checksums (and cosign/SLSA/GitHub-attestation verification for aqua-backed tools).'",
+      "group": "scripts-config"
+    },
+    {
+      "file": "mise.toml",
+      "line": 59,
+      "quote": "moon itself is now mise-managed (CI",
+      "reason": "Migration narrative ('now ... instead of moonrepo/setup-toolchain') describing how the build evolved rather than its current state; unflagged by the scanner.",
+      "suggested_action": "State the current setup without the 'now/instead of' framing, e.g. 'moon is installed via mise; melange/apko/cosign drive the container build and image signing in the release workflow.'",
+      "group": "scripts-config"
+    },
+    {
+      "file": "mise.toml",
+      "line": 56,
+      "quote": "Docs (MkDocs) toolchain \u2014 moved off moon's former unstable_python/unstable_uv.",
+      "reason": "Migration narrative referencing removed moon features (unstable_python/unstable_uv); historical build storytelling with no value to a first-time reader.",
+      "suggested_action": "Drop the 'moved off ... former' clause; describe current usage, e.g. 'Docs (MkDocs) toolchain via uv.'",
+      "group": "scripts-config"
+    },
+    {
+      "file": "apko.yaml",
+      "line": 3,
+      "quote": "gcr.io/distroless/static-debian12:nonroot posture (uid 65532, ca-certs, tzdata,",
+      "reason": "Uses 'the former ...' historical framing implying a prior shipped build. Lower priority than the phase leaks because the distroless-equivalence rationale is genuinely useful to users evaluating the image; flagged for consistency with the sweep's historical-narrative target.",
+      "suggested_action": "Drop 'former' and state the posture directly, e.g. 'a distroless-equivalent nonroot posture (uid 65532, ca-certs, tzdata, no shell).'",
+      "group": "scripts-config"
+    },
+    {
+      "file": "melange.yaml",
+      "line": 3,
+      "quote": "the binary via -ldflags, mirroring GoReleaser and the former Dockerfile.",
+      "reason": "References a Dockerfile that no longer exists in the repo \u2014 mild historical build narrative; unflagged by the scanner.",
+      "suggested_action": "Drop 'and the former Dockerfile' (e.g. '... via -ldflags, mirroring GoReleaser.'). Same for the parallel 'former Dockerfile' phrasing if any callers reference it.",
+      "group": "scripts-config"
+    },
+    {
+      "file": ".golangci.yml",
+      "line": 119,
+      "quote": "blackbox-only is worth the export pollution.",
+      "reason": "Mild forward-looking future-work framing ('Re-enable if/when the test layout grows large enough ...') for the disabled testpackage linter. Borderline: it is legitimate config rationale, but carries the 'if/when it grows' future narrative the sweep watches for. Optional.",
+      "suggested_action": "Optional: trim the 'Re-enable if/when ... grows large enough' future clause and keep only the current rationale for disabling testpackage, or leave as-is if the team accepts config rationale comments.",
+      "group": "scripts-config"
+    }
+  ],
+  "uncertain": [
+    {
+      "file": ".gitignore",
+      "line": 6,
+      "quote": ".agents/",
+      "verdict": "uncertain",
+      "rationale": "Functional ignore for a local agent working directory. The name reveals the agent workflow, but the rule usefully prevents committing local state. Keep-or-remove depends on whether that tooling is still used for the public repo.",
+      "suggested_action": "Keep the rule (move it under the neutral heading from finding #22) if contributors still use the tooling; delete the line only if .agents/ is retired post-release.",
+      "group": "scripts-config"
+    },
+    {
+      "file": ".gitignore",
+      "line": 8,
+      "quote": ".journal/",
+      "verdict": "uncertain",
+      "rationale": "The directory name directly matches the internal session-journal protocol term from .session.md/CLAUDE.md, so it reveals the workflow. It is a tool-owned path that cannot be renamed, and the rule prevents committing journal state.",
+      "suggested_action": "Keep silently under the neutral heading while journaling is used; remove the line only if the journaling protocol is dropped for the public repo.",
+      "group": "scripts-config"
+    },
+    {
+      "file": ".gitignore",
+      "line": 9,
+      "quote": ".wt/",
+      "verdict": "uncertain",
+      "rationale": "Matches the Worktrunk (wt) working-tree term used by the internal branching workflow; reveals the process but is a tool-owned path that must be ignored while Worktrunk is used.",
+      "suggested_action": "Keep silently under the neutral heading while Worktrunk is used; remove only if that tooling is retired for the public repo.",
+      "group": "scripts-config"
+    }
+  ],
+  "legitimate_count": 6,
+  "groups_scanned": 8
+}
