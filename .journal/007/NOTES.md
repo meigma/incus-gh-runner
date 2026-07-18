@@ -26,3 +26,18 @@ Plan: move the draft into `.journal/007/`, commit and push the journal
 mutation, then await the user's review feedback on the proposal's open
 questions (hostname, apt component layout, retention count, dispatch auth,
 package-level signing, smoke-test timing).
+
+## 2026-07-17 21:05 — Jumpstart doc for meigma/packages agent
+Wrote PACKAGES_REPO_JUMPSTART.md: a self-contained design contract for a
+dedicated agent to build meigma/packages from a bare repo. Converted the
+proposal's open questions into adopted defaults (pkgs.meigma.dev single
+hostname, component-per-project apt layout, retention N=5, metadata-only
+signing in v1, PAT-based dispatch, smoke test in v1) and split the remainder
+into an explicit escalation list. Included invariants (owned-domain-only
+URLs, signed metadata, idempotent + serialized publishes, SHA-pinned
+actions, full-rebuild-from-Releases), deliverables (publish/rebuild/smoke
+workflows, project registry, shared scripts, docs, secretless PR-level
+pipeline test), Josh's external provisioning checklist (R2 bucket + domain,
+scoped token, GPG keypair, dispatch PATs), and acceptance criteria ending in
+real apt/dnf installs in clean containers. Next: Josh reviews jumpstart +
+proposal; dedicated agent executes.
