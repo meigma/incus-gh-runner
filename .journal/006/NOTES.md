@@ -33,3 +33,6 @@ PR #12 merged to `master` as squash commit `8580997` after exact-head CI, Pages,
 
 ## 2026-07-18 10:09 — Incus 7 minimum policy
 Follow-up review concluded that the temporary Incus 6.5 minimum was an unnecessary compatibility promise: successful hardware acceptance used Incus 7.2, while the alias-resolution, terminal-stop, and Noble UEFI fixes are also required independently on Incus 7. PR #13 raises the validator minimum to Incus 7.0 and explicitly marks Incus 6 unsupported in the README and reference-image documentation. Local image-contract and full repository gates passed; exact-head CI, Pages, Kusari, and Reference Image run `29653011279` passed. PR #13 merged to `master` as squash commit `8357882`; local `master` was fast-forwarded and the feature worktree and branches were removed.
+
+## 2026-07-18 10:12 — Close
+Session goal met. PRs [#11](https://github.com/meigma/incus-gh-runner/pull/11), [#12](https://github.com/meigma/incus-gh-runner/pull/12), and [#13](https://github.com/meigma/incus-gh-runner/pull/13) are merged; local `master` is clean and synchronized at `8357882`. The genuine one-shot workflow `29652301896` passed on an Incus 7.2 VM, all owned capacity was deleted, protected evidence was exported, and both Latitude hosts were destroyed with absence verified. The next implementation target is phase 5 hot standby and restart reconciliation.
