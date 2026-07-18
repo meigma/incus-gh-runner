@@ -14,3 +14,8 @@ Created `feat/phase-3-incus-lifecycle` from the fetched `origin/master` and impl
 The controller now refreshes owned inventory through the bounded worker pool, serializing refresh against lifecycle mutations so provisioning runners can be observed as running or terminal after restart without racing stale snapshots over completed creates.
 Evidence: focused adapter/controller tests pass, the repository Go test task passes, and the repository lint task passes. An opt-in `TestIncusLifecycleFunctional` composes fake demand with the real adapter in a uniquely owned, non-default Incus project and requires the inventory to return to zero. It could not run on the development Mac because no Incus CLI, socket, or functional-test environment is available.
 Next: review the slice for partial-operation and terminal-state gaps, run the aggregate repository gate, then publish the branch for hosted review.
+
+## 2026-07-17 20:30 — Phase 3 review boundary
+Review tightened payload delivery so the ready marker is retried independently after the payload is durably written, and added explicit restart evidence that existing provisioning capacity prevents duplicate creation. The final branch head is `c5cabd1`.
+Validation passed with `moon run root:check --summary minimal` and `go test -race ./... -count=1`. PR #10 (`feat(incus): implement owned runner lifecycle`) is open, ready, cleanly mergeable, and exact-head GitHub CI, Pages, and Kusari Inspector all passed. The live Incus functional gate remains unexecuted because this Mac has no Incus environment; the opt-in test and safety boundary are included in the PR.
+Current boundary: pause for human review of PR #10. Do not merge or close session 005 without explicit approval.
