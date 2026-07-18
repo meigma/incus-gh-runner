@@ -136,6 +136,25 @@ func TestControllerRefreshesInventoryAndDeletesTerminalRunner(t *testing.T) {
 	require.NoError(t, receiveError(t, errCh))
 }
 
+func TestControllerRestartPreservesProvisioningCapacity(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend(controller.Runner{ID: "runner-1", State: controller.RunnerProvisioning})
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{Workers: 1})
+	mailbox.Publish(controller.Demand{AssignedJobs: 1})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	require.Eventually(t, func() bool {
+		return backend.listAttempts() >= 2
+	}, time.Second, time.Millisecond, "expected restart inventory to be refreshed")
+	assert.Zero(t, backend.createAttempts(), "existing provisioning capacity must prevent duplication")
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
 func TestControllerBoundsShutdownOfSlowOperation(t *testing.T) {
 	t.Parallel()
 

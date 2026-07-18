@@ -265,12 +265,13 @@ func (b *Backend) pushPayload(ctx context.Context, name string, payload []byte) 
 	ticker := time.NewTicker(b.options.AgentPollInterval)
 	defer ticker.Stop()
 
+	payloadWritten := false
 	for {
-		err := b.client.CreateInstanceFile(ctx, name, payloadPath, payload, payloadFileMode)
-		if err == nil {
-			if err := b.client.CreateInstanceFile(ctx, name, readyPath, nil, payloadFileMode); err != nil {
-				return fmt.Errorf("commit runtime payload for %q: %w", name, err)
+		if !payloadWritten {
+			if err := b.client.CreateInstanceFile(ctx, name, payloadPath, payload, payloadFileMode); err == nil {
+				payloadWritten = true
 			}
+		} else if err := b.client.CreateInstanceFile(ctx, name, readyPath, nil, payloadFileMode); err == nil {
 			return nil
 		}
 
