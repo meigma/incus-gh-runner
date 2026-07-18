@@ -10,7 +10,8 @@ pool using explicit demand-source and runner-backend ports. Phase 2 adds a
 checksummed, offline-built reference VM image and a versioned one-shot guest
 contract. Phase 3 adds periodic ownership inventory and the real Incus backend
 for create, start, payload injection, observation, diagnostics, and deletion.
-The GitHub scale-set adapter remains intentionally unwired until phase 4.
+Phase 4 wires persistent GitHub scale-set resolution, message polling, demand
+statistics, and fresh per-VM JIT configuration into that lifecycle.
 
 ## v1 boundaries
 
@@ -44,15 +45,25 @@ moon run root:test
 go run ./cmd/incus-gh-runner --version
 ```
 
-The controller configuration boundary currently covers the settings needed by
-the fake-demand proof:
+The smallest real single-runner configuration is:
 
 ```yaml
+github:
+  config_url: https://github.com/meigma/incus-gh-runner
+  scale_set: incus-gh-runner-phase4
+  runner_group: default
+incus:
+  project: runner-test
+  image: incus-gh-runner:test
+  profiles: [default]
+  owner: incus-gh-runner-phase4
+  bootstrap_timeout: 5m
+  diagnostics_dir: /var/log/incus-gh-runner/runners
 capacity:
   min_runners: 0
-  max_runners: 4
+  max_runners: 1
 concurrency:
-  incus_operations: 2
+  incus_operations: 1
 reconcile_interval: 1s
 timeouts:
   incus_operation: 5m
@@ -64,6 +75,13 @@ file, then defaults. `--config` selects a required file; otherwise
 `/etc/incus-gh-runner/config.yaml` is optional. Environment variables use the
 `INCUS_GH_RUNNER` prefix, such as
 `INCUS_GH_RUNNER_CAPACITY_MAX_RUNNERS`.
+
+Production authentication uses a GitHub App configured with `client_id`,
+`installation_id`, and a protected `private_key_file`. The initial development
+path accepts a PAT only through `INCUS_GH_RUNNER_GITHUB_TOKEN`; the token is not
+decoded from YAML and has no CLI flag. The process resolves or creates the
+configured scale set and leaves that persistent scale set in place across
+controller restarts.
 
 CI runs the same aggregate gate with `moon ci --summary minimal`.
 
@@ -82,8 +100,8 @@ The integration seams pin
 [`actions/scaleset`](https://github.com/actions/scaleset) and the
 [`incus/v7` Go client](https://github.com/lxc/incus). Third-party client types
 stay in `internal/adapters`; controller-owned ports live with the orchestration
-core. The deterministic fake application test is the current functional proof
-until the real lifecycle slices begin.
+core. Scale-set callbacks only publish into the coalescing mailbox; JIT and
+Incus calls remain in the bounded runner-operation path.
 
 ## Functional test environments
 
@@ -96,6 +114,16 @@ uses explicitly disposable infrastructure:
 - GitHub scale-set testing targets a dedicated private repository or
   organization and a uniquely named test scale set. Do not use production
   repositories, runner groups, or credentials for development experiments.
+
+The opt-in GitHub preflight resolves the persistent scale set and opens and
+closes one real message session without creating a runner:
+
+```sh
+INCUS_GH_RUNNER_TEST_GITHUB_CONFIG_URL=https://github.com/meigma/incus-gh-runner \
+INCUS_GH_RUNNER_TEST_GITHUB_SCALE_SET=incus-gh-runner-phase4 \
+INCUS_GH_RUNNER_GITHUB_TOKEN="$(gh auth token)" \
+go test ./internal/adapters/github -run TestScaleSetSessionFunctional -count=1 -v
+```
 
 The Incus lifecycle test is opt-in and destructive only for instances carrying
 its unique ownership marker. It refuses the default project and expects the
@@ -112,7 +140,21 @@ go test ./internal/adapters/incus -run TestIncusLifecycleFunctional -count=1 -v
 The proof drives one unit of fake demand through the controller, injects a
 credential-free probe payload, captures the terminal serial console, deletes
 the exact owned VM, and verifies that the owned inventory returns to zero.
-GitHub credentials and a genuine JIT job enter in phase 4.
+
+The manual `Runner Functional Proof` workflow accepts an exact runner label and
+executes a minimal unprivileged Linux job on that scale set. Prepare all costly
+live-test inputs before allocating hardware:
+
+```sh
+scripts/live/phase4-prepare.sh
+```
+
+That command cross-compiles the controller and phase 3 functional test, starts
+and downloads a fresh hosted reference-image build, verifies its checksum, and
+assembles the transfer bundle under `build/live-phase4`. On a fresh Ubuntu
+24.04 Incus-capable host, `phase4-host-prepare.sh` installs the native Incus and
+QEMU packages, creates a non-default project, and runs the phase 2 and phase 3
+live gates before the controller is started for the genuine phase 4 job.
 
 ## Packaging
 

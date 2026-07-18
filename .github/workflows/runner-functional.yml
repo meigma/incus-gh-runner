@@ -1,0 +1,39 @@
+name: Runner Functional Proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_label:
+        description: Exact label of the disposable runner scale set
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: runner-functional-${{ inputs.runner_label }}
+  cancel-in-progress: false
+
+jobs:
+  one-shot-runner:
+    name: One-shot runner lifecycle
+    runs-on: "${{ inputs.runner_label }}"
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - name: Prove the disposable Linux runner
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test "$(uname -s)" = Linux
+          test "$(id -u)" -ne 0
+
+          proof_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$proof_dir"' EXIT
+          printf 'run_id=%s\nrun_attempt=%s\nrunner_name=%s\n' \
+            "$GITHUB_RUN_ID" \
+            "$GITHUB_RUN_ATTEMPT" \
+            "$RUNNER_NAME" \
+            >"$proof_dir/evidence.txt"
+          sha256sum "$proof_dir/evidence.txt"

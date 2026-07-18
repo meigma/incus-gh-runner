@@ -38,8 +38,20 @@ func TestVersionFlagPrintsBuildMetadata(t *testing.T) {
 
 func TestRootCommandLoadsFileEnvironmentAndFlagPrecedence(t *testing.T) {
 	t.Setenv("INCUS_GH_RUNNER_CAPACITY_MAX_RUNNERS", "3")
+	t.Setenv(config.EnvGitHubToken, "development-token")
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	require.NoError(t, os.WriteFile(configPath, []byte(`capacity:
+	require.NoError(t, os.WriteFile(configPath, []byte(`github:
+  config_url: https://github.com/meigma/incus-gh-runner
+  scale_set: incus-phase4
+  runner_group: default
+incus:
+  project: runner-test
+  image: incus-gh-runner:test
+  profiles: [default]
+  owner: phase4-test
+  bootstrap_timeout: 3m
+  diagnostics_dir: /tmp/incus-gh-runner-diagnostics
+capacity:
   min_runners: 1
   max_runners: 2
 concurrency:
@@ -67,6 +79,12 @@ timeouts:
 	assert.Equal(t, 2*time.Second, received.ReconcileInterval)
 	assert.Equal(t, time.Minute, received.Timeouts.IncusOperation)
 	assert.Equal(t, 10*time.Second, received.Timeouts.Shutdown)
+	assert.Equal(t, "https://github.com/meigma/incus-gh-runner", received.GitHub.ConfigURL)
+	assert.Equal(t, "incus-phase4", received.GitHub.ScaleSet)
+	assert.Equal(t, "development-token", received.GitHub.Token)
+	assert.Equal(t, "runner-test", received.Incus.Project)
+	assert.Equal(t, []string{"default"}, received.Incus.Profiles)
+	assert.Equal(t, 3*time.Minute, received.Incus.BootstrapTimeout)
 }
 
 func TestRootCommandAllowsMissingOptionalConfig(t *testing.T) {
