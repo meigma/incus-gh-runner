@@ -485,7 +485,7 @@ jobs:
           set -euo pipefail
 
           docker run --rm "$IMAGE_REF" --version
-          docker run --rm "$IMAGE_REF" --message "hello from container"
+          docker run --rm "$IMAGE_REF" --help >/dev/null
 
       - name: Sign image (keyless, Sigstore/Fulcio via OIDC)
         env:

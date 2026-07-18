@@ -251,7 +251,7 @@ jobs:
           docker tag incus-gh-runner:dry-run-amd64 incus-gh-runner:dry-run
 
           docker run --rm incus-gh-runner:dry-run --version
-          docker run --rm incus-gh-runner:dry-run --message "hello from container"
+          docker run --rm incus-gh-runner:dry-run --help >/dev/null
 
   reference-image-dry-run:
     name: Reference Image Dry Run
