@@ -31,9 +31,15 @@ python = "3.14.3"
   strip_components = 1,
   bin_path = "bin",
   postinstall = '''
+    mise_installs_dir="$(dirname "$(dirname "$MISE_TOOL_INSTALL_PATH")")"
+    go_bin="$mise_installs_dir/go/1.26.4/bin/go"
+    if [ ! -x "$go_bin" ]; then
+      echo "pinned mise Go binary is unavailable: $go_bin" >&2
+      exit 1
+    fi
     mkdir -p "$MISE_TOOL_INSTALL_PATH/bin"
     cd "$MISE_TOOL_INSTALL_PATH"
-    go build \
+    "$go_bin" build \
       -mod=vendor \
       -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp \
       -trimpath \
