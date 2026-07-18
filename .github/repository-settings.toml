@@ -43,6 +43,8 @@ vulnerability_alerts = true
 automated_security_fixes = true
 
 [pages]
+# Applying this section requires a GitHub plan that supports Pages for private
+# repositories. Keep PAGES_ENABLED=false until this API call succeeds.
 build_type = "workflow"
 https_enforced = true
 
