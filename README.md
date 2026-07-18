@@ -8,8 +8,9 @@ delete each VM after its one assigned job.
 The phase 1 controller core reconciles coalesced demand through a bounded worker
 pool using explicit demand-source and runner-backend ports. Phase 2 adds a
 checksummed, offline-built reference VM image and a versioned one-shot guest
-contract. Real GitHub and Incus lifecycle adapters are intentionally not wired
-into the executable yet.
+contract. Phase 3 adds periodic ownership inventory and the real Incus backend
+for create, start, payload injection, observation, diagnostics, and deletion.
+The GitHub scale-set adapter remains intentionally unwired until phase 4.
 
 ## v1 boundaries
 
@@ -96,9 +97,22 @@ uses explicitly disposable infrastructure:
   organization and a uniquely named test scale set. Do not use production
   repositories, runner groups, or credentials for development experiments.
 
-Live functional tests and their credential interface will be added alongside
-the first real Incus and GitHub lifecycle slices rather than specified ahead of
-the working implementation.
+The Incus lifecycle test is opt-in and destructive only for instances carrying
+its unique ownership marker. It refuses the default project and expects the
+phase 2 reference image to be imported already:
+
+```sh
+INCUS_GH_RUNNER_TEST_PROJECT=runner-test \
+INCUS_GH_RUNNER_TEST_IMAGE=incus-gh-runner:test \
+INCUS_GH_RUNNER_TEST_PROFILES=default,github-runner \
+go test ./internal/adapters/incus -run TestIncusLifecycleFunctional -count=1 -v
+```
+
+`INCUS_GH_RUNNER_TEST_PROFILES` and `INCUS_GH_RUNNER_TEST_SOCKET` are optional.
+The proof drives one unit of fake demand through the controller, injects a
+credential-free probe payload, captures the terminal serial console, deletes
+the exact owned VM, and verifies that the owned inventory returns to zero.
+GitHub credentials and a genuine JIT job enter in phase 4.
 
 ## Packaging
 

@@ -117,6 +117,44 @@ func TestControllerPreservesBusyCapacityWhileScalingDown(t *testing.T) {
 	require.NoError(t, receiveError(t, errCh))
 }
 
+func TestControllerRefreshesInventoryAndDeletesTerminalRunner(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend(controller.Runner{ID: "runner-1", State: controller.RunnerProvisioning})
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{Workers: 1})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	backend.setRunnerState("runner-1", controller.RunnerTerminal)
+	require.Eventually(t, func() bool {
+		return !backend.hasRunner("runner-1")
+	}, time.Second, time.Millisecond, "expected refreshed terminal capacity to be deleted")
+	assert.GreaterOrEqual(t, backend.listAttempts(), 2, "expected startup and periodic inventory")
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
+func TestControllerRestartPreservesProvisioningCapacity(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend(controller.Runner{ID: "runner-1", State: controller.RunnerProvisioning})
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{Workers: 1})
+	mailbox.Publish(controller.Demand{AssignedJobs: 1})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	require.Eventually(t, func() bool {
+		return backend.listAttempts() >= 2
+	}, time.Second, time.Millisecond, "expected restart inventory to be refreshed")
+	assert.Zero(t, backend.createAttempts(), "existing provisioning capacity must prevent duplication")
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
 func TestControllerBoundsShutdownOfSlowOperation(t *testing.T) {
 	t.Parallel()
 
@@ -207,6 +245,7 @@ type fakeBackend struct {
 	failCreates           int
 	createSequence        int
 	createAttemptCount    int
+	listAttemptCount      int
 	concurrentCreateCount int
 	maximumCreateCount    int
 	canceledCreateCount   int
@@ -225,12 +264,22 @@ func newFakeBackend(runners ...controller.Runner) *fakeBackend {
 func (f *fakeBackend) ListOwned(context.Context) ([]controller.Runner, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.listAttemptCount++
 
 	runners := make([]controller.Runner, 0, len(f.runners))
 	for _, runner := range f.runners {
 		runners = append(runners, runner)
 	}
 	return runners, nil
+}
+
+// setRunnerState changes the observed lifecycle state for a fake runner.
+func (f *fakeBackend) setRunnerState(id string, state controller.RunnerState) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	runner := f.runners[id]
+	runner.State = state
+	f.runners[id] = runner
 }
 
 // Create records concurrency and applies configured delay or failure behavior.
@@ -316,6 +365,13 @@ func (f *fakeBackend) createAttempts() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.createAttemptCount
+}
+
+// listAttempts returns the number of inventory calls.
+func (f *fakeBackend) listAttempts() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.listAttemptCount
 }
 
 // canceledCreates returns the number of creates stopped through context cancellation.
