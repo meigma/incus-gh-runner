@@ -22,8 +22,10 @@ toolchain, CI gates, and isolated GitHub and Incus client adapters. Controller,
 guest-image, deployment, and troubleshooting documentation will grow from
 working lifecycle slices. The phase 4 hardware gate completed one genuine job
 through registration, poweroff, diagnostics, and deletion on Incus 7.2. Phase
-5 now adds deterministic hot-pool recovery coverage and a repeatable live proof
-for preconnected standby dispatch and replacement.
+5 adds deterministic hot-pool recovery coverage and a repeatable live proof for
+preconnected standby dispatch and replacement. Phase 6 hardening now recreates
+failed GitHub message sessions with capped reconnect backoff while preserving
+fail-fast startup preflight.
 
 See the repository [README](https://github.com/meigma/incus-gh-runner#readme)
 for current scope and development instructions.

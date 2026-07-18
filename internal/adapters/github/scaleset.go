@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/actions/scaleset"
 	"github.com/actions/scaleset/listener"
@@ -154,12 +155,19 @@ type DemandSourceOptions struct {
 	MaxRunners int
 	// Logger receives secret-safe message and job lifecycle events.
 	Logger *slog.Logger
+	// ReconnectInitial is the first delay after a failed GitHub message session.
+	ReconnectInitial time.Duration
+	// ReconnectMaximum caps the delay between message-session recreation attempts.
+	ReconnectMaximum time.Duration
+	// SessionCloseTimeout bounds cleanup of each replaced GitHub message session.
+	SessionCloseTimeout time.Duration
 }
 
 // DemandSource publishes coalescible demand from one GitHub message session.
 type DemandSource struct {
-	listener demandListener
-	options  DemandSourceOptions
+	listener  demandListener
+	options   DemandSourceOptions
+	onContact func()
 }
 
 // NewDemandSource constructs a demand source from an active message session.
@@ -199,7 +207,7 @@ func (s *DemandSource) Run(ctx context.Context, publish func(controller.Demand))
 	if publish == nil {
 		return errors.New("demand publisher is required")
 	}
-	handler := demandHandler{options: s.options, publish: publish}
+	handler := demandHandler{options: s.options, publish: publish, onContact: s.onContact}
 	if err := s.listener.Run(ctx, &handler); err != nil {
 		return fmt.Errorf("run scale-set listener: %w", err)
 	}
@@ -214,12 +222,16 @@ type demandListener interface {
 
 // demandHandler translates synchronous scale-set callbacks into non-blocking demand publication.
 type demandHandler struct {
-	options DemandSourceOptions
-	publish func(controller.Demand)
+	options   DemandSourceOptions
+	publish   func(controller.Demand)
+	onContact func()
 }
 
 // HandleDesiredRunnerCount publishes current assigned jobs and reports the bounded target.
 func (h *demandHandler) HandleDesiredRunnerCount(_ context.Context, count int) (int, error) {
+	if h.onContact != nil {
+		h.onContact()
+	}
 	assignedJobs := max(count, 0)
 	h.publish(controller.Demand{AssignedJobs: assignedJobs})
 	return min(h.options.MaxRunners, h.options.MinRunners+assignedJobs), nil

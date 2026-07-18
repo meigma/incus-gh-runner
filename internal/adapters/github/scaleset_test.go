@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/actions/scaleset"
 	"github.com/actions/scaleset/listener"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -167,6 +169,102 @@ func TestDemandSourcePublishesAssignedJobsWithoutExternalWork(t *testing.T) {
 	assert.Equal(t, controller.Demand{AssignedJobs: 9}, <-mailbox.Updates())
 }
 
+func TestResilientDemandSourceCapsReconnectBackoff(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	initial := newFakeMessageSession(func(context.Context, int, int) (*scaleset.RunnerScaleSetMessage, error) {
+		return nil, errors.New("message queue unavailable")
+	})
+	recovered := newFakeMessageSession(
+		func(ctx context.Context, _ int, _ int) (*scaleset.RunnerScaleSetMessage, error) {
+			cancel()
+			return nil, ctx.Err()
+		},
+	)
+	attempts := 0
+	open := func(context.Context) (messageSession, error) {
+		attempts++
+		if attempts < 3 {
+			return nil, errors.New("session API unavailable")
+		}
+		return recovered, nil
+	}
+	var delays []time.Duration
+	wait := func(_ context.Context, delay time.Duration) error {
+		delays = append(delays, delay)
+		return nil
+	}
+	source, err := newResilientDemandSource(initial, open, DemandSourceOptions{
+		ScaleSetID:          73,
+		MinRunners:          1,
+		MaxRunners:          4,
+		ReconnectInitial:    time.Second,
+		ReconnectMaximum:    3 * time.Second,
+		SessionCloseTimeout: time.Second,
+	}, wait)
+	require.NoError(t, err)
+
+	err = source.Run(ctx, func(controller.Demand) {})
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, []time.Duration{time.Second, 2 * time.Second, 3 * time.Second}, delays)
+	assert.Equal(t, 1, initial.closeCount)
+	assert.Equal(t, 1, recovered.closeCount)
+}
+
+func TestResilientDemandSourceResetsBackoffAfterHealthyPolling(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	initial := newFakeMessageSession(func(context.Context, int, int) (*scaleset.RunnerScaleSetMessage, error) {
+		return nil, errors.New("message queue unavailable")
+	})
+	getCalls := 0
+	healthy := newFakeMessageSession(func(context.Context, int, int) (*scaleset.RunnerScaleSetMessage, error) {
+		getCalls++
+		if getCalls == 1 {
+			return nil, nil //nolint:nilnil // A nil message is a healthy long-poll expiry.
+		}
+		return nil, errors.New("message queue disconnected")
+	})
+	attempts := 0
+	open := func(context.Context) (messageSession, error) {
+		attempts++
+		if attempts == 1 {
+			return nil, errors.New("session API unavailable")
+		}
+		return healthy, nil
+	}
+	var delays []time.Duration
+	wait := func(ctx context.Context, delay time.Duration) error {
+		delays = append(delays, delay)
+		if len(delays) == 3 {
+			cancel()
+			return ctx.Err()
+		}
+		return nil
+	}
+	source, err := newResilientDemandSource(initial, open, DemandSourceOptions{
+		ScaleSetID:          73,
+		MinRunners:          1,
+		MaxRunners:          4,
+		ReconnectInitial:    time.Second,
+		ReconnectMaximum:    10 * time.Second,
+		SessionCloseTimeout: time.Second,
+	}, wait)
+	require.NoError(t, err)
+
+	err = source.Run(ctx, func(controller.Demand) {})
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, []time.Duration{time.Second, 2 * time.Second, time.Second}, delays)
+	assert.Equal(t, 1, initial.closeCount)
+	assert.Equal(t, 1, healthy.closeCount)
+}
+
 // fakeScaleSetClient provides behavior-controlled scale-set operations.
 type fakeScaleSetClient struct {
 	getRunnerGroup       func(context.Context, string) (*scaleset.RunnerGroup, error)
@@ -239,4 +337,54 @@ type fakeDemandListener struct {
 // Run invokes the configured message-loop behavior.
 func (f *fakeDemandListener) Run(ctx context.Context, scaler listener.Scaler) error {
 	return f.run(ctx, scaler)
+}
+
+// fakeMessageSession provides one behavior-controlled closeable listener client.
+type fakeMessageSession struct {
+	getMessage func(context.Context, int, int) (*scaleset.RunnerScaleSetMessage, error)
+	session    scaleset.RunnerScaleSetSession
+	closeCount int
+}
+
+// newFakeMessageSession constructs a session with valid initial demand statistics.
+func newFakeMessageSession(
+	getMessage func(context.Context, int, int) (*scaleset.RunnerScaleSetMessage, error),
+) *fakeMessageSession {
+	return &fakeMessageSession{
+		getMessage: getMessage,
+		session: scaleset.RunnerScaleSetSession{
+			SessionID:  uuid.New(),
+			Statistics: &scaleset.RunnerScaleSetStatistic{},
+		},
+	}
+}
+
+// GetMessage invokes the configured message-poll behavior.
+func (f *fakeMessageSession) GetMessage(
+	ctx context.Context,
+	lastMessageID int,
+	maxCapacity int,
+) (*scaleset.RunnerScaleSetMessage, error) {
+	return f.getMessage(ctx, lastMessageID, maxCapacity)
+}
+
+// DeleteMessage accepts message acknowledgement in tests that produce messages.
+func (f *fakeMessageSession) DeleteMessage(context.Context, int) error {
+	return nil
+}
+
+// AcquireJobs accepts job acquisition in tests that produce available jobs.
+func (f *fakeMessageSession) AcquireJobs(_ context.Context, requestIDs []int64) ([]int64, error) {
+	return requestIDs, nil
+}
+
+// Session returns valid initial statistics for the upstream listener.
+func (f *fakeMessageSession) Session() scaleset.RunnerScaleSetSession {
+	return f.session
+}
+
+// Close records release of the fake message session.
+func (f *fakeMessageSession) Close(context.Context) error {
+	f.closeCount++
+	return nil
 }

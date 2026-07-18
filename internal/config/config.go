@@ -19,6 +19,8 @@ const (
 	defaultOperationTimeout  = 5 * time.Minute
 	defaultShutdownTimeout   = 30 * time.Second
 	defaultBootstrapTimeout  = 5 * time.Minute
+	defaultRetryInitial      = time.Second
+	defaultRetryMaximum      = 30 * time.Second
 	defaultRunnerGroup       = "default"
 
 	// KeyMinRunners identifies the configured idle capacity floor.
@@ -33,6 +35,10 @@ const (
 	KeyOperationTimeout = "timeouts.incus_operation"
 	// KeyShutdownTimeout identifies the graceful shutdown timeout.
 	KeyShutdownTimeout = "timeouts.shutdown"
+	// KeyRetryInitial identifies the first GitHub reconnect delay.
+	KeyRetryInitial = "retry.initial"
+	// KeyRetryMaximum identifies the capped GitHub reconnect delay.
+	KeyRetryMaximum = "retry.maximum"
 	// KeyGitHubConfigURL identifies the repository or organization registration URL.
 	KeyGitHubConfigURL = "github.config_url"
 	// KeyGitHubScaleSet identifies the persistent runner scale-set name.
@@ -76,6 +82,8 @@ type Config struct {
 	ReconcileInterval time.Duration `mapstructure:"reconcile_interval"`
 	// Timeouts bounds lifecycle operations and shutdown.
 	Timeouts Timeouts `mapstructure:"timeouts"`
+	// Retry controls transient GitHub reconnect backoff.
+	Retry Retry `mapstructure:"retry"`
 }
 
 // GitHub contains the runner scale-set registration and credential settings.
@@ -142,6 +150,14 @@ type Timeouts struct {
 	Shutdown time.Duration `mapstructure:"shutdown"`
 }
 
+// Retry contains bounded transient-failure retry settings.
+type Retry struct {
+	// Initial is the first delay before recreating a failed GitHub message session.
+	Initial time.Duration `mapstructure:"initial"`
+	// Maximum caps the delay between GitHub message-session recreation attempts.
+	Maximum time.Duration `mapstructure:"maximum"`
+}
+
 // ConfigureViper installs defaults and explicit environment bindings.
 func ConfigureViper(vp *viper.Viper) error {
 	defaultConfig := Defaults()
@@ -152,6 +168,8 @@ func ConfigureViper(vp *viper.Viper) error {
 		KeyReconcileInterval:     defaultConfig.ReconcileInterval,
 		KeyOperationTimeout:      defaultConfig.Timeouts.IncusOperation,
 		KeyShutdownTimeout:       defaultConfig.Timeouts.Shutdown,
+		KeyRetryInitial:          defaultConfig.Retry.Initial,
+		KeyRetryMaximum:          defaultConfig.Retry.Maximum,
 		KeyGitHubRunnerGroup:     defaultConfig.GitHub.RunnerGroup,
 		KeyIncusBootstrapTimeout: defaultConfig.Incus.BootstrapTimeout,
 	}
@@ -166,6 +184,8 @@ func ConfigureViper(vp *viper.Viper) error {
 		KeyReconcileInterval:       "INCUS_GH_RUNNER_RECONCILE_INTERVAL",
 		KeyOperationTimeout:        "INCUS_GH_RUNNER_TIMEOUTS_INCUS_OPERATION",
 		KeyShutdownTimeout:         "INCUS_GH_RUNNER_TIMEOUTS_SHUTDOWN",
+		KeyRetryInitial:            "INCUS_GH_RUNNER_RETRY_INITIAL",
+		KeyRetryMaximum:            "INCUS_GH_RUNNER_RETRY_MAXIMUM",
 		KeyGitHubConfigURL:         "INCUS_GH_RUNNER_GITHUB_CONFIG_URL",
 		KeyGitHubScaleSet:          "INCUS_GH_RUNNER_GITHUB_SCALE_SET",
 		KeyGitHubRunnerGroup:       "INCUS_GH_RUNNER_GITHUB_RUNNER_GROUP",
@@ -202,6 +222,10 @@ func Defaults() Config {
 		Timeouts: Timeouts{
 			IncusOperation: defaultOperationTimeout,
 			Shutdown:       defaultShutdownTimeout,
+		},
+		Retry: Retry{
+			Initial: defaultRetryInitial,
+			Maximum: defaultRetryMaximum,
 		},
 	}
 }
@@ -321,6 +345,12 @@ func (c Config) Validate() error {
 	}
 	if c.Timeouts.Shutdown <= 0 {
 		return errors.New("timeouts.shutdown must be positive")
+	}
+	if c.Retry.Initial <= 0 {
+		return errors.New("retry.initial must be positive")
+	}
+	if c.Retry.Maximum < c.Retry.Initial {
+		return errors.New("retry.maximum must be at least retry.initial")
 	}
 
 	return nil

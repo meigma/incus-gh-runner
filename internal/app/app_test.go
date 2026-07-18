@@ -71,6 +71,7 @@ func newApplication(t *testing.T, options app.Options) *app.Application {
 			IncusOperation: time.Second,
 			Shutdown:       50 * time.Millisecond,
 		},
+		Retry: config.Retry{Initial: time.Millisecond, Maximum: time.Second},
 	}
 	application, err := app.New(options)
 	require.NoError(t, err)
