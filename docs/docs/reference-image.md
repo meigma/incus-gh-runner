@@ -25,6 +25,29 @@ day.
 An offline build proves construction only. Boot and guest-lifecycle validation
 must run separately against a disposable Incus project.
 
+## Incus boot validation
+
+On an Incus-capable host, validate the built artifact against an explicitly
+named disposable project:
+
+```sh
+image/validate-incus.sh incus-gh-runner-test build/reference-image/incus-gh-runner-ubuntu-24.04-x86_64.tar.xz
+```
+
+The validator refuses the `default` project. It imports the archive under a
+unique alias, launches one uniquely named VM, waits for the Incus agent, and
+temporarily replaces the runner entrypoint with a slow probe. It then exercises
+the real payload/ready-marker exchange, observes the running status, verifies
+that both transient input files are already gone, waits for guest-driven
+poweroff, and checks the stopped VM's serial log for the expected lifecycle and
+absence of the probe secret. Its exit trap deletes only the exact instance and
+alias it created, and deletes the image fingerprint only when that fingerprint
+was not present before the run.
+
+This probe validates the image boot and guest contract without consuming a
+GitHub credential. A genuine Actions Runner JIT registration remains the phase
+4 end-to-end proof.
+
 ## Controller-to-guest contract
 
 A compliant image must provide an Incus agent and this one-shot exchange:

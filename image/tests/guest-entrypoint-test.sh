@@ -3,6 +3,18 @@ set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 guest_entrypoint="${repo_root}/image/guest/incus-gh-runner-guest"
+bash -n \
+  "${repo_root}/image/build.sh" \
+  "$guest_entrypoint" \
+  "${repo_root}/image/validate-incus.sh"
+
+set +e
+validation_usage="$(${repo_root}/image/validate-incus.sh 2>&1)"
+validation_usage_exit="$?"
+set -e
+[[ "$validation_usage_exit" -eq 2 ]]
+grep -Fq 'usage:' <<<"$validation_usage"
+
 test_root="$(mktemp -d)"
 temp_parent="${TMPDIR:-/tmp}"
 temp_parent="${temp_parent%/}"
