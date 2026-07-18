@@ -42,7 +42,12 @@ tar --extract --gzip --file "$distrobuilder_archive" --directory "$tool_root"
 
 (
   cd "$distrobuilder_source"
-  go build -mod=vendor -trimpath -o "$distrobuilder_bin" ./distrobuilder
+  go build \
+    -mod=vendor \
+    -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp \
+    -trimpath \
+    -o "$distrobuilder_bin" \
+    ./distrobuilder
 )
 
 cd "$repo_root"
