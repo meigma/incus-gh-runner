@@ -57,6 +57,35 @@ func TestApplicationPropagatesDemandSourceFailure(t *testing.T) {
 	assert.EqualError(t, err, "demand source: poll failed")
 }
 
+func TestApplicationBoundsShutdownWhenDemandSourceIgnoresCancellation(t *testing.T) {
+	t.Parallel()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	application := newApplication(t, app.Options{
+		DemandSource: demandSourceFunc(func(context.Context, func(controller.Demand)) error {
+			close(started)
+			<-release
+			return nil
+		}),
+		RunnerBackend: newFakeBackend(),
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- application.Run(ctx)
+	}()
+	<-started
+
+	startedAt := time.Now()
+	cancel()
+	err := receiveError(t, errCh)
+
+	require.ErrorIs(t, err, app.ErrShutdownTimeout)
+	assert.Less(t, time.Since(startedAt), 500*time.Millisecond)
+}
+
 // newApplication constructs an application with fast deterministic test configuration.
 func newApplication(t *testing.T, options app.Options) *app.Application {
 	t.Helper()

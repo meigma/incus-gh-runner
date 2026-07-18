@@ -6,12 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/meigma/incus-gh-runner/internal/config"
 	"github.com/meigma/incus-gh-runner/internal/controller"
 )
 
-const componentCount = 2
+const (
+	componentCount      = 2
+	shutdownWindowCount = 2
+)
+
+// ErrShutdownTimeout reports that an application component ignored cancellation.
+var ErrShutdownTimeout = errors.New("application shutdown timed out")
 
 // DemandSource publishes current scale-set demand until its context ends.
 type DemandSource interface {
@@ -33,8 +40,9 @@ type Options struct {
 
 // Application supervises the demand source and controller core.
 type Application struct {
-	demandSource demandSource
-	controller   *controller.Controller
+	demandSource   demandSource
+	controller     *controller.Controller
+	shutdownBudget time.Duration
 }
 
 // New constructs an Application from its ports.
@@ -63,8 +71,9 @@ func New(options Options) (*Application, error) {
 	}
 
 	return &Application{
-		demandSource: demandSource{source: options.DemandSource, publish: mailbox.Publish},
-		controller:   ctrl,
+		demandSource:   demandSource{source: options.DemandSource, publish: mailbox.Publish},
+		controller:     ctrl,
+		shutdownBudget: shutdownWindowCount * options.Config.Timeouts.Shutdown,
 	}, nil
 }
 
@@ -83,7 +92,13 @@ func (a *Application) Run(ctx context.Context) error {
 
 	first := <-results
 	cancel()
-	second := <-results
+	second, waitErr := a.waitForPeer(results)
+	if waitErr != nil {
+		if ctx.Err() != nil {
+			return waitErr
+		}
+		return errors.Join(componentError(first), waitErr)
+	}
 
 	if ctx.Err() != nil {
 		if err := meaningfulError(first); err != nil {
@@ -96,6 +111,19 @@ func (a *Application) Run(ctx context.Context) error {
 	}
 
 	return meaningfulError(second)
+}
+
+// waitForPeer bounds shutdown across the controller's graceful and cancellation windows.
+func (a *Application) waitForPeer(results <-chan componentResult) (componentResult, error) {
+	timer := time.NewTimer(a.shutdownBudget)
+	defer timer.Stop()
+
+	select {
+	case result := <-results:
+		return result, nil
+	case <-timer.C:
+		return componentResult{}, fmt.Errorf("after %s: %w", a.shutdownBudget, ErrShutdownTimeout)
+	}
 }
 
 // demandSource binds a source port to the controller's publish callback.
