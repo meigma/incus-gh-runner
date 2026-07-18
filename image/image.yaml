@@ -1,0 +1,154 @@
+image:
+  name: incus-gh-runner-ubuntu-24.04-x86_64
+  distribution: ubuntu
+  release: noble
+  description: Incus GitHub Actions runner on Ubuntu 24.04
+  architecture: x86_64
+  expiry: 30d
+
+source:
+  downloader: debootstrap
+  same_as: gutsy
+  url: https://archive.ubuntu.com/ubuntu
+  keyserver: keyserver.ubuntu.com
+  keys:
+    - 0x790BC7277767219C42C86F933B4FE6ACC0B21F32
+    - 0xf6ecb3762474eda9d21b7022871920d1991bc93c
+
+mappings:
+  architecture_map: debian
+
+targets:
+  incus:
+    vm:
+      size: 8589934592
+      filesystem: ext4
+
+files:
+  - path: /etc/hostname
+    generator: hostname
+
+  - path: /etc/hosts
+    generator: hosts
+
+  - path: /etc/machine-id
+    generator: dump
+    content: uninitialized
+
+  - path: /var/lib/dbus/machine-id
+    generator: remove
+
+  - path: /etc/netplan/10-incus.yaml
+    generator: dump
+    mode: 0600
+    content: |-
+      network:
+        version: 2
+        ethernets:
+          enp5s0:
+            dhcp4: true
+            dhcp-identifier: mac
+    types:
+      - vm
+
+  - name: ext4
+    generator: fstab
+    types:
+      - vm
+
+  - name: incus-agent
+    generator: incus-agent
+    types:
+      - vm
+
+  - path: /etc/default/grub.d/50-incus.cfg
+    generator: dump
+    content: |-
+      GRUB_RECORDFAIL_TIMEOUT=0
+      GRUB_TIMEOUT=0
+      GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} console=tty1 console=ttyS0"
+      GRUB_TERMINAL=console
+    types:
+      - vm
+
+  - path: /usr/local/libexec/incus-gh-runner-guest
+    generator: copy
+    source: image/guest/incus-gh-runner-guest
+    mode: 0755
+
+  - path: /usr/lib/systemd/system/incus-gh-runner-guest.service
+    generator: copy
+    source: image/guest/incus-gh-runner-guest.service
+    mode: 0644
+
+  - path: /usr/lib/systemd/system/incus-gh-runner-guest.path
+    generator: copy
+    source: image/guest/incus-gh-runner-guest.path
+    mode: 0644
+
+  - path: /usr/lib/tmpfiles.d/incus-gh-runner.conf
+    generator: copy
+    source: image/guest/incus-gh-runner.conf
+    mode: 0644
+
+packages:
+  manager: apt
+  update: true
+  cleanup: true
+  sets:
+    - action: install
+      packages:
+        - acpid
+        - ca-certificates
+        - curl
+        - git
+        - grub-efi-amd64-signed
+        - jq
+        - libicu74
+        - libkrb5-3
+        - liblttng-ust1t64
+        - libssl3t64
+        - linux-virtual
+        - netplan.io
+        - shim-signed
+        - systemd-resolved
+        - zlib1g
+      types:
+        - vm
+  repositories:
+    - name: sources.list
+      url: |-
+        deb https://archive.ubuntu.com/ubuntu {{ image.release }} main restricted universe multiverse
+        deb https://archive.ubuntu.com/ubuntu {{ image.release }}-updates main restricted universe multiverse
+        deb https://security.ubuntu.com/ubuntu {{ image.release }}-security main restricted universe multiverse
+      architectures:
+        - amd64
+
+actions:
+  - trigger: post-packages
+    action: |-
+      #!/bin/sh
+      set -eux
+
+      systemctl enable systemd-networkd
+      systemctl enable systemd-resolved
+
+      install -d -m 0755 /opt/actions-runner
+      useradd --system --home-dir /opt/actions-runner --shell /usr/sbin/nologin actions-runner
+
+      runner_version=2.335.1
+      runner_archive=/tmp/actions-runner-linux-x64-${runner_version}.tar.gz
+      curl --fail --location --silent --show-error \
+        "https://github.com/actions/runner/releases/download/v${runner_version}/actions-runner-linux-x64-${runner_version}.tar.gz" \
+        --output "${runner_archive}"
+      echo "4ef2f25285f0ae4477f1fe1e346db76d2f3ebf03824e2ddd1973a2819bf6c8cf  ${runner_archive}" | sha256sum --check --strict
+      tar --extract --gzip --file "${runner_archive}" --directory /opt/actions-runner
+      chown -R actions-runner:actions-runner /opt/actions-runner
+      rm -f "${runner_archive}"
+
+  - trigger: post-files
+    action: |-
+      #!/bin/sh
+      set -eux
+
+      systemctl enable incus-gh-runner-guest.path
