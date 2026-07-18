@@ -68,7 +68,14 @@ func (c *serverClient) contextual(ctx context.Context) incusclient.InstanceServe
 
 // GetImage verifies that name resolves in the selected project.
 func (c *serverClient) GetImage(ctx context.Context, name string) error {
-	_, _, err := c.contextual(ctx).GetImage(name)
+	server := c.contextual(ctx)
+	_, _, err := server.GetImage(name)
+	classified := classifyError(err)
+	if err == nil || !errors.Is(classified, errNotFound) {
+		return classified
+	}
+
+	_, _, err = server.GetImageAlias(name)
 	return classifyError(err)
 }
 
