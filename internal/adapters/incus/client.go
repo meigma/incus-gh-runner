@@ -33,6 +33,7 @@ type client interface {
 	GetInstance(ctx context.Context, name string) (*api.Instance, error)
 	CreateInstance(ctx context.Context, request api.InstancesPost) error
 	StartInstance(ctx context.Context, name string) error
+	StopInstance(ctx context.Context, name string) error
 	CreateInstanceFile(ctx context.Context, name string, path string, content []byte, mode int) error
 	GetInstanceFile(ctx context.Context, name string, path string) ([]byte, error)
 	GetInstanceConsoleLog(ctx context.Context, name string) ([]byte, error)
@@ -68,7 +69,14 @@ func (c *serverClient) contextual(ctx context.Context) incusclient.InstanceServe
 
 // GetImage verifies that name resolves in the selected project.
 func (c *serverClient) GetImage(ctx context.Context, name string) error {
-	_, _, err := c.contextual(ctx).GetImage(name)
+	server := c.contextual(ctx)
+	_, _, err := server.GetImage(name)
+	classified := classifyError(err)
+	if err == nil || !errors.Is(classified, errNotFound) {
+		return classified
+	}
+
+	_, _, err = server.GetImageAlias(name)
 	return classifyError(err)
 }
 
@@ -103,6 +111,20 @@ func (c *serverClient) CreateInstance(ctx context.Context, request api.Instances
 // StartInstance starts name and waits for completion.
 func (c *serverClient) StartInstance(ctx context.Context, name string) error {
 	operation, err := c.contextual(ctx).UpdateInstanceState(name, api.InstanceStatePut{Action: "start"}, "")
+	if err != nil {
+		return classifyError(err)
+	}
+
+	return operation.WaitContext(ctx)
+}
+
+// StopInstance forcibly stops name and waits for completion.
+func (c *serverClient) StopInstance(ctx context.Context, name string) error {
+	operation, err := c.contextual(ctx).UpdateInstanceState(
+		name,
+		api.InstanceStatePut{Action: "stop", Force: true},
+		"",
+	)
 	if err != nil {
 		return classifyError(err)
 	}

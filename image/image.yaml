@@ -151,4 +151,12 @@ actions:
       #!/bin/sh
       set -eux
 
+      update-grub
+      grub-install \
+        --uefi-secure-boot \
+        --target=x86_64-efi \
+        --no-nvram
+      update-grub
+      sed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_UUID}#g" /boot/grub/grub.cfg
+
       systemctl enable incus-gh-runner-guest.path

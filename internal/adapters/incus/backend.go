@@ -303,6 +303,11 @@ func (b *Backend) Delete(ctx context.Context, runnerID string) error {
 		b.options.Logger.WarnContext(ctx, "failed to store runner diagnostics", "runner_id", runnerID, "error", err)
 	}
 
+	if !strings.EqualFold(instance.Status, "stopped") {
+		if err := b.client.StopInstance(ctx, runnerID); err != nil && !errors.Is(err, errNotFound) {
+			return fmt.Errorf("stop owned instance %q before delete: %w", runnerID, err)
+		}
+	}
 	if err := b.client.DeleteInstance(ctx, runnerID); err != nil && !errors.Is(err, errNotFound) {
 		return fmt.Errorf("delete owned instance %q: %w", runnerID, err)
 	}

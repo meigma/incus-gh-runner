@@ -111,6 +111,8 @@ uses explicitly disposable infrastructure:
 - Incus testing targets a dedicated project on a local or otherwise isolated
   daemon. The project, image, profiles, network, and storage must already exist;
   tests must never point cleanup logic at an unrelated or shared project.
+- Live VM diagnostics require Incus 6.5 or newer; Ubuntu 24.04's native Incus
+  6.0 package does not expose virtual-machine console history.
 - GitHub scale-set testing targets a dedicated private repository or
   organization and a uniquely named test scale set. Do not use production
   repositories, runner groups, or credentials for development experiments.
@@ -138,8 +140,9 @@ go test ./internal/adapters/incus -run TestIncusLifecycleFunctional -count=1 -v
 
 `INCUS_GH_RUNNER_TEST_PROFILES` and `INCUS_GH_RUNNER_TEST_SOCKET` are optional.
 The proof drives one unit of fake demand through the controller, injects a
-credential-free probe payload, captures the terminal serial console, deletes
-the exact owned VM, and verifies that the owned inventory returns to zero.
+credential-free probe payload, captures the live terminal serial history during
+the guest's bounded diagnostic grace window, deletes the exact owned VM, and
+verifies that the owned inventory returns to zero.
 
 The manual `Runner Functional Proof` workflow accepts an exact runner label and
 executes a minimal unprivileged Linux job on that scale set. Prepare all costly

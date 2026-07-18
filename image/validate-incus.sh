@@ -18,7 +18,7 @@ if [[ "$project" == default ]]; then
   exit 2
 fi
 
-for command_name in incus jq; do
+for command_name in incus jq sort; do
   command -v "$command_name" >/dev/null || {
     printf 'required command is unavailable: %s\n' "$command_name" >&2
     exit 1
@@ -35,6 +35,16 @@ incus_cmd() {
 }
 
 incus project show "$project" >/dev/null
+
+minimum_server_version=6.5
+server_version="$(incus version | sed -n 's/^Server version: //p')"
+if [[ -z "$server_version" ]] || \
+  [[ "$(printf '%s\n%s\n' "$minimum_server_version" "$server_version" | sort -V | head -n 1)" != "$minimum_server_version" ]]; then
+  printf 'Incus server %s or newer is required for VM console history; found %s\n' \
+    "$minimum_server_version" \
+    "${server_version:-unknown}" >&2
+  exit 1
+fi
 
 token="$(date -u +%Y%m%d%H%M%S)-$$"
 instance="incus-gh-runner-probe-${token}"
@@ -82,8 +92,12 @@ fi
 
 preexisting_fingerprints="$(incus_cmd image list --format json | jq --raw-output '.[].fingerprint')"
 incus_cmd image import "$archive" --alias "$alias"
-fingerprint="$(incus_cmd image info "$alias" --format json | jq --exit-status --raw-output '.fingerprint')"
 alias_created=true
+fingerprint="$(
+  incus_cmd image list --format json |
+    jq --arg alias "$alias" --exit-status --raw-output \
+      '.[] | select(any(.aliases[]?; .name == $alias)) | .fingerprint'
+)"
 if ! grep -Fxq "$fingerprint" <<<"$preexisting_fingerprints"; then
   image_owned=true
 fi
@@ -148,6 +162,43 @@ incus_cmd exec "$instance" -- test ! -e /run/incus-gh-runner/payload.json
 incus_cmd exec "$instance" -- test ! -e /run/incus-gh-runner/payload.ready
 incus_cmd exec "$instance" -- test -f /opt/actions-runner/probe.marker
 
+guest_exited=false
+for _ in $(seq 1 60); do
+  status_json="$(incus_cmd file pull "${instance}/run/incus-gh-runner/status.json" - 2>/dev/null || true)"
+  if jq --exit-status '.version == 1 and .state == "exited" and .exit_code == 0' \
+    <<<"$status_json" >/dev/null 2>&1; then
+    guest_exited=true
+    break
+  fi
+  sleep 1
+done
+[[ "$guest_exited" == true ]] || {
+  printf 'guest did not report terminal success\n' >&2
+  exit 1
+}
+
+console_ready=false
+for _ in $(seq 1 10); do
+  console_log="$(incus_cmd console "$instance" --show-log)"
+  if grep -Fq 'incus-gh-runner-guest action=poweroff exit_code=0' <<<"$console_log"; then
+    console_ready=true
+    break
+  fi
+  sleep 1
+done
+[[ "$console_ready" == true ]] || {
+  printf 'guest serial console did not report terminal poweroff intent\n' >&2
+  exit 1
+}
+
+grep -Fq 'incus-gh-runner-guest state=starting' <<<"$console_log"
+grep -Fq 'incus-gh-runner-guest state=running' <<<"$console_log"
+grep -Fq 'incus-gh-runner-guest state=exited' <<<"$console_log"
+if grep -Fq "$probe_secret" <<<"$console_log"; then
+  printf 'transient probe secret leaked to the serial console\n' >&2
+  exit 1
+fi
+
 guest_stopped=false
 for _ in $(seq 1 60); do
   instance_status="$(incus_cmd list "$instance" --format json | jq --exit-status --raw-output '.[0].status')"
@@ -161,15 +212,5 @@ done
   printf 'guest did not reach terminal poweroff\n' >&2
   exit 1
 }
-
-console_log="$(incus_cmd console "$instance" --show-log)"
-grep -Fq 'incus-gh-runner-guest state=starting' <<<"$console_log"
-grep -Fq 'incus-gh-runner-guest state=running' <<<"$console_log"
-grep -Fq 'incus-gh-runner-guest state=exited' <<<"$console_log"
-grep -Fq 'incus-gh-runner-guest action=poweroff exit_code=0' <<<"$console_log"
-if grep -Fq "$probe_secret" <<<"$console_log"; then
-  printf 'transient probe secret leaked to the serial console\n' >&2
-  exit 1
-fi
 
 printf 'Incus guest contract validated for %s\n' "$archive"

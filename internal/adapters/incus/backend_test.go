@@ -31,6 +31,7 @@ type fakeClient struct {
 	consoleLogs        map[string][]byte
 	createRequest      api.InstancesPost
 	started            []string
+	stopped            []string
 	deleted            []string
 	fileWrites         []fileWrite
 	fileAttempts       int
@@ -39,6 +40,7 @@ type fakeClient struct {
 	deleteError        error
 	createInstanceErr  error
 	startInstanceError error
+	stopInstanceError  error
 }
 
 // newFakeClient creates an empty in-memory Incus client.
@@ -51,6 +53,7 @@ func newFakeClient() *fakeClient {
 		consoleLogs:  make(map[string][]byte),
 		fileWrites:   make([]fileWrite, 0),
 		started:      make([]string, 0),
+		stopped:      make([]string, 0),
 		deleted:      make([]string, 0),
 		fileAttempts: 0,
 	}
@@ -113,6 +116,21 @@ func (f *fakeClient) StartInstance(_ context.Context, name string) error {
 	instance.Status = "Running"
 	f.instances[name] = instance
 	f.started = append(f.started, name)
+	return nil
+}
+
+// StopInstance records the fake stop transition.
+func (f *fakeClient) StopInstance(_ context.Context, name string) error {
+	if f.stopInstanceError != nil {
+		return f.stopInstanceError
+	}
+	instance, ok := f.instances[name]
+	if !ok {
+		return errNotFound
+	}
+	instance.Status = "Stopped"
+	f.instances[name] = instance
+	f.stopped = append(f.stopped, name)
 	return nil
 }
 
@@ -263,7 +281,7 @@ func TestBackendDeleteRequiresOwnershipAndStoresDiagnostics(t *testing.T) {
 	t.Parallel()
 
 	client := newFakeClient()
-	client.instances["owned"] = ownedInstance("owned", "Stopped", time.Now())
+	client.instances["owned"] = ownedInstance("owned", "Running", time.Now())
 	client.instances["unowned"] = api.Instance{
 		Name:   "unowned",
 		Status: "Stopped",
@@ -285,6 +303,7 @@ func TestBackendDeleteRequiresOwnershipAndStoresDiagnostics(t *testing.T) {
 	assert.Empty(t, client.deleted)
 
 	require.NoError(t, backend.Delete(context.Background(), "owned"))
+	assert.Equal(t, []string{"owned"}, client.stopped)
 	assert.Equal(t, []string{"owned"}, client.deleted)
 	assert.Equal(t, Diagnostics{RunnerID: "owned", Console: []byte("secret-safe console")}, stored)
 	require.NoError(t, backend.Delete(context.Background(), "owned"), "delete should be idempotent")
