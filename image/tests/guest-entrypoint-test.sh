@@ -13,6 +13,7 @@ grep -Fq 'grub-install \' "${repo_root}/image/image.yaml"
 ! grep -Fq -- '--removable' "${repo_root}/image/image.yaml"
 grep -Fq 'DISTROBUILDER_ROOT_UUID' "${repo_root}/image/image.yaml"
 ! grep -Fq 'image info "$alias" --format' "${repo_root}/image/validate-incus.sh"
+grep -Fq 'minimum_server_version=6.5' "${repo_root}/image/validate-incus.sh"
 
 set +e
 validation_usage="$(${repo_root}/image/validate-incus.sh 2>&1)"
@@ -67,6 +68,8 @@ POWEROFF
     RUNNER_ROOT="$runner_root" \
     RUNNER_USER= \
     POWER_OFF_BIN="${case_root}/poweroff" \
+    DIAGNOSTICS_GRACE_SECONDS=0 \
+    CONSOLE_PATH="$output" \
     TEST_RUNNER_MARKER="$marker" \
     TEST_POWEROFF_MARKER="$poweroff_marker" \
     "$guest_entrypoint" >"$output" 2>&1
@@ -82,6 +85,8 @@ POWEROFF
   [[ ! -e "${payload_root}/payload.ready" ]]
   [[ -f "$poweroff_marker" ]]
   ! grep -Fq 'test-jit-secret' "$output"
+  grep -Fq 'incus-gh-runner-guest state=exited' "$output"
+  grep -Fq 'incus-gh-runner-guest action=poweroff' "$output"
 
   if [[ "$expected_result" == success ]]; then
     [[ -f "$marker" ]]

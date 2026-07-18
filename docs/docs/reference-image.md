@@ -36,13 +36,17 @@ named disposable project:
 image/validate-incus.sh incus-gh-runner-test build/reference-image/incus-gh-runner-ubuntu-24.04-x86_64.tar.xz
 ```
 
+The daemon must be Incus 6.5 or newer because earlier releases cannot retrieve
+virtual-machine console history.
+
 The validator refuses the `default` project. It imports the archive under a
 unique alias, launches one uniquely named VM, waits for the Incus agent, and
 temporarily replaces the runner entrypoint with a slow probe. It then exercises
 the real payload/ready-marker exchange, observes the running status, verifies
 that both transient input files are already gone, waits for guest-driven
-poweroff, and checks the stopped VM's serial log for the expected lifecycle and
-absence of the probe secret. Its exit trap deletes only the exact instance and
+poweroff, and checks the live VM's serial history during its bounded diagnostic
+grace window for the expected lifecycle and absence of the probe secret. Its
+exit trap deletes only the exact instance and
 alias it created, and deletes the image fingerprint only when that fingerprint
 was not present before the run.
 
@@ -63,7 +67,8 @@ A compliant image must provide an Incus agent and this one-shot exchange:
    starts the pinned runner as the unprivileged `actions-runner` user.
 5. The guest writes its current state to
    `/run/incus-gh-runner/status.json`, emits secret-free state transitions to
-   the serial console, and powers off after the runner exits.
+   the serial console, gives the controller 30 seconds to collect terminal
+   diagnostics, and powers off after the runner exits.
 
 The payload schema is intentionally small:
 
@@ -88,9 +93,12 @@ The status document has `version`, `state`, and an optional `exit_code`:
 ```
 
 The controller can pull this file through the Incus agent while the VM is
-running. After terminal poweroff, it can collect the Incus serial-console log;
-the service writes only lifecycle states and exit codes there. Runner job logs
-and the transient payload are not part of this diagnostic channel.
+running. When it observes terminal status, it collects the live Incus
+serial-console history before deleting the VM. If the controller is unavailable,
+the guest powers itself off after the bounded grace window. The service writes
+only lifecycle states, exit codes, and the grace duration there. Runner job
+logs stay in the guest journal and are not part of this diagnostic channel; the
+transient payload is never written to either channel.
 
 ## Compliance boundary
 

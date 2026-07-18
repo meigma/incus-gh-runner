@@ -9,6 +9,12 @@ runner_root="${RUNNER_ROOT:-/opt/actions-runner}"
 runner_user="${RUNNER_USER-actions-runner}"
 runuser_bin="${RUNUSER_BIN:-/usr/sbin/runuser}"
 poweroff_bin="${POWER_OFF_BIN:-/usr/bin/systemctl}"
+diagnostics_grace_seconds="${DIAGNOSTICS_GRACE_SECONDS:-30}"
+console_path="${CONSOLE_PATH:-/dev/ttyS0}"
+
+write_console() {
+  printf '%s\n' "$1" >>"$console_path" || true
+}
 
 write_status() {
   local state="$1"
@@ -29,7 +35,7 @@ write_status() {
 
   chmod 0600 "$status_tmp"
   mv -f "$status_tmp" "$status_path"
-  printf 'incus-gh-runner-guest state=%s\n' "$state"
+  write_console "incus-gh-runner-guest state=${state}"
 }
 
 cleanup_payload() {
@@ -43,7 +49,8 @@ finish() {
   cleanup_payload
   unset jit_config || true
   write_status exited "$exit_code" || true
-  printf 'incus-gh-runner-guest action=poweroff exit_code=%s\n' "$exit_code"
+  write_console "incus-gh-runner-guest action=poweroff exit_code=${exit_code} grace_seconds=${diagnostics_grace_seconds}"
+  sleep "$diagnostics_grace_seconds" || true
   "$poweroff_bin" poweroff || true
   exit "$exit_code"
 }
@@ -51,11 +58,13 @@ finish() {
 trap finish EXIT
 
 [[ -f "$ready_path" ]] || {
+  write_console 'incus-gh-runner-guest error=missing-ready-marker'
   printf 'incus-gh-runner-guest error=missing-ready-marker\n' >&2
   exit 1
 }
 
 [[ -f "$payload_path" ]] || {
+  write_console 'incus-gh-runner-guest error=missing-payload'
   printf 'incus-gh-runner-guest error=missing-payload\n' >&2
   exit 1
 }

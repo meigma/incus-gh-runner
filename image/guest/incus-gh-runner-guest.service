@@ -11,5 +11,5 @@ Environment=RUNNER_USER=actions-runner
 ExecStart=/usr/local/libexec/incus-gh-runner-guest
 TimeoutStartSec=infinity
 UMask=0077
-StandardOutput=journal+console
-StandardError=journal+console
+StandardOutput=journal
+StandardError=journal
