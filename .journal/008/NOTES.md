@@ -26,3 +26,6 @@ The first live harness assumption was wrong: GitHub scale-set runners were not v
 Local evidence archive: `build/live-phase5-evidence/20260718-run-29655469742/incus-gh-runner-phase5-evidence.tar.gz` (`sha256:03a31018877c57c7cf4eecf940e5f7e9e037ce0754459adc5a1db82181e76c6f`). The credential was shredded, the paid host was destroyed, and a direct provider lookup confirmed the server no longer exists.
 
 Next: extend the live proof only where it adds information beyond deterministic coverage: bounded concurrent demand and deliberately timed restarts during provisioning and terminal cleanup. Keep session 008 open until those remaining phase 5 exit conditions are either proven or explicitly deferred.
+
+## 2026-07-18 11:40 — Close
+Closed the session after PR #14 (`ed5688b`) and PR #15 (`56eaf85`) were squash-merged and local `master` was verified clean and synchronized with `origin/master`. The session partially met the full phase 5 goal: deterministic coverage proves replacement and restart reconstruction, while the disposable Incus 7.2 proof demonstrated a preconnected standby, genuine job assignment, replacement while busy, idle/busy controller restarts, and exact cleanup. Live bounded concurrent demand and deliberately timed provisioning/terminal-cleanup restarts remain explicit follow-up work in `SUMMARY.md`.
