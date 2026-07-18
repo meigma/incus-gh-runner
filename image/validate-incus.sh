@@ -82,8 +82,12 @@ fi
 
 preexisting_fingerprints="$(incus_cmd image list --format json | jq --raw-output '.[].fingerprint')"
 incus_cmd image import "$archive" --alias "$alias"
-fingerprint="$(incus_cmd image info "$alias" --format json | jq --exit-status --raw-output '.fingerprint')"
 alias_created=true
+fingerprint="$(
+  incus_cmd image list --format json |
+    jq --arg alias "$alias" --exit-status --raw-output \
+      '.[] | select(any(.aliases[]?; .name == $alias)) | .fingerprint'
+)"
 if ! grep -Fxq "$fingerprint" <<<"$preexisting_fingerprints"; then
   image_owned=true
 fi

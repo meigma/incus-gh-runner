@@ -9,6 +9,10 @@ bash -n \
   "${repo_root}/image/validate-incus.sh"
 grep -Fq '"http:distrobuilder"' "${repo_root}/mise.toml"
 grep -Fq 'command -v distrobuilder' "${repo_root}/image/build.sh"
+grep -Fq 'grub-install \' "${repo_root}/image/image.yaml"
+grep -Fq -- '--removable' "${repo_root}/image/image.yaml"
+grep -Fq 'DISTROBUILDER_ROOT_UUID' "${repo_root}/image/image.yaml"
+! grep -Fq 'image info "$alias" --format' "${repo_root}/image/validate-incus.sh"
 
 set +e
 validation_usage="$(${repo_root}/image/validate-incus.sh 2>&1)"
