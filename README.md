@@ -97,6 +97,12 @@ including a healthy long-poll expiry with no message, resets the delay to
 `retry.initial`; `retry.maximum` prevents a prolonged outage from producing an
 unbounded retry interval.
 
+On SIGINT or SIGTERM, the application cancels both long-lived components and
+waits through the controller's graceful and forced-cancellation shutdown
+windows. If either component still has not returned after twice
+`timeouts.shutdown`, the process exits with an error so its supervisor can
+restart it instead of leaving a wedged service indefinitely.
+
 CI runs the same aggregate gate with `moon ci --summary minimal`.
 
 ## Reference runner image
