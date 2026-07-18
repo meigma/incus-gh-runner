@@ -51,7 +51,7 @@ tar --extract --gzip --file "$distrobuilder_archive" --directory "$tool_root"
 )
 
 cd "$repo_root"
-"$distrobuilder_bin" validate image/image.yaml
+sudo --non-interactive "$distrobuilder_bin" validate image/image.yaml
 sudo --non-interactive "$distrobuilder_bin" build-incus \
   image/image.yaml "$output_dir" \
   --vm \
