@@ -36,8 +36,8 @@ named disposable project:
 image/validate-incus.sh incus-gh-runner-test build/reference-image/incus-gh-runner-ubuntu-24.04-x86_64.tar.xz
 ```
 
-The daemon must be Incus 6.5 or newer because earlier releases cannot retrieve
-virtual-machine console history.
+The daemon must be Incus 7.0 or newer. This project targets the Incus v7 API
+and does not support Incus 6 releases.
 
 The validator refuses the `default` project. It imports the archive under a
 unique alias, launches one uniquely named VM, waits for the Incus agent, and

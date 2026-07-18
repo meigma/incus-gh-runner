@@ -13,7 +13,7 @@ grep -Fq 'grub-install \' "${repo_root}/image/image.yaml"
 ! grep -Fq -- '--removable' "${repo_root}/image/image.yaml"
 grep -Fq 'DISTROBUILDER_ROOT_UUID' "${repo_root}/image/image.yaml"
 ! grep -Fq 'image info "$alias" --format' "${repo_root}/image/validate-incus.sh"
-grep -Fq 'minimum_server_version=6.5' "${repo_root}/image/validate-incus.sh"
+grep -Fq 'minimum_server_version=7.0' "${repo_root}/image/validate-incus.sh"
 
 set +e
 validation_usage="$(${repo_root}/image/validate-incus.sh 2>&1)"
