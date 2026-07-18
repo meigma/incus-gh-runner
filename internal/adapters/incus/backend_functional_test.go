@@ -31,7 +31,7 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 
 	mailbox := controller.NewMailbox()
 	probeSecret := "phase3-probe-" + uuid.NewString()
-	var diagnostics Diagnostics
+	diagnosticsObserved := make(chan Diagnostics, 1)
 	backend, err := NewBackend(server, Options{
 		Image:            image,
 		Profiles:         splitProfiles(os.Getenv("INCUS_GH_RUNNER_TEST_PROFILES")),
@@ -41,8 +41,11 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 			return Payload{Version: 1, JITConfig: probeSecret}, nil
 		}),
 		Diagnostics: DiagnosticsSinkFunc(func(_ context.Context, observed Diagnostics) error {
-			diagnostics = observed
-			cancelTest()
+			mailbox.Publish(controller.Demand{})
+			select {
+			case diagnosticsObserved <- observed:
+			default:
+			}
 			return nil
 		}),
 	})
@@ -67,18 +70,29 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 	}()
 	mailbox.Publish(controller.Demand{AssignedJobs: 1})
 
+	var diagnostics Diagnostics
 	select {
+	case diagnostics = <-diagnosticsObserved:
 	case resultErr := <-result:
 		require.NoError(t, resultErr)
+		t.Fatal("controller stopped before collecting diagnostics")
 	case <-time.After(10 * time.Minute):
 		t.Fatal("Incus lifecycle did not reach diagnostic collection and deletion")
 	}
 
-	inventoryContext, cancelInventory := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancelInventory()
-	runners, err := backend.ListOwned(inventoryContext)
-	require.NoError(t, err)
-	assert.Empty(t, runners, "functional lifecycle must return to zero owned instances")
+	require.Eventually(t, func() bool {
+		runners, inventoryErr := backend.ListOwned(testContext)
+		return inventoryErr == nil && len(runners) == 0
+	}, 30*time.Second, 250*time.Millisecond, "functional lifecycle must return to zero owned instances")
+
+	cancelTest()
+	select {
+	case resultErr := <-result:
+		require.NoError(t, resultErr)
+	case <-time.After(30 * time.Second):
+		t.Fatal("controller did not stop after functional proof")
+	}
+
 	assert.Contains(t, string(diagnostics.Console), "incus-gh-runner-guest action=poweroff")
 	assert.False(t, bytes.Contains(diagnostics.Console, []byte(probeSecret)), "probe payload must not leak to console")
 }
