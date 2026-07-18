@@ -9,11 +9,13 @@ image that satisfies the guest contract below.
 
 ## Build proof
 
-`image/build.sh` builds distrobuilder 3.3.1 from its checksummed, vendored source
-release and then creates a unified Incus VM tarball:
+mise verifies the pinned distrobuilder 3.3.1 source release, compiles its
+vendored dependencies once into the tool cache with the optional container
+integrations disabled, and puts the resulting binary on `PATH`.
+`image/build.sh` then creates a unified Incus VM tarball:
 
 ```sh
-image/build.sh build/reference-image
+mise exec -- image/build.sh build/reference-image
 ```
 
 The command requires a Linux host with passwordless `sudo` and distrobuilder's

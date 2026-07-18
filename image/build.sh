@@ -20,35 +20,11 @@ if find "$output_dir" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
   exit 1
 fi
 
-tool_root="$(mktemp -d)"
-temp_parent="${TMPDIR:-/tmp}"
-temp_parent="${temp_parent%/}"
-case "$tool_root" in
-  "${temp_parent}"/*|/tmp/*) ;;
-  *) printf 'refusing unexpected temporary directory: %s\n' "$tool_root" >&2; exit 1 ;;
-esac
-trap 'rm -rf -- "$tool_root"' EXIT
-
-distrobuilder_version=3.3.1
-distrobuilder_archive="${tool_root}/distrobuilder-${distrobuilder_version}.tar.gz"
-distrobuilder_source="${tool_root}/distrobuilder-${distrobuilder_version}"
-distrobuilder_bin="${tool_root}/distrobuilder"
-
-curl --fail --location --silent --show-error \
-  "https://github.com/lxc/distrobuilder/releases/download/v${distrobuilder_version}/distrobuilder-${distrobuilder_version}.tar.gz" \
-  --output "$distrobuilder_archive"
-echo "6c411af7178bb55ef649c708f4f38fc3c30e6ecce901c08d8a389448a900a73a  ${distrobuilder_archive}" | sha256sum --check --strict
-tar --extract --gzip --file "$distrobuilder_archive" --directory "$tool_root"
-
-(
-  cd "$distrobuilder_source"
-  go build \
-    -mod=vendor \
-    -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp \
-    -trimpath \
-    -o "$distrobuilder_bin" \
-    ./distrobuilder
-)
+distrobuilder_bin="$(command -v distrobuilder || true)"
+if [[ -z "$distrobuilder_bin" ]]; then
+  printf 'distrobuilder is not on PATH; run through mise: mise exec -- image/build.sh %q\n' "$output_arg" >&2
+  exit 1
+fi
 
 cd "$repo_root"
 sudo --non-interactive "$distrobuilder_bin" validate image/image.yaml

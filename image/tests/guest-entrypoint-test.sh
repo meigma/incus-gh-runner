@@ -7,6 +7,8 @@ bash -n \
   "${repo_root}/image/build.sh" \
   "$guest_entrypoint" \
   "${repo_root}/image/validate-incus.sh"
+grep -Fq '"http:distrobuilder"' "${repo_root}/mise.toml"
+grep -Fq 'command -v distrobuilder' "${repo_root}/image/build.sh"
 
 set +e
 validation_usage="$(${repo_root}/image/validate-incus.sh 2>&1)"

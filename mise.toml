@@ -19,6 +19,29 @@
 go = "1.26.4"
 python = "3.14.3"
 
+# Linux-only image-construction CLI. Upstream publishes source rather than a
+# binary, so mise verifies and extracts the release archive, then compiles it
+# once into the tool cache with the optional container integrations stubbed out.
+"http:distrobuilder" = {
+  version = "3.3.1",
+  os = ["linux"],
+  depends = ["go"],
+  url = "https://github.com/lxc/distrobuilder/releases/download/v{{ version }}/distrobuilder-{{ version }}.tar.gz",
+  checksum = "sha256:6c411af7178bb55ef649c708f4f38fc3c30e6ecce901c08d8a389448a900a73a",
+  strip_components = 1,
+  bin_path = "bin",
+  postinstall = '''
+    mkdir -p "$MISE_TOOL_INSTALL_PATH/bin"
+    cd "$MISE_TOOL_INSTALL_PATH"
+    go build \
+      -mod=vendor \
+      -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp \
+      -trimpath \
+      -o "$MISE_TOOL_INSTALL_PATH/bin/distrobuilder" \
+      ./distrobuilder
+  ''',
+}
+
 # Go dev-tool CLI. The explicit `aqua:` ref forces the VERIFYING backend (checksum +
 # cosign/SLSA/GitHub-attestation recorded in mise.lock); it must never fall back to
 # a version-only backend (asdf/npm/cargo/pipx), which records no checksum.
