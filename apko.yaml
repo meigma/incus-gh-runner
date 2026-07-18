@@ -41,4 +41,4 @@ annotations:
   org.opencontainers.image.title: incus-gh-runner
   org.opencontainers.image.description: Incus-backed GitHub Actions runner controller
   org.opencontainers.image.source: https://github.com/meigma/incus-gh-runner
-  org.opencontainers.image.version: "0.0.0" # x-release-please-version
+  org.opencontainers.image.version: "1.0.0" # x-release-please-version
