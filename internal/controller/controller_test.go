@@ -142,6 +142,7 @@ func TestControllerBoundsShutdownOfSlowOperation(t *testing.T) {
 	assert.Equal(t, 1, backend.canceledCreates())
 }
 
+// newController constructs a controller with fast deterministic test defaults.
 func newController(
 	t *testing.T,
 	backend controller.Backend,
@@ -176,6 +177,7 @@ func newController(
 	return ctrl
 }
 
+// runController starts ctrl and returns its eventual result channel.
 func runController(ctx context.Context, ctrl *controller.Controller) <-chan error {
 	errCh := make(chan error, 1)
 	go func() {
@@ -184,6 +186,7 @@ func runController(ctx context.Context, ctrl *controller.Controller) <-chan erro
 	return errCh
 }
 
+// receiveError waits a bounded duration for an asynchronous controller result.
 func receiveError(t *testing.T, errCh <-chan error) error {
 	t.Helper()
 
@@ -196,6 +199,7 @@ func receiveError(t *testing.T, errCh <-chan error) error {
 	}
 }
 
+// fakeBackend provides controllable in-memory runner lifecycle behavior.
 type fakeBackend struct {
 	mu                    sync.Mutex
 	runners               map[string]controller.Runner
@@ -208,6 +212,7 @@ type fakeBackend struct {
 	canceledCreateCount   int
 }
 
+// newFakeBackend creates an in-memory backend containing runners.
 func newFakeBackend(runners ...controller.Runner) *fakeBackend {
 	backend := &fakeBackend{runners: make(map[string]controller.Runner, len(runners))}
 	for _, runner := range runners {
@@ -216,6 +221,7 @@ func newFakeBackend(runners ...controller.Runner) *fakeBackend {
 	return backend
 }
 
+// ListOwned returns a snapshot of the fake backend's runners.
 func (f *fakeBackend) ListOwned(context.Context) ([]controller.Runner, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -227,6 +233,7 @@ func (f *fakeBackend) ListOwned(context.Context) ([]controller.Runner, error) {
 	return runners, nil
 }
 
+// Create records concurrency and applies configured delay or failure behavior.
 func (f *fakeBackend) Create(ctx context.Context) (controller.Runner, error) {
 	f.mu.Lock()
 	f.createAttemptCount++
@@ -267,6 +274,7 @@ func (f *fakeBackend) Create(ctx context.Context) (controller.Runner, error) {
 	return runner, nil
 }
 
+// Delete removes runnerID from the fake inventory.
 func (f *fakeBackend) Delete(_ context.Context, runnerID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -274,12 +282,14 @@ func (f *fakeBackend) Delete(_ context.Context, runnerID string) error {
 	return nil
 }
 
+// runnerCount returns the current fake inventory size.
 func (f *fakeBackend) runnerCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.runners)
 }
 
+// hasRunner reports whether id remains in the fake inventory.
 func (f *fakeBackend) hasRunner(id string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -287,24 +297,28 @@ func (f *fakeBackend) hasRunner(id string) bool {
 	return exists
 }
 
+// concurrentCreates returns the number of creates currently blocked or running.
 func (f *fakeBackend) concurrentCreates() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.concurrentCreateCount
 }
 
+// maximumConcurrentCreates returns the highest observed concurrent create count.
 func (f *fakeBackend) maximumConcurrentCreates() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.maximumCreateCount
 }
 
+// createAttempts returns the total number of create calls.
 func (f *fakeBackend) createAttempts() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.createAttemptCount
 }
 
+// canceledCreates returns the number of creates stopped through context cancellation.
 func (f *fakeBackend) canceledCreates() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()

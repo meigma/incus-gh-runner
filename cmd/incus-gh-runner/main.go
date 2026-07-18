@@ -17,10 +17,12 @@ var (
 	date    = "unknown"
 )
 
+// main executes the command and exits with its status code.
 func main() {
 	os.Exit(run())
 }
 
+// run builds and executes the signal-aware root command.
 func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

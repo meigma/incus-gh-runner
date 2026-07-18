@@ -102,6 +102,7 @@ func (c *Controller) Run(ctx context.Context) error {
 	}
 }
 
+// listOwned retrieves the initial owned-runner inventory within the operation timeout.
 func (c *Controller) listOwned(ctx context.Context) ([]Runner, error) {
 	operationContext, cancel := context.WithTimeout(ctx, c.options.OperationTimeout)
 	defer cancel()
@@ -114,6 +115,7 @@ func (c *Controller) listOwned(ctx context.Context) ([]Runner, error) {
 	return runners, nil
 }
 
+// runWorker executes backend operations until the work channel closes.
 func (c *Controller) runWorker(
 	ctx context.Context,
 	workers *sync.WaitGroup,
@@ -136,6 +138,7 @@ func (c *Controller) runWorker(
 	}
 }
 
+// waitForWorkers gives active operations a grace period before canceling them.
 func (c *Controller) waitForWorkers(workers *sync.WaitGroup, cancelOperations context.CancelFunc) error {
 	done := make(chan struct{})
 	go func() {
@@ -164,6 +167,7 @@ func (c *Controller) waitForWorkers(workers *sync.WaitGroup, cancelOperations co
 	}
 }
 
+// operationKind identifies a backend lifecycle action.
 type operationKind string
 
 const (
@@ -171,18 +175,21 @@ const (
 	operationDelete operationKind = "delete"
 )
 
+// operation describes one scheduled backend lifecycle action.
 type operation struct {
 	id       uint64
 	kind     operationKind
 	runnerID string
 }
 
+// operationResult carries a backend lifecycle outcome to the reconciler.
 type operationResult struct {
 	operation operation
 	runner    Runner
 	err       error
 }
 
+// reconcileState is the single owner of desired and observed runner capacity.
 type reconcileState struct {
 	options    Options
 	runners    map[string]Runner
@@ -192,6 +199,7 @@ type reconcileState struct {
 	nextID     uint64
 }
 
+// newReconcileState validates inventory and creates the initial reconciliation state.
 func newReconcileState(options Options, runners []Runner) (*reconcileState, error) {
 	state := &reconcileState{
 		options:    options,
@@ -211,12 +219,14 @@ func newReconcileState(options Options, runners []Runner) (*reconcileState, erro
 	return state, nil
 }
 
+// setDemand derives the bounded capacity target from the latest demand.
 func (s *reconcileState) setDemand(demand Demand) {
 	assignedJobs := max(demand.AssignedJobs, 0)
 	s.target = min(s.options.MaxRunners, s.options.MinRunners+assignedJobs)
 	s.options.Logger.Info("runner demand updated", "assigned_jobs", assignedJobs, "target", s.target)
 }
 
+// reconcile schedules the operations needed to move current capacity toward the target.
 func (s *reconcileState) reconcile(work chan<- operation) {
 	for id, runner := range s.runners {
 		if runner.State == RunnerTerminal {
@@ -241,6 +251,7 @@ func (s *reconcileState) reconcile(work chan<- operation) {
 	}
 }
 
+// trySchedule records item only when a worker can accept it immediately.
 func (s *reconcileState) trySchedule(work chan<- operation, item operation) bool {
 	if item.runnerID != "" {
 		if _, exists := s.deleting[item.runnerID]; exists {
@@ -268,6 +279,7 @@ func (s *reconcileState) trySchedule(work chan<- operation, item operation) bool
 	}
 }
 
+// apply consumes a result once and updates observed runner state.
 func (s *reconcileState) apply(result operationResult) bool {
 	item, exists := s.operations[result.operation.id]
 	if !exists {
@@ -317,6 +329,7 @@ func (s *reconcileState) apply(result operationResult) bool {
 	return true
 }
 
+// liveCapacity counts usable and in-flight capacity after scheduled deletions.
 func (s *reconcileState) liveCapacity() int {
 	live := 0
 	for id, runner := range s.runners {
@@ -336,6 +349,7 @@ func (s *reconcileState) liveCapacity() int {
 	return live
 }
 
+// idleRunner selects an idle runner that is not already being deleted.
 func (s *reconcileState) idleRunner() (string, bool) {
 	for id, runner := range s.runners {
 		if runner.State != RunnerIdle {
@@ -349,6 +363,7 @@ func (s *reconcileState) idleRunner() (string, bool) {
 	return "", false
 }
 
+// validateRunner checks the minimum identity and lifecycle invariants.
 func validateRunner(runner Runner) error {
 	if runner.ID == "" {
 		return errors.New("runner ID is required")

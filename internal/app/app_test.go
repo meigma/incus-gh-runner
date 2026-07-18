@@ -57,6 +57,7 @@ func TestApplicationPropagatesDemandSourceFailure(t *testing.T) {
 	assert.EqualError(t, err, "demand source: poll failed")
 }
 
+// newApplication constructs an application with fast deterministic test configuration.
 func newApplication(t *testing.T, options app.Options) *app.Application {
 	t.Helper()
 
@@ -76,6 +77,7 @@ func newApplication(t *testing.T, options app.Options) *app.Application {
 	return application
 }
 
+// receiveError waits a bounded duration for an asynchronous application result.
 func receiveError(t *testing.T, errCh <-chan error) error {
 	t.Helper()
 
@@ -88,22 +90,27 @@ func receiveError(t *testing.T, errCh <-chan error) error {
 	}
 }
 
+// demandSourceFunc adapts a function into an app.DemandSource.
 type demandSourceFunc func(context.Context, func(controller.Demand)) error
 
+// Run invokes the adapted demand-source function.
 func (f demandSourceFunc) Run(ctx context.Context, publish func(controller.Demand)) error {
 	return f(ctx, publish)
 }
 
+// fakeBackend provides the in-memory runner lifecycle used by application tests.
 type fakeBackend struct {
 	mu       sync.Mutex
 	runners  map[string]controller.Runner
 	sequence int
 }
 
+// newFakeBackend creates an empty in-memory runner backend.
 func newFakeBackend() *fakeBackend {
 	return &fakeBackend{runners: make(map[string]controller.Runner)}
 }
 
+// ListOwned returns a snapshot of the fake backend's runners.
 func (f *fakeBackend) ListOwned(context.Context) ([]controller.Runner, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -115,6 +122,7 @@ func (f *fakeBackend) ListOwned(context.Context) ([]controller.Runner, error) {
 	return runners, nil
 }
 
+// Create adds one idle runner to the fake inventory.
 func (f *fakeBackend) Create(context.Context) (controller.Runner, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -128,6 +136,7 @@ func (f *fakeBackend) Create(context.Context) (controller.Runner, error) {
 	return runner, nil
 }
 
+// Delete removes runnerID from the fake inventory.
 func (f *fakeBackend) Delete(_ context.Context, runnerID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -135,6 +144,7 @@ func (f *fakeBackend) Delete(_ context.Context, runnerID string) error {
 	return nil
 }
 
+// runnerCount returns the current fake inventory size.
 func (f *fakeBackend) runnerCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()

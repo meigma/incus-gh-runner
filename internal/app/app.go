@@ -98,20 +98,24 @@ func (a *Application) Run(ctx context.Context) error {
 	return meaningfulError(second)
 }
 
+// demandSource binds a source port to the controller's publish callback.
 type demandSource struct {
 	source  DemandSource
 	publish func(controller.Demand)
 }
 
+// Run polls the source and publishes its updates to the bound callback.
 func (s demandSource) Run(ctx context.Context) error {
 	return s.source.Run(ctx, s.publish)
 }
 
+// componentResult identifies the outcome of one supervised component.
 type componentResult struct {
 	name string
 	err  error
 }
 
+// componentError treats an unsolicited component stop as an application failure.
 func componentError(result componentResult) error {
 	if result.err == nil {
 		return fmt.Errorf("%s stopped unexpectedly", result.name)
@@ -123,6 +127,7 @@ func componentError(result componentResult) error {
 	return fmt.Errorf("%s: %w", result.name, result.err)
 }
 
+// meaningfulError filters normal cancellation from a component result.
 func meaningfulError(result componentResult) error {
 	if result.err == nil || errors.Is(result.err, context.Canceled) {
 		return nil

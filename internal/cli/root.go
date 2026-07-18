@@ -85,6 +85,7 @@ func NewRootCommand(options Options) *cobra.Command {
 	return root
 }
 
+// withDefaults fills missing command dependencies and build metadata.
 func (o Options) withDefaults() Options {
 	if o.In == nil {
 		o.In = strings.NewReader("")
@@ -110,6 +111,7 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
+// withDefaults fills missing build metadata with development values.
 func (b BuildInfo) withDefaults() BuildInfo {
 	if strings.TrimSpace(b.Version) == "" {
 		b.Version = "dev"
@@ -123,6 +125,7 @@ func (b BuildInfo) withDefaults() BuildInfo {
 	return b
 }
 
+// initializeConfig binds all sources and reads the selected configuration file.
 func initializeConfig(cmd *cobra.Command, vp *viper.Viper, optionalConfigPath string) error {
 	if err := config.ConfigureViper(vp); err != nil {
 		return err
@@ -150,6 +153,7 @@ func initializeConfig(cmd *cobra.Command, vp *viper.Viper, optionalConfigPath st
 	return nil
 }
 
+// addConfigFlags declares the flags that participate in configuration precedence.
 func addConfigFlags(flags *pflag.FlagSet) {
 	defaults := config.Defaults()
 	flags.String("config", "", "configuration file path")
@@ -161,6 +165,7 @@ func addConfigFlags(flags *pflag.FlagSet) {
 	flags.Duration("shutdown-timeout", defaults.Timeouts.Shutdown, "graceful shutdown timeout")
 }
 
+// bindConfigFlags maps CLI flags to their nested configuration keys.
 func bindConfigFlags(flags *pflag.FlagSet, vp *viper.Viper) error {
 	bindings := map[string]string{
 		config.KeyMinRunners:        "min-runners",
@@ -179,6 +184,7 @@ func bindConfigFlags(flags *pflag.FlagSet, vp *viper.Viper) error {
 	return nil
 }
 
+// isConfigNotFound reports whether an optional configuration path is absent.
 func isConfigNotFound(err error) bool {
 	var notFound viper.ConfigFileNotFoundError
 	return errors.As(err, &notFound) || errors.Is(err, fs.ErrNotExist)
