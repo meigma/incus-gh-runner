@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -42,7 +41,7 @@ func New(options Options) (*Controller, error) {
 		return nil, errors.New("shutdown timeout must be positive")
 	}
 	if options.Logger == nil {
-		options.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+		options.Logger = slog.New(slog.DiscardHandler)
 	}
 
 	return &Controller{options: options}, nil
