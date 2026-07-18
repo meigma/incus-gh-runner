@@ -9,3 +9,4 @@
 | 005 | 2026-07-17 | Continue phase 3 Incus lifecycle | complete | Landed the ownership-scoped real Incus lifecycle, periodic inventory, restart safety, and disposable live-test harness through PR #10. |
 | 006 | 2026-07-17 | Continue phase 4 GitHub lifecycle | complete | Landed the real GitHub scale-set/JIT lifecycle and proved one genuine job through a disposable Incus 7 VM with exact cleanup. |
 | 007 | 2026-07-17 | Package hosting proposal | in-progress | Draft and review the meigma-wide signed apt/yum package hosting proposal (Cloudflare R2 + pkgs.meigma.dev) for incus-gh-runner and future projects. |
+| 008 | 2026-07-18 | Continue phase 5 hot pool recovery | in-progress | Continue phase 5 by proving hot standby, replacement, bounded concurrent demand, and restart reconciliation. |
