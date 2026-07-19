@@ -390,3 +390,36 @@ feature worktree as integrated by tree equality; removed that worktree and
 local branch, then deleted the remote feature branch. PR #29 is merged and the
 default checkout is clean and current. Session 013 remains open because the
 least-authority Incus boundary is still a separate Slice 2 exit gate.
+
+## 2026-07-19 16:18 — Slice 3A local proof ready for review infrastructure
+
+Started Slice 3A from merged `master` commit
+`99022572225f906c0bea56565b091a13cd9e12df` on
+`feat/security-slice-3a`. The Incus inventory adapter now distinguishes the
+precise tolerable condition—`status.json` is absent while the named instance
+still exists—from an instance disappearing or any timeout, transport,
+permission, decode, version, or state error. Every other uncertainty invalidates
+the complete refresh, allowing the controller's existing stale-inventory
+boundary to retain its previous observation and schedule no mutation.
+
+Owned instances are inspected in deterministic name order. Each guest-status
+read receives the smaller of a five-second individual cap and its fair share of
+the remaining controller operation deadline. Inspection continues after a
+runner-level failure so a slow early agent cannot consume the later active
+runner's opportunity to report, but any accumulated error still suppresses the
+partial snapshot.
+
+Fault injection now covers disappeared instances, deadlines, transport and
+permission errors, malformed JSON, unsupported versions, unknown states, a slow
+runner followed by an active runner older than the bootstrap timeout, and the
+controller retaining two active runners while inventory is uncertain. The
+guest-contract reference documents the same fail-closed boundary.
+
+Focused race tests passed. The timing-sensitive controller test passed 100
+repetitions and the backend uncertainty/budget tests passed 50 repetitions.
+After clearing stale golangci-lint cache entries for an already-removed
+worktree, the complete `moon run root:check` gate passed: formatting, lint,
+build, Go tests, docs, image contract, Incus isolation contract, release config,
+and the platform-applicable systemd check. The live agent-outage acceptance
+evidence remains to be run against the exact review commit; no live result is
+claimed by this checkpoint.
