@@ -202,3 +202,50 @@ draft PR #28. Exact-head CI, both CodeQL analyses, GitHub Pages, Kusari, and the
 reference-image build (8m43s) are green; five event-inapplicable jobs skipped
 normally. The four broader Slice 2 acceptance gates remain open and the PR
 remains draft.
+
+## 2026-07-19 10:12 — One-binary Go validator increment ready for review
+
+Replaced the 375-line Bash drift validator and its generated fake-command test
+harness with `incus-gh-runner validate <baseline>`. The existing no-subcommand
+controller invocation remains compatible, while the validation subcommand has
+an isolated startup path that does not load controller YAML, initialize GitHub
+credentials, or start controller logic. It accepts exactly one rendered JSON
+baseline and a local `--socket` override, defaulting to
+`/var/lib/incus/unix.socket`.
+
+The shipped CUE source now owns a hidden, closed `_#Baseline` runtime schema in
+addition to the documented `#Inputs` and `#Deployment` API. The binary embeds
+that same source and uses CUE Go v0.16.1 in process: schema unification,
+concrete validation, and final subsumption reject conflicts, unknown fields,
+unresolved values, and omitted fixed fields. Manifest reads require a regular
+file and are capped at 1 MiB before CUE evaluation or Incus socket access.
+
+The validation core strictly decodes the policy-approved JSON and compares
+typed writable projections of the server, project, default-project network and
+ACL, runner-project profile, and global storage pool. The Incus SDK adapter
+contains only getter calls; a Unix-socket functional test records the exact GET
+routes and project query scopes. ACL ordering is normalized across every
+writable rule field, only `volatile.initial_source` is ignored for storage, and
+drift errors no longer print expected or live configuration. Documentation,
+Moon inputs, and native and OCI release smoke tests now use the single binary.
+
+Local evidence passed: `mise exec -- moon run root:check`, focused and full Go
+race tests, CUE render/schema tests, `go mod verify`, readonly module listing,
+`go mod tidy -diff`, documentation, lint, formatting, and whitespace gates.
+Govulncheck v1.1.4 reported no reachable vulnerabilities; the sole module-only
+advisory is for the unimported `golang.org/x/crypto/openpgp` package. Two
+independent security/correctness reviews found no actionable issues. Retained
+limitations are bounded CUE evaluation without a deadline, sequential rather
+than atomic Incus reads, and the inability to re-prove generation-time physical
+host headroom from the rendered manifest.
+
+The stripped release binary grows from 13.8 MB to 21.2 MB, a 7.4 MB (53.6%)
+increase accepted for one downloadable binary with no runtime `cue`, `incus`,
+or `jq` dependency. Committed as
+`1030bde9ed869676bdffa26c5cf10045de4ce0f7`, pushed the existing branch, and
+updated draft PR #28. Exact-head CI, CodeQL, GitHub Pages, Kusari Inspector, and
+the reference-image build (7m22s) are green; event-inapplicable release and
+Pages jobs skipped normally. The Go replacement was not exercised against a
+newly provisioned live Incus host, and no paid host or registry was mutated.
+The existing KVM, IPv6 spoofing, resource-exhaustion, and least-authority Slice
+2 gates remain open, so the PR remains draft.
