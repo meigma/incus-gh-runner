@@ -84,7 +84,16 @@ func TestValidateBaselineRejectsWeakening(t *testing.T) {
 		{
 			name: "overlong managed bridge name",
 			mutate: func(t *testing.T, baseline map[string]any) {
-				const network = "runtime-acceptance-network"
+				const network = "runner-network-x"
+				policyObject(t, baseline, "names")["network"] = network
+				policyObject(t, baseline, "project", "config")["restricted.networks.access"] = network
+				policyObject(t, baseline, "profile", "devices", "eth0")["network"] = network
+			},
+		},
+		{
+			name: "short managed bridge name",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				const network = "a"
 				policyObject(t, baseline, "names")["network"] = network
 				policyObject(t, baseline, "project", "config")["restricted.networks.access"] = network
 				policyObject(t, baseline, "profile", "devices", "eth0")["network"] = network

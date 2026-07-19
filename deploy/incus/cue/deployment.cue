@@ -12,8 +12,8 @@ _#Name: (string & =~"^[a-z][a-z0-9-]{0,62}$") |
 			error("name must be a lowercase Incus identifier of at most 63 characters")
 _#DedicatedName: (_#Name & !="default") |
 		error("dedicated Incus resource name must not be default")
-_#BridgeName: (_#DedicatedName & =~"^[a-z][a-z0-9-]{0,14}$") |
-		error("managed bridge name must fit the 15-character Linux interface limit")
+_#BridgeName: (_#DedicatedName & =~"^[a-z][a-z0-9-]{1,14}$") |
+		error("managed bridge name must be 2 to 15 characters to fit the Linux interface limit")
 _#PositiveInt: (int & >=1) | error("value must be a positive integer")
 _#ProxyPort:   (int & >=1 & <=65535 & !=53) |
 			error("proxy port must be between 1 and 65535 and must not be the DNS port")
