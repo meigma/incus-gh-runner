@@ -85,3 +85,14 @@ Squash-merged PR #25 at master fd7e72c (process-language cleanup + README
 rewrite + Apache-2.0/MIT dual license). Worktree removed. Release Please
 will refresh release PR #24 against the cleaned tree; publishing remains
 the maintainer's decision. Agent-infra shipping question still open.
+
+## 2026-07-18 17:40 — Close
+Session closed. PR #23 (operator Diátaxis docs, merged at 5467b99) and PR #25
+(process-language cleanup + README rewrite + Apache-2.0/MIT dual license,
+merged at fd7e72c) both squash-merged; master fast-forwarded; implementation
+worktrees removed. Handoff: release PR #24 (1.0.0) is open and refreshed
+against the cleaned tree — merging it publishes the first release and is the
+maintainer's decision. The agent-infra shipping question (.session.md,
+.agents/, scaffold/, CLAUDE.md, AGENTS.md) remains open. Sweep findings
+archive: .journal/011/language-sweep-findings.json. SUMMARY.md written;
+TECH_NOTES.md updated with the first-release presentation state.
