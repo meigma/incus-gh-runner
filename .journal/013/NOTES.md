@@ -375,3 +375,18 @@ draft for human review. The KVM, IPv6, and bounded resource-survival gates are
 now closed; least-privilege Incus authorization remains the sole open Slice 2
 exit boundary because the restricted project identity can still weaken
 project-local profile controls.
+
+## 2026-07-19 14:58 — Focused isolation hardening merged
+
+The user approved the trimmed PR #29. Reverified exact reviewed head
+`8454247d61f4f3db01ccede80a80306fe915504d`, its clean merge state, and all
+hosted checks, then marked the PR ready and squash-merged it through GitHub as
+`99022572225f906c0bea56565b091a13cd9e12df` with title
+`fix(security): harden Incus runner isolation`.
+
+Fast-forwarded the clean local `master` to the same commit and confirmed its
+tree exactly matches the reviewed feature tree. Worktrunk identified the
+feature worktree as integrated by tree equality; removed that worktree and
+local branch, then deleted the remote feature branch. PR #29 is merged and the
+default checkout is clean and current. Session 013 remains open because the
+least-authority Incus boundary is still a separate Slice 2 exit gate.
