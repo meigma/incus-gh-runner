@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -240,7 +241,7 @@ func Defaults() Config {
 // Load decodes and validates runtime settings from Viper.
 func Load(vp *viper.Viper) (Config, error) {
 	var cfg Config
-	if err := vp.Unmarshal(&cfg); err != nil {
+	if err := vp.UnmarshalExact(&cfg); err != nil {
 		return Config{}, fmt.Errorf("decode configuration: %w", err)
 	}
 	cfg.GitHub.Token = strings.TrimSpace(os.Getenv(EnvGitHubToken))
@@ -265,14 +266,8 @@ func (c Config) ValidateRuntime() error {
 
 // validateGitHub checks scale-set identity and exactly one complete credential type.
 func validateGitHub(settings GitHub) error {
-	if err := validateConfigURL(settings.ConfigURL); err != nil {
+	if err := validateGitHubScheduling(settings); err != nil {
 		return err
-	}
-	if strings.TrimSpace(settings.ScaleSet) == "" {
-		return errors.New("github.scale_set is required")
-	}
-	if strings.TrimSpace(settings.RunnerGroup) == "" {
-		return errors.New("github.runner_group is required")
 	}
 
 	appConfigured := settings.App.ClientID != "" ||
@@ -306,6 +301,38 @@ func validateGitHub(settings GitHub) error {
 	return nil
 }
 
+// validateGitHubScheduling checks the scope and identifiers passed to the upstream client.
+func validateGitHubScheduling(settings GitHub) error {
+	scope, err := validateConfigURL(settings.ConfigURL)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(settings.ScaleSet) == "" {
+		return errors.New("github.scale_set is required")
+	}
+	if strings.TrimSpace(settings.ScaleSet) != settings.ScaleSet ||
+		!githubQueryValueRoundTrips("name", settings.ScaleSet) {
+		return errors.New("github.scale_set contains characters that are unsafe in GitHub API queries")
+	}
+	runnerGroup := strings.TrimSpace(settings.RunnerGroup)
+	if runnerGroup == "" {
+		return errors.New("github.runner_group is required")
+	}
+	if scope == configURLScopeRepository && settings.RunnerGroup != defaultRunnerGroup {
+		return errors.New("github.runner_group must be default for repository scope")
+	}
+	if scope == configURLScopeOrganization && strings.EqualFold(runnerGroup, defaultRunnerGroup) {
+		return errors.New(
+			"github.runner_group must name a non-default runner group for organization scope",
+		)
+	}
+	if runnerGroup != settings.RunnerGroup ||
+		!githubQueryValueRoundTrips("groupName", settings.RunnerGroup) {
+		return errors.New("github.runner_group contains characters that are unsafe in GitHub API queries")
+	}
+	return nil
+}
+
 // validateIncus checks preconfigured environment references and lifecycle settings.
 func validateIncus(settings Incus) error {
 	if strings.TrimSpace(settings.Project) == "" {
@@ -329,14 +356,124 @@ func validateIncus(settings Incus) error {
 	return nil
 }
 
-// validateConfigURL checks that the GitHub registration target is an absolute HTTP URL.
-func validateConfigURL(raw string) error {
-	parsed, err := url.ParseRequestURI(strings.TrimSpace(raw))
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
-		return errors.New("github.config_url must be an absolute HTTP URL")
+// configURLScope identifies the scheduling boundary encoded in a GitHub configuration URL.
+type configURLScope uint8
+
+const (
+	configURLScopeOrganization configURLScope = iota + 1
+	configURLScopeRepository
+)
+
+// validateConfigURL checks and classifies an HTTPS GitHub registration target.
+func validateConfigURL(raw string) (configURLScope, error) {
+	const (
+		message             = "github.config_url must be an absolute HTTPS GitHub organization or repository URL"
+		repositoryPathParts = 2
+	)
+
+	trimmed := strings.TrimSpace(raw)
+	parsed, err := url.ParseRequestURI(trimmed)
+	if err != nil || trimmed != raw || parsed.Opaque != "" || !strings.EqualFold(parsed.Scheme, "https") ||
+		parsed.Hostname() == "" || strings.HasSuffix(parsed.Hostname(), ".") || parsed.User != nil ||
+		parsed.RawQuery != "" || parsed.ForceQuery ||
+		parsed.Fragment != "" || parsed.RawPath != "" {
+		return 0, errors.New(message)
+	}
+	hasPort, validPort := configURLPort(parsed.Host)
+	if !validPort || (hasPort && isHostedGitHubHostname(parsed.Hostname())) {
+		return 0, errors.New(message)
 	}
 
-	return nil
+	path := strings.TrimSuffix(parsed.Path, "/")
+	if !strings.HasPrefix(path, "/") {
+		return 0, errors.New(message)
+	}
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return 0, errors.New(message)
+		}
+	}
+
+	switch len(parts) {
+	case 1:
+		return configURLScopeOrganization, nil
+	case repositoryPathParts:
+		if strings.EqualFold(parts[0], "enterprises") {
+			return 0, errors.New(message)
+		}
+		return configURLScopeRepository, nil
+	default:
+		return 0, errors.New(message)
+	}
+}
+
+// isHostedGitHubHostname mirrors the pinned upstream client's hosted-domain classification without a port.
+func isHostedGitHubHostname(hostname string) bool {
+	normalized := strings.ToLower(hostname)
+	return normalized == "github.com" || normalized == "www.github.com" ||
+		normalized == "github.localhost" || strings.HasSuffix(normalized, ".ghe.com")
+}
+
+// githubQueryValueRoundTrips checks values interpolated into the pinned upstream client's raw query strings.
+func githubQueryValueRoundTrips(key string, value string) bool {
+	parsed, err := url.Parse("/?" + key + "=" + value)
+	if err != nil || parsed.Fragment != "" {
+		return false
+	}
+	values, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil || len(values) != 1 {
+		return false
+	}
+	resolved, ok := values[key]
+	return ok && len(resolved) == 1 && resolved[0] == value
+}
+
+// configURLPort reports and validates an explicitly configured TCP port.
+func configURLPort(host string) (bool, bool) {
+	if strings.HasPrefix(host, "[") {
+		return bracketedConfigURLPort(host)
+	}
+	if strings.Count(host, ":") > 1 {
+		return false, false
+	}
+	separator := strings.LastIndexByte(host, ':')
+	if separator < 0 {
+		return false, true
+	}
+	return validConfigURLPort(host[separator+1:])
+}
+
+// bracketedConfigURLPort extracts an optional port after an IPv6 host literal.
+func bracketedConfigURLPort(host string) (bool, bool) {
+	closingBracket := strings.LastIndexByte(host, ']')
+	if closingBracket < 0 {
+		return false, false
+	}
+	if closingBracket == len(host)-1 {
+		return false, true
+	}
+	if host[closingBracket+1] != ':' {
+		return false, false
+	}
+	return validConfigURLPort(host[closingBracket+2:])
+}
+
+// validConfigURLPort checks a required numeric TCP port.
+func validConfigURLPort(port string) (bool, bool) {
+	if port == "" {
+		return true, false
+	}
+	for _, character := range port {
+		if character < '0' || character > '9' {
+			return true, false
+		}
+	}
+	parsed, err := strconv.ParseUint(port, 10, 16)
+	if err != nil || parsed == 0 {
+		return true, false
+	}
+	return true, true
 }
 
 // Validate checks controller configuration invariants.

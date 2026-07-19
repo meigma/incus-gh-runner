@@ -16,7 +16,7 @@
 
 [tools]
 # Language runtimes (core backend).
-go = "1.26.4"
+go = "1.26.5"
 python = "3.14.3"
 
 # Linux-only image-construction CLI. Upstream publishes source rather than a
@@ -32,7 +32,7 @@ python = "3.14.3"
   bin_path = "bin",
   postinstall = '''
     mise_installs_dir="$(dirname "$(dirname "$MISE_TOOL_INSTALL_PATH")")"
-    go_bin="$mise_installs_dir/go/1.26.4/bin/go"
+    go_bin="$mise_installs_dir/go/1.26.5/bin/go"
     if [ ! -x "$go_bin" ]; then
       echo "pinned mise Go binary is unavailable: $go_bin" >&2
       exit 1
@@ -67,8 +67,11 @@ python = "3.14.3"
 
 [env]
 # Pin the Go toolchain: never auto-download a toolchain other than the one above.
-# The version here is authoritative and matches go.mod's `go 1.26.4`.
+# The version here is authoritative and matches go.mod's `go 1.26.5`.
 GOTOOLCHAIN = "local"
+# moon otherwise routes recognized language commands through Proto even when a
+# task selects the system toolchain. Force it to consume mise's verified PATH.
+MOON_TOOLCHAIN_FORCE_GLOBALS = "true"
 
 [settings]
 # Read/write mise.lock, and fail closed if a tool lacks a pre-resolved URL for the

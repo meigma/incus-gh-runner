@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +11,30 @@ import (
 
 	"github.com/meigma/incus-gh-runner/internal/config"
 )
+
+func TestRunRejectsInvalidConfigurationBeforeConstructingAdapters(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Defaults()
+	cfg.GitHub = config.GitHub{
+		ConfigURL:   "http://github.com/meigma/incus-gh-runner",
+		ScaleSet:    "incus-runners",
+		RunnerGroup: "default",
+		TokenFile:   filepath.Join(t.TempDir(), "missing-token"),
+	}
+	cfg.Incus.Project = "runners"
+	cfg.Incus.Image = "incus-gh-runner:v1"
+	cfg.Incus.Owner = "production"
+
+	err := Run(context.Background(), cfg, BuildInfo{}, nil)
+
+	require.EqualError(
+		t,
+		err,
+		"validate runtime configuration: "+
+			"github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+	)
+}
 
 func TestResolvePersonalAccessToken(t *testing.T) {
 	t.Parallel()

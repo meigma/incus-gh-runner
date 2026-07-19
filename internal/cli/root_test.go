@@ -118,6 +118,57 @@ func TestRootCommandRejectsMissingExplicitConfig(t *testing.T) {
 	assert.Contains(t, err.Error(), missing)
 }
 
+func TestRootCommandRejectsInexactConfigurationBeforeRun(t *testing.T) {
+	t.Parallel()
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`github:
+  runner_gropu: default
+`), 0o600))
+	called := false
+	root := NewRootCommand(Options{
+		Viper: viper.New(),
+		Run: func(context.Context, config.Config) error {
+			called = true
+			return nil
+		},
+	})
+	root.SetArgs([]string{"--config", configPath})
+
+	err := root.ExecuteContext(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown configuration field "github.runner_gropu"`)
+	assert.False(t, called)
+}
+
+func TestRootCommandRedactsInvalidScalarBeforeRun(t *testing.T) {
+	t.Parallel()
+
+	const secret = "must-not-appear-in-the-error"
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`github:
+  app:
+    installation_id: !!int `+secret+`
+`), 0o600))
+	called := false
+	root := NewRootCommand(Options{
+		Viper: viper.New(),
+		Run: func(context.Context, config.Config) error {
+			called = true
+			return nil
+		},
+	})
+	root.SetArgs([]string{"--config", configPath})
+
+	err := root.ExecuteContext(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `configuration field "github.app.installation_id" must be a valid integer`)
+	assert.NotContains(t, err.Error(), secret)
+	assert.False(t, called)
+}
+
 func TestRootCommandPassesExecutionContext(t *testing.T) {
 	t.Parallel()
 

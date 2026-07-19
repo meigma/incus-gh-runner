@@ -64,8 +64,9 @@ The smallest working configuration:
 
 ```yaml
 github:
-  config_url: https://github.com/your-org
+  config_url: https://github.com/OWNER/REPOSITORY
   scale_set: incus-gh-runner-example
+  runner_group: default
   app:
     client_id: Iv1.xxxxxxxxxxxxxxxx
     installation_id: 12345678
@@ -78,8 +79,14 @@ incus:
 ```
 
 For a PAT, omit the `app` block and set `github.token_file` to a protected token
-file instead. A repository URL such as `https://github.com/OWNER/REPOSITORY`
-pairs the resulting scale set with only that repository.
+file instead. Private-repository scope is the hardened starting point and pairs
+the scale set with only that repository. Public repositories require a separate
+threat review that prevents untrusted fork code from targeting the runner.
+Organization scope is supported only with a dedicated non-default runner group
+restricted to the selected repositories and commit-pinned workflows that may
+submit jobs. Set `github.runner_group` to that group's exact name. The controller
+rejects the `default` group for organization scope; enterprise URLs are outside
+the supported contract.
 
 The referenced Incus project, image, and profiles must already exist; the
 controller creates the GitHub scale set automatically if it is absent. Jobs
@@ -116,11 +123,11 @@ drop-in. Follow the
 
 [mise](https://mise.jdx.dev) provides the locked toolchain and
 [Moon](https://moonrepo.dev) is the task runner; CI runs the same aggregate
-gate with `moon ci`:
+gate through `mise exec -- moon ci`:
 
 ```sh
 mise install
-moon run root:check
+mise exec -- moon run root:check
 ```
 
 Business logic stays isolated from the GitHub and Incus client adapters:

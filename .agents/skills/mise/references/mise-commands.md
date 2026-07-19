@@ -36,7 +36,7 @@ Usage:
 
 ```bash
 mise install                 # install everything in mise.toml (honors mise.lock)
-mise install go@1.26.4        # install a specific version
+mise install go@1.26.5        # install a specific version
 ```
 
 Flags that matter here:
@@ -129,7 +129,7 @@ Usage:
 
 ```bash
 mise exec -- golangci-lint version
-mise exec go@1.26.4 -- go version    # override one tool ad hoc
+mise exec go@1.26.5 -- go version    # override one tool ad hoc
 ```
 
 Flags that matter here:

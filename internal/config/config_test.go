@@ -34,16 +34,18 @@ func TestLoadUsesDefaultsAndExplicitEnvironment(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, cfg.Incus.BootstrapTimeout)
 }
 
-func TestLoadDoesNotDecodeGitHubTokenFromConfiguration(t *testing.T) {
+func TestLoadRejectsGitHubTokenFromConfigurationWithoutLeakingIt(t *testing.T) {
 	t.Setenv(config.EnvGitHubToken, "")
 	vp := viper.New()
 	require.NoError(t, config.ConfigureViper(vp))
-	vp.Set("github.token", "file-token-must-be-ignored")
+	const secret = "file-token-must-not-appear"
+	vp.Set("github.token", secret)
 
-	cfg, err := config.Load(vp)
+	_, err := config.Load(vp)
 
-	require.NoError(t, err)
-	assert.Empty(t, cfg.GitHub.Token)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "token")
+	assert.NotContains(t, err.Error(), secret)
 }
 
 func TestLoadBindsPersonalAccessTokenFile(t *testing.T) {
@@ -182,7 +184,181 @@ func TestValidateRuntimeRequiresCompleteAdapterConfiguration(t *testing.T) {
 			mutate: func(cfg *config.Config) {
 				cfg.GitHub.ConfigURL = ""
 			},
-			want: "github.config_url must be an absolute HTTP URL",
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "plaintext GitHub URL",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "http://github.com/meigma/incus-gh-runner"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "plaintext loopback URL",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "http://localhost/meigma/incus-gh-runner"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "GitHub URL with userinfo",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://token@github.com/meigma/incus-gh-runner"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "GitHub URL with query",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/meigma/incus-gh-runner?scope=other"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "GitHub URL with fragment",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/meigma/incus-gh-runner#other"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "GitHub URL with encoded path separator",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/meigma%2Fincus-gh-runner"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "GitHub URL with extra path segment",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/meigma/incus-gh-runner/actions"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "GitHub URL without a scope path",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "GitHub URL with dot path segment",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/meigma/../incus-gh-runner"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "GitHub URL with surrounding whitespace",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = " https://github.com/meigma/incus-gh-runner "
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "hosted GitHub URL with explicit port",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com:443/meigma/incus-gh-runner"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "www GitHub URL with explicit port",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://www.github.com:443/meigma/incus-gh-runner"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "GitHub Enterprise Cloud URL with explicit port",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://meigma.ghe.com:443/meigma/incus-gh-runner"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "GitHub URL with trailing DNS dot",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com./meigma/incus-gh-runner"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "GHES URL with out-of-range port",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.example.com:65536/meigma/incus-gh-runner"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
+		},
+		{
+			name: "organization using default runner group",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/meigma"
+			},
+			want: "github.runner_group must name a non-default runner group for organization scope",
+		},
+		{
+			name: "organization using padded mixed-case default runner group",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/meigma"
+				cfg.GitHub.RunnerGroup = " Default "
+			},
+			want: "github.runner_group must name a non-default runner group for organization scope",
+		},
+		{
+			name: "repository using a custom runner group",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.RunnerGroup = "Build Runners"
+			},
+			want: "github.runner_group must be default for repository scope",
+		},
+		{
+			name: "organization runner group with injected query field",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/meigma"
+				cfg.GitHub.RunnerGroup = "default&x=y"
+			},
+			want: "github.runner_group contains characters that are unsafe in GitHub API queries",
+		},
+		{
+			name: "organization runner group with fragment",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/meigma"
+				cfg.GitHub.RunnerGroup = "default#suffix"
+			},
+			want: "github.runner_group contains characters that are unsafe in GitHub API queries",
+		},
+		{
+			name: "organization runner group with encoded default name",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/meigma"
+				cfg.GitHub.RunnerGroup = "%64efault"
+			},
+			want: "github.runner_group contains characters that are unsafe in GitHub API queries",
+		},
+		{
+			name: "organization runner group with plus",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/meigma"
+				cfg.GitHub.RunnerGroup = "Build+Runners"
+			},
+			want: "github.runner_group contains characters that are unsafe in GitHub API queries",
+		},
+		{
+			name: "organization runner group with semicolon",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/meigma"
+				cfg.GitHub.RunnerGroup = "Build;Runners"
+			},
+			want: "github.runner_group contains characters that are unsafe in GitHub API queries",
+		},
+		{
+			name: "enterprise URL is unsupported",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ConfigURL = "https://github.com/enterprises/meigma"
+			},
+			want: "github.config_url must be an absolute HTTPS GitHub organization or repository URL",
 		},
 		{
 			name: "missing scale set",
@@ -190,6 +366,20 @@ func TestValidateRuntimeRequiresCompleteAdapterConfiguration(t *testing.T) {
 				cfg.GitHub.ScaleSet = ""
 			},
 			want: "github.scale_set is required",
+		},
+		{
+			name: "scale set with injected query field",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ScaleSet = "incus-runners&runnerGroupId=1"
+			},
+			want: "github.scale_set contains characters that are unsafe in GitHub API queries",
+		},
+		{
+			name: "scale set with fragment",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.ScaleSet = "incus-runners#other"
+			},
+			want: "github.scale_set contains characters that are unsafe in GitHub API queries",
 		},
 		{
 			name: "missing credentials",
@@ -247,6 +437,25 @@ func TestValidateRuntimeRequiresCompleteAdapterConfiguration(t *testing.T) {
 	}
 
 	assert.NoError(t, valid.ValidateRuntime())
+	trailingSlashRepository := valid
+	trailingSlashRepository.GitHub.ConfigURL = "https://github.com/meigma/incus-gh-runner/"
+	assert.NoError(t, trailingSlashRepository.ValidateRuntime())
+	ghesRepository := valid
+	ghesRepository.GitHub.ConfigURL = "https://github.example.com/meigma/incus-gh-runner"
+	assert.NoError(t, ghesRepository.ValidateRuntime())
+	ghesRepositoryWithPort := valid
+	ghesRepositoryWithPort.GitHub.ConfigURL = "https://github.example.com:8443/meigma/incus-gh-runner"
+	assert.NoError(t, ghesRepositoryWithPort.ValidateRuntime())
+	organization := valid
+	organization.GitHub.ConfigURL = "https://github.com/meigma"
+	organization.GitHub.RunnerGroup = "incus-gh-runner-prod"
+	assert.NoError(t, organization.ValidateRuntime())
+	organizationWithSpacedGroup := organization
+	organizationWithSpacedGroup.GitHub.RunnerGroup = "Build Runners"
+	assert.NoError(t, organizationWithSpacedGroup.ValidateRuntime())
+	ghesOrganization := organization
+	ghesOrganization.GitHub.ConfigURL = "https://github.example.com/meigma"
+	assert.NoError(t, ghesOrganization.ValidateRuntime())
 	fileCredentials := valid
 	fileCredentials.GitHub.Token = ""
 	fileCredentials.GitHub.TokenFile = "/run/credentials/github-token"

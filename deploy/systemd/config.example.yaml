@@ -1,6 +1,7 @@
 github:
-  config_url: https://github.com/example
+  config_url: https://github.com/OWNER/REPOSITORY
   scale_set: incus-linux-x64
+  # Required for repository scope; use a private repo unless public-repo threat review is complete.
   runner_group: default
 # GitHub credentials are supplied by one systemd credential drop-in.
 incus:

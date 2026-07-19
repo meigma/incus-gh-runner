@@ -65,22 +65,16 @@ func resolveScaleSet(
 		options.Logger = slog.New(slog.DiscardHandler)
 	}
 
-	runnerGroupID := defaultRunnerGroupID
-	if options.RunnerGroup != scaleset.DefaultRunnerGroup {
-		runnerGroup, err := client.GetRunnerGroupByName(ctx, options.RunnerGroup)
-		if err != nil {
-			return nil, fmt.Errorf("resolve runner group %q: %w", options.RunnerGroup, err)
-		}
-		if runnerGroup == nil || runnerGroup.ID == 0 {
-			return nil, fmt.Errorf("resolve runner group %q: response has no ID", options.RunnerGroup)
-		}
-		runnerGroupID = runnerGroup.ID
+	runnerGroupID, err := resolveRunnerGroupID(ctx, client, options.RunnerGroup)
+	if err != nil {
+		return nil, err
 	}
 
 	resolved, err := client.GetRunnerScaleSet(ctx, runnerGroupID, options.Name)
 	if err != nil {
 		return nil, fmt.Errorf("resolve runner scale set %q: %w", options.Name, err)
 	}
+	created := false
 	if resolved == nil {
 		resolved, err = client.CreateRunnerScaleSet(ctx, &scaleset.RunnerScaleSet{
 			Name:          options.Name,
@@ -91,17 +85,77 @@ func resolveScaleSet(
 		if err != nil {
 			return nil, fmt.Errorf("create runner scale set %q: %w", options.Name, err)
 		}
+		created = true
+	}
+	if err := validateResolvedScaleSet(resolved, runnerGroupID, options.RunnerGroup, options.Name); err != nil {
+		return nil, err
+	}
+	if created {
 		options.Logger.InfoContext(ctx, "GitHub runner scale set created", "scale_set", options.Name)
 	} else {
 		options.Logger.InfoContext(ctx, "GitHub runner scale set resolved", "scale_set", options.Name)
-	}
-	if resolved == nil || resolved.ID == 0 {
-		return nil, fmt.Errorf("runner scale set %q response has no ID", options.Name)
 	}
 
 	options.SystemInfo.ScaleSetID = resolved.ID
 	client.SetSystemInfo(options.SystemInfo)
 	return &ScaleSet{client: client, id: resolved.ID}, nil
+}
+
+// resolveRunnerGroupID resolves a named non-default group without trusting a redirected response.
+func resolveRunnerGroupID(ctx context.Context, client scaleSetClient, name string) (int, error) {
+	if name == scaleset.DefaultRunnerGroup {
+		return defaultRunnerGroupID, nil
+	}
+	runnerGroup, err := client.GetRunnerGroupByName(ctx, name)
+	if err != nil {
+		return 0, fmt.Errorf("resolve runner group %q: %w", name, err)
+	}
+	if runnerGroup == nil || runnerGroup.ID <= 0 {
+		return 0, fmt.Errorf("resolve runner group %q: response has no ID", name)
+	}
+	if runnerGroup.ID == defaultRunnerGroupID || runnerGroup.IsDefault {
+		return 0, fmt.Errorf("resolve runner group %q: response identifies the default group", name)
+	}
+	if runnerGroup.Name != name {
+		return 0, fmt.Errorf("resolve runner group %q: response name does not match", name)
+	}
+	return runnerGroup.ID, nil
+}
+
+// validateResolvedScaleSet checks the required identity and any optional group identity in the API response.
+func validateResolvedScaleSet(
+	resolved *scaleset.RunnerScaleSet,
+	runnerGroupID int,
+	runnerGroupName string,
+	name string,
+) error {
+	if resolved == nil || resolved.ID <= 0 {
+		return fmt.Errorf("runner scale set %q response has no ID", name)
+	}
+	if resolved.Name != name {
+		return fmt.Errorf("runner scale set %q response name does not match", name)
+	}
+	if resolved.RunnerGroupID != 0 && resolved.RunnerGroupID != runnerGroupID {
+		return fmt.Errorf("runner scale set %q response runner group does not match", name)
+	}
+	if resolved.RunnerGroupName != "" && !runnerGroupNameMatches(runnerGroupName, resolved.RunnerGroupName) {
+		return fmt.Errorf("runner scale set %q response runner group name does not match", name)
+	}
+	if len(resolved.Labels) != 1 || resolved.Labels[0].Name != name {
+		return fmt.Errorf("runner scale set %q response labels do not match", name)
+	}
+	if !resolved.RunnerSetting.DisableUpdate {
+		return fmt.Errorf("runner scale set %q does not disable runner self-update", name)
+	}
+	return nil
+}
+
+// runnerGroupNameMatches permits GitHub's display capitalization only for the built-in default group.
+func runnerGroupNameMatches(expected string, actual string) bool {
+	if expected == scaleset.DefaultRunnerGroup {
+		return strings.EqualFold(expected, actual)
+	}
+	return expected == actual
 }
 
 // ID returns the resolved runner scale-set ID.
