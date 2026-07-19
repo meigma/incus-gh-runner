@@ -1,236 +1,150 @@
 # incus-gh-runner
 
-`incus-gh-runner` is a controller for running ephemeral GitHub Actions jobs in
-Incus virtual machines. It consumes GitHub runner scale-set demand, maintains a
-bounded pool of hot standby runners, and deletes each VM after its one assigned
-job.
+`incus-gh-runner` is a controller that runs ephemeral GitHub Actions runners in
+Incus virtual machines. It registers a runner scale set with GitHub, provisions
+a fresh VM with a just-in-time runner registration for each assigned job, and
+deletes the VM when its one job finishes.
 
-The controller reconciles coalesced demand through a bounded worker pool using
-explicit demand-source and runner-backend ports. It ships a checksummed,
-offline-built reference VM image with a versioned one-shot guest contract, and
-drives the full Incus lifecycle — create, start, payload injection,
-observation, diagnostics, and deletion — under periodic ownership inventory.
-Persistent GitHub scale-set resolution, message polling, demand statistics, and
-fresh per-VM JIT configuration feed that lifecycle, with hot-standby
-replacement and restart reconciliation on the primary live path. Unattended
-operation is hardened with GitHub session recovery, bounded shutdown
-escalation, and a protected systemd deployment.
+## Features
 
-## v1 boundaries
+- One job per VM: every job runs in a fresh virtual machine that is deleted
+  afterward, so no state leaks between jobs.
+- Hot standby pool: a configurable minimum of connected idle runners absorbs
+  bursts, bounded by a configurable maximum.
+- Ownership-scoped reconciliation: the controller only counts, creates, and
+  deletes VMs carrying its exact ownership marker, and keeps no database of its
+  own.
+- Unattended operation: GitHub session recovery with capped backoff, bounded
+  shutdown escalation, and a hardened systemd unit with credential isolation.
+- Reference VM image: a reproducible, offline-built Ubuntu 24.04 image with a
+  pinned Actions Runner, published with checksums and build attestations.
 
-- One GitHub runner scale set per controller process.
-- One preconfigured Incus environment and runner image.
-- Fully connected hot standby runners with a configurable minimum and maximum.
-- One JIT configuration and at most one job per VM.
-- Ownership-scoped reconciliation without a controller database.
-- A foreground process intended to run under systemd.
+## Requirements
 
-The controller will not create or manage Incus projects, networks, storage,
-profiles, clustering, or host security.
+- A Linux host running Incus 7.0 or newer with QEMU VM support. Incus 6 is not
+  supported.
+- Membership in the `incus-admin` group for the controller process. This is
+  root-equivalent on the host, so a dedicated runner host is recommended.
+- A GitHub App for production authentication. A personal access token is
+  accepted for local testing.
+
+## Installation
+
+Each GitHub release provides `incus-gh-runner_<version>_<os>_<arch>` binaries
+for Linux and macOS (amd64 and arm64), a multi-architecture controller OCI
+image, and a versioned Incus reference VM image, all with checksums and build
+attestations.
+
+Download a binary from the [releases page](https://github.com/meigma/incus-gh-runner/releases)
+and install it:
+
+```sh
+install -m 0755 incus-gh-runner_<version>_linux_amd64 /usr/bin/incus-gh-runner
+```
+
+To build from source instead:
+
+```sh
+go build ./cmd/incus-gh-runner
+```
+
+See [Runner images](docs/docs/how-to/runner-images.md) for downloading and
+verifying the reference VM image.
+
+## Usage
+
+The controller is a single foreground command driven by one configuration
+file:
+
+```sh
+incus-gh-runner --config config.yaml
+```
+
+The smallest working configuration:
+
+```yaml
+github:
+  config_url: https://github.com/your-org
+  scale_set: incus-gh-runner-example
+  app:
+    client_id: Iv1.xxxxxxxxxxxxxxxx
+    installation_id: 12345678
+    private_key_file: /path/to/private-key.pem
+incus:
+  project: github-runners
+  image: incus-gh-runner:v1
+  profiles: [default]
+  owner: incus-gh-runner-example
+```
+
+The referenced Incus project, image, and profiles must already exist; the
+controller creates the GitHub scale set automatically if it is absent. Jobs
+target the scale set by its name:
+
+```yaml
+jobs:
+  example:
+    runs-on: incus-gh-runner-example
+```
+
+For production, run the controller under the hardened systemd unit in
+[`deploy/systemd/`](deploy/systemd/), which supplies the GitHub App key
+through a systemd credential. Follow the
+[deployment guide](docs/docs/how-to/deploy.md) for the end-to-end path.
+
+## Documentation
+
+- [Deploy to production](docs/docs/how-to/deploy.md) — host preparation,
+  GitHub App setup, and the systemd installation.
+- [Operate and troubleshoot](docs/docs/how-to/operate.md) — logs, VM
+  diagnostics, safe configuration changes, and upgrades.
+- [Runner images](docs/docs/how-to/runner-images.md) — obtaining, verifying,
+  building, and validating runner images.
+- [Configuration reference](docs/docs/reference/configuration.md) — every
+  configuration key, environment variable, and CLI flag.
+- [Guest contract reference](docs/docs/reference/guest-contract.md) — the
+  controller-guest interface for auditing or replacing the reference image.
+- [How incus-gh-runner works](docs/docs/explanation/how-it-works.md) — the
+  capacity model, runner lifecycle, ownership boundary, and security model.
 
 ## Development
 
-[mise](https://mise.jdx.dev) provides the locked toolchain, and
-[Moon](https://moonrepo.dev) is the task runner and CI entrypoint:
+[mise](https://mise.jdx.dev) provides the locked toolchain and
+[Moon](https://moonrepo.dev) is the task runner; CI runs the same aggregate
+gate with `moon ci`:
 
 ```sh
 mise install
 moon run root:check
 ```
 
-Useful focused commands are:
+Business logic stays isolated from the GitHub and Incus client adapters:
+third-party types live in `internal/adapters`, controller-owned ports live
+with the orchestration core, and scale-set callbacks only publish into a
+coalescing mailbox while Incus work runs in a bounded worker pool.
 
-```sh
-moon run root:format
-moon run root:lint
-moon run root:build
-moon run root:test
-go run ./cmd/incus-gh-runner --version
-```
-
-The smallest real single-runner configuration is:
-
-```yaml
-github:
-  config_url: https://github.com/meigma/incus-gh-runner
-  scale_set: incus-gh-runner-example
-  runner_group: default
-incus:
-  project: runner-test
-  image: incus-gh-runner:test
-  profiles: [default]
-  owner: incus-gh-runner-example
-  bootstrap_timeout: 5m
-  diagnostics_dir: /var/log/incus-gh-runner/runners
-capacity:
-  min_runners: 0
-  max_runners: 1
-concurrency:
-  incus_operations: 1
-reconcile_interval: 1s
-timeouts:
-  incus_operation: 5m
-  shutdown: 30s
-retry:
-  initial: 1s
-  maximum: 30s
-```
-
-Configuration precedence is flags, environment variables, the selected YAML
-file, then defaults. `--config` selects a required file; otherwise
-`/etc/incus-gh-runner/config.yaml` is optional. Environment variables use the
-`INCUS_GH_RUNNER` prefix, such as
-`INCUS_GH_RUNNER_CAPACITY_MAX_RUNNERS`.
-
-Production authentication uses a GitHub App configured with `client_id`,
-`installation_id`, and a protected `private_key_file`. A personal access token
-is also accepted for local testing, only through
-`INCUS_GH_RUNNER_GITHUB_TOKEN`; the token is not decoded from YAML and has no
-CLI flag. The process resolves or creates the
-configured scale set and leaves that persistent scale set in place across
-controller restarts.
-
-Startup still fails fast when the initial GitHub message session cannot be
-opened. After startup, a listener or session failure closes the old session and
-creates a fresh one using capped exponential backoff. Successful GitHub polling,
-including a healthy long-poll expiry with no message, resets the delay to
-`retry.initial`; `retry.maximum` prevents a prolonged outage from producing an
-unbounded retry interval. The controller applies the same bounds to failed Incus
-inventory, create, and delete operations. An inventory failure pauses mutations
-until a fresh owned-runner snapshot succeeds; create cooldown is shared, while
-delete cooldown is isolated to the exact runner so unrelated cleanup can proceed.
-
-On SIGINT or SIGTERM, the application cancels both long-lived components and
-waits through the controller's graceful and forced-cancellation shutdown
-windows. If either component still has not returned after twice
-`timeouts.shutdown`, the process exits with an error so its supervisor can
-restart it instead of leaving a wedged service indefinitely.
-
-The checked-in hardened unit, example configuration, credential boundary, and
-installation procedure are documented in the
-[deployment guide](docs/docs/how-to/deploy.md).
-
-CI runs the same aggregate gate with `moon ci --summary minimal`.
-
-## Reference runner image
-
-The `image/` tree defines an Ubuntu 24.04 x86_64 Incus VM with a pinned Actions
-Runner and a one-shot systemd guest service. The hosted `Reference Image`
-workflow proves that distrobuilder can assemble the unified VM artifact without
-starting a VM or requiring KVM acceleration. Real boot validation remains a
-separate Incus-capable functional gate.
-
-See the [guest contract reference](docs/docs/reference/guest-contract.md)
-for the payload, readiness, diagnostic, cleanup, and poweroff behavior.
-
-The integration seams pin
-[`actions/scaleset`](https://github.com/actions/scaleset) and the
-[`incus/v7` Go client](https://github.com/lxc/incus). Third-party client types
-stay in `internal/adapters`; controller-owned ports live with the orchestration
-core. Scale-set callbacks only publish into the coalescing mailbox; JIT and
-Incus calls remain in the bounded runner-operation path.
-
-## Functional test environments
-
-Unit tests must not require Incus or GitHub access. Functional lifecycle work
-uses explicitly disposable infrastructure:
-
-- Incus testing targets a dedicated project on a local or otherwise isolated
-  daemon. The project, image, profiles, network, and storage must already exist;
-  tests must never point cleanup logic at an unrelated or shared project.
-- Live VM diagnostics require Incus 7.0 or newer. Incus 6 releases are not
-  supported.
-- GitHub scale-set testing targets a dedicated private repository or
-  organization and a uniquely named test scale set. Do not use production
-  repositories, runner groups, or credentials for development experiments.
-
-The opt-in GitHub preflight resolves the persistent scale set and opens and
-closes one real message session without creating a runner:
-
-```sh
-INCUS_GH_RUNNER_TEST_GITHUB_CONFIG_URL=https://github.com/meigma/incus-gh-runner \
-INCUS_GH_RUNNER_TEST_GITHUB_SCALE_SET=incus-gh-runner-test \
-INCUS_GH_RUNNER_GITHUB_TOKEN="$(gh auth token)" \
-go test ./internal/adapters/github -run TestScaleSetSessionFunctional -count=1 -v
-```
-
-The Incus lifecycle test is opt-in and destructive only for instances carrying
-its unique ownership marker. It refuses the default project and expects the
-reference image to be imported already:
-
-```sh
-INCUS_GH_RUNNER_TEST_PROJECT=runner-test \
-INCUS_GH_RUNNER_TEST_IMAGE=incus-gh-runner:test \
-INCUS_GH_RUNNER_TEST_PROFILES=default,github-runner \
-go test ./internal/adapters/incus -run TestIncusLifecycleFunctional -count=1 -v
-```
-
-`INCUS_GH_RUNNER_TEST_PROFILES` and `INCUS_GH_RUNNER_TEST_SOCKET` are optional.
-The test drives one unit of fake demand through the controller, injects a
-credential-free probe payload, captures the live terminal serial history during
-the guest's bounded diagnostic grace window, deletes the exact owned VM, and
-verifies that the owned inventory returns to zero.
-
-The manual `Runner Functional Check` workflow accepts an exact runner label and
-executes a minimal unprivileged Linux job on that scale set. Prepare all costly
-live-test inputs before allocating hardware:
-
-```sh
-scripts/live/live-bundle-prepare.sh
-```
-
-That command cross-compiles the controller and the Incus lifecycle functional
-test, starts and downloads a fresh hosted reference-image build, verifies its
-checksum, and assembles the transfer bundle under `build/live-bundle`. On a
-fresh Ubuntu 24.04 Incus-capable host, `live-host-prepare.sh` installs the
-native Incus and QEMU packages, creates a non-default project, and runs the
-image-validation and Incus lifecycle live gates before the controller is
-started to run a real job.
-
-The hot-standby harness starts the controller, waits for GitHub to
-report exactly one connected idle runner, dispatches a held one-shot job,
-observes that runner become busy and a different idle replacement connect,
-then verifies job success and exact deletion. It restarts around the idle
-replacement and its cleanup job before returning the scale set and Incus
-inventory to zero. Use a dedicated repository scale set with
-`min_runners: 1`, `max_runners: 2`, and at least two Incus operations:
-
-```sh
-INCUS_GH_RUNNER_GITHUB_TOKEN="$(gh auth token)" \
-scripts/live/live-hot-standby.sh \
-  meigma/incus-gh-runner \
-  incus-gh-runner-hotstandby \
-  runner-test \
-  <run-id> \
-  /path/to/incus-gh-runner \
-  /path/to/config.yaml \
-  /var/log/incus-gh-runner/hot-standby
-```
-
-The token must be able to run and inspect repository workflows. Readiness is
-proven from the exact-owner Incus inventory and the guest runner journal;
-workflow-job state proves which runner accepted each job without requiring
-organization-wide runner administration permission. The harness preserves
-controller logs from each process lifetime, runner snapshots, workflow output,
-and a correlation manifest in the evidence directory.
-
-## Packaging
-
-Release Please prepares version bumps, tags, and a draft GitHub release. The
-tag-triggered release workflow then builds and attests four GoReleaser binaries,
-publishes and signs the multi-architecture controller OCI image, and attaches a
-versioned Incus reference-image archive plus checksum to that draft. The draft
-remains a deliberate human publication decision after the workflow inspection
-summary has been reviewed.
-
-Release PRs rehearse the controller binary, OCI image, and reference VM build
-paths without uploading GitHub release assets. See the
-[runner image guide](docs/docs/how-to/runner-images.md)
-for download, checksum, provenance, and Incus boot verification commands.
+Unit tests run without Incus or GitHub access. Opt-in functional tests
+(`INCUS_GH_RUNNER_TEST_*` environment variables) exercise the real GitHub
+scale-set session and the destructive Incus VM lifecycle against explicitly
+disposable projects, and the `scripts/live/` harnesses drive a full
+hot-standby lifecycle against real hardware. See the comments in those
+scripts and test files for the required inputs.
 
 ## Contributing and security
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and
 [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
-The repository does not yet include a project license.
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT License ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in this project by you, as defined in the Apache-2.0
+license, shall be dual licensed as above, without any additional terms or
+conditions.
