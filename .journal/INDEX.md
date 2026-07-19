@@ -13,3 +13,4 @@
 | 009 | 2026-07-18 | Continue phase 6 service hardening | complete | Landed and proved predictable systemd, timeout, outage, signal, credential, ownership, and operation-retry behavior. |
 | 010 | 2026-07-18 | Continue phase 7 release readiness | complete | Landed and proved release-ready controller and reference-image automation while deliberately leaving `v1.0.0` unpublished. |
 | 011 | 2026-07-18 | Pre-release language cleanup, docs overhaul, and licensing | complete | Removed development-process language, shipped the operator Diátaxis docs set, rewrote the README, and dual-licensed the repo under Apache-2.0/MIT. |
+| 012 | 2026-07-18 | Support GitHub App and PAT authentication | in-progress | Make GitHub App and repository-scoped PAT authentication clean production deployment options. |
