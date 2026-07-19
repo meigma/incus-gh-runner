@@ -14,22 +14,111 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 - Administrative access to the target GitHub organization or repository.
 - The `incus-gh-runner` binary for your platform, and a checked-out or downloaded copy of `deploy/systemd/` from the repository.
 
-## 1. Prepare Incus
+## 1. Prepare and validate Incus
 
-Create a dedicated project for runner VMs, and profiles that give those VMs network and disk access:
+Start from the fail-closed desired-state example instead of creating an
+unrestricted project and attaching the project's `default` profile:
 
 ```sh
-incus project create github-runners
-incus profile create github-runner --project github-runners
-incus profile device add github-runner eth0 nic network=<your-network> --project github-runners
-incus profile device add github-runner root disk pool=<your-storage-pool> path=/ --project github-runners
+cp deploy/incus/baseline.example.json incus-baseline.json
 ```
 
-Substitute your own network and storage pool names. The project's `default` profile and the new `github-runner` profile together form the `profiles` list you will reference in the controller config.
+The repository also ships the dependency-free CUE policy prototype under
+`deploy/incus/cue/`. Its default input renders exactly the JSON above, derives
+aggregate project ceilings from host and runner capacity, and rejects attempts
+to weaken fixed isolation controls. It also renders a partial controller
+configuration that keeps `incus.project`, the sole Incus profile, and
+`capacity.max_runners` aligned with those ceilings. The module is not yet
+registry-published, so the rendered files remain local deployment artifacts for
+this increment.
 
-Import a runner image into the project. See [Obtain, build, and validate runner images](./runner-images.md) for downloading a released image, building one locally, and importing it into Incus.
+Edit the copy for the target host. In particular, replace every documentation
+address, bridge subnet, resource name, ZFS source, and capacity limit. The
+example proxy and DNS addresses are non-routable and intentionally provide no
+useful egress until replaced. Configure a controlled proxy to allow only
+GitHub or GHES and the dependency destinations approved for this builder. Do
+not replace the proxy boundary with unrestricted TCP/443 and call it a GitHub
+allowlist.
 
-The controller does not create projects, networks, storage, or profiles itself — everything in this step must exist before the controller starts.
+`baseline.example.json` is reviewable desired state, not an input Incus can
+apply directly. Materialize the exact project, network, ACL, profile, and
+storage state through your Incus CLI or infrastructure-management workflow;
+the controller does not create or modify that infrastructure. Keep the bridge
+and ACL host-owned in the Incus `default` project, while the restricted runner
+project inherits the allowlisted bridge and owns only its runner profile. The
+baseline requires a dedicated ZFS pool, default-deny ACLs at the bridge and
+NIC, anti-spoofing and port isolation, and both per-VM and aggregate project
+ceilings. Keep the current controller on a dedicated, single-purpose host: its
+Unix-socket `incus-admin` identity remains root-equivalent.
+
+Set the project VM limit at or above the controller's
+`capacity.max_runners`, then size aggregate CPU, memory, and disk for that many
+profile-limited VMs while reserving explicit headroom for Incus, the
+controller, and the host. A project limit below `capacity.max_runners` makes
+requested capacity impossible; limits at physical capacity do not protect the
+host control plane from exhaustion.
+
+Validate the effective API state before importing an image or starting the
+controller:
+
+```sh
+incus-gh-runner validate incus-baseline.json
+```
+
+The validator defaults to `/var/lib/incus/unix.socket`. Pass another local
+socket explicitly when needed:
+
+```sh
+incus-gh-runner validate --socket /run/incus/unix.socket incus-baseline.json
+```
+
+This command is read-only and fails on drift. It validates the baseline against
+the embedded CUE policy in process and reads effective state from the local
+Incus socket; it does not invoke external `cue`, `incus`, or `jq` executables.
+It does not load controller configuration or require GitHub credentials. The
+socket remains root-equivalent, so run the command only from a trusted host
+administration context.
+
+The validator confirms the effective resource ceilings, but it cannot re-prove
+the physical-host capacity and reserved headroom used when CUE generated them.
+Re-render and review the baseline after changing host capacity or reservations.
+Resolve every failure; do not weaken or bypass it to continue deployment. See
+[`deploy/incus/README.md`](https://github.com/meigma/incus-gh-runner/tree/master/deploy/incus)
+for the manifest contract, controlled-egress model, compatibility residuals,
+and the official Incus references behind each setting.
+
+Import a runner image into the validated project. See [Obtain, build, and
+validate runner images](./runner-images.md) for downloading a released image,
+building one locally, and importing it into Incus. Apply only the validated
+`github-runner` profile in controller configuration; adding the `default` or a
+second profile can add devices or relax limits outside the checked baseline.
+
+The hostile-runner harness exports effective configuration without mutation by
+default. Run that preflight against the production project, using only
+credential-free HTTP(S) origins:
+
+```sh
+scripts/live/live-incus-hostile-isolation.sh \
+  --project github-runners \
+  --profile github-runner \
+  --image incus-gh-runner-v0.1.0 \
+  --allowed-url https://github.com/ \
+  --allowed-url https://approved-dependency.example/ \
+  --forbidden-url http://169.254.169.254/ \
+  --forbidden-url "$INCUS_HOST_CANARY_ORIGIN" \
+  --egress-proxy "$RUNNER_PROXY_ORIGIN" \
+  --evidence-directory incus-isolation-preflight
+```
+
+Make the host canary reachable in the absence of the runner policy; otherwise
+a failed request does not prove the ACL blocked it. Exercise the mutating
+`--execute` path only on a separate KVM-capable project that reproduces the
+production baseline, sets `user.incus-gh-runner.disposable=true`, and contains
+no retained workloads. The script also requires the exact
+`INCUS_GH_RUNNER_LIVE_MUTATION` opt-in it prints. Never mark the production
+project disposable. The bounded harness proves concurrent-VM, allowed and
+forbidden egress, L2/L3 isolation, MAC spoof, and IPv4 spoof behavior; IPv6
+spoofing and resource-ceiling exhaustion remain separate acceptance tests.
 
 ## 2. Choose the GitHub scope and credential
 
@@ -112,8 +201,8 @@ github:
   runner_group: default
 incus:
   project: github-runners
-  image: incus-gh-runner:v0.1.0
-  profiles: [default, github-runner]
+  image: incus-gh-runner-v0.1.0
+  profiles: [github-runner]
   owner: incus-gh-runner-production
 capacity:
   min_runners: 1
@@ -146,7 +235,7 @@ When using a PAT, do not add the `app` block. The selected systemd drop-in suppl
 
 - `github.scale_set` names the runner scale set; the controller creates it automatically on first start if it does not already exist.
 - `incus.image` is the alias or fingerprint of the image you imported in step 1.
-- `incus.owner` is an arbitrary ownership marker exclusive to this deployment — do not reuse it across independent controller instances pointed at the same Incus project.
+- `incus.owner` is an arbitrary cleanup selector exclusive to this deployment — do not reuse it across independent controller instances pointed at the same Incus project. Another project writer can forge it, so it is not authorization.
 
 See [Configuration reference](../reference/configuration.md) for every key, default, environment variable, and credential validation rule.
 
@@ -239,4 +328,4 @@ cannot be configured and verified, deploy at repository scope instead.
 - [Operate and troubleshoot incus-gh-runner](./operate.md) — running the deployed controller, log fields, and recovering from failures.
 - [Obtain, build, and validate runner images](./runner-images.md) — image acquisition, verification, and validation.
 - [Configuration reference](../reference/configuration.md) — every config key, environment variable, CLI flag, and credential rule.
-- [How incus-gh-runner works](../explanation/how-it-works.md) — capacity model, runner lifecycle, and the security model behind the credential and ownership rules used above.
+- [How incus-gh-runner works](../explanation/how-it-works.md) — capacity model, runner lifecycle, and the security model behind the credential and cleanup rules used above.

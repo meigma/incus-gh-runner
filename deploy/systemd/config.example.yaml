@@ -6,8 +6,9 @@ github:
 # GitHub credentials are supplied by one systemd credential drop-in.
 incus:
   project: github-runners
-  image: incus-gh-runner:v0.1.0
-  profiles: [default, github-runner]
+  image: incus-gh-runner-v0.1.0
+  # Apply only the validated restricted runner profile; do not add default.
+  profiles: [github-runner]
   owner: incus-gh-runner-production
   bootstrap_timeout: 5m
   diagnostics_dir: /var/log/incus-gh-runner/runners

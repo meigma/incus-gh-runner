@@ -4,7 +4,8 @@ Complete listing of configuration sources, YAML keys, environment variables, CLI
 
 ## Sources and precedence
 
-Configuration is assembled from four sources. Precedence, highest first:
+Controller-mode configuration is assembled from four sources. Precedence,
+highest first:
 
 1. CLI flags
 2. Environment variables (`INCUS_GH_RUNNER_` prefix)
@@ -41,7 +42,7 @@ Duration values use Go duration syntax (for example `30s`, `5m`).
 | `incus.project` | string | — | Required. Non-empty. Must already exist. |
 | `incus.image` | string | — | Required. Non-empty. Existing local image alias or fingerprint. |
 | `incus.profiles` | list of strings | `[]` | Optional. No empty entries. Profiles must already exist. |
-| `incus.owner` | string | — | Required. Non-empty. Exact ownership marker written to every instance this process manages. |
+| `incus.owner` | string | — | Required. Non-empty. Exact cleanup selector written to every instance this process manages; not an authorization boundary. |
 | `incus.bootstrap_timeout` | duration | `5m` | Must be greater than `0`. |
 | `incus.diagnostics_dir` | string | `""` | Optional. Directory for terminal-runner serial console diagnostics. |
 
@@ -123,13 +124,16 @@ Exactly one credential source must be configured:
 Configuring more than one method is an error, including setting both PAT sources. Configuring no credential is also an error.
 
 !!! warning "Root-equivalent socket access"
-    The controller's Incus client uses the account's `incus-admin` group membership, which grants root-equivalent control over the host. This applies regardless of which credential type is configured.
+    The controller's Incus client uses the account's `incus-admin` group membership, which grants root-equivalent control over the host. This applies regardless of which GitHub credential type is configured. The `incus.owner` value limits the controller's intended cleanup scope but is forgeable by another project writer; it is not authorization. Run the current production deployment only on a dedicated, single-purpose Incus host.
 
 The packaged systemd deployment supplies either `github.app.private_key_file` or `github.token_file` through one selected credential drop-in. Secret values do not belong in `config.yaml`. See [systemd unit facts](#systemd-unit-facts).
 
 ## CLI
 
-`incus-gh-runner` is a single command with no subcommands.
+Running `incus-gh-runner` without a subcommand starts the controller. The
+controller configuration sources and flags documented above apply to that
+mode. The `validate` subcommand is independent of controller configuration and
+GitHub credentials.
 
 ### `--config`
 
@@ -162,9 +166,36 @@ incus-gh-runner <version> (<commit>) built <date>
 
 In a release build, `<version>`, `<commit>`, and `<date>` are populated at build time. In a development build, these render as `dev`, `none`, and `unknown` respectively.
 
+### `validate <baseline>`
+
+Validates exactly one rendered JSON baseline against the embedded CUE policy,
+then compares it with effective state read from a local Incus Unix socket. The
+command performs read operations only; it never creates, changes, or deletes
+Incus resources and does not invoke external `cue`, `incus`, or `jq`
+executables.
+
+| Flag | Type | Default |
+|---|---|---|
+| `--socket` | string | `/var/lib/incus/unix.socket` |
+
+`--socket` selects a local Incus Unix socket. The command does not load
+`/etc/incus-gh-runner/config.yaml`, controller flags or environment variables,
+or GitHub credentials. A successful validation prints one human-readable line
+to stdout; compatibility notices are written to stderr.
+
+The live comparison confirms effective resource ceilings but cannot re-measure
+or re-prove the physical-host capacity and reserved headroom used to generate
+them. Re-render and review the baseline after those generation-time inputs
+change.
+
 ### Exit behavior
 
-The process exits `0` on clean shutdown. It exits `1` on configuration load failure, configuration validation failure, or runtime failure, printing the error to stderr. There is no flag to control log level or log format; logs are always structured JSON on stdout.
+Controller mode exits `0` on clean shutdown. It exits `1` on configuration
+load failure, configuration validation failure, or runtime failure, printing
+the error to stderr. There is no flag to control controller log level or log
+format; controller logs are always structured JSON on stdout. `validate` exits
+`0` only when policy and live-state checks pass and exits non-zero with an error
+on stderr otherwise.
 
 ## systemd unit facts
 

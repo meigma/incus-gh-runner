@@ -63,7 +63,7 @@ If `incus.diagnostics_dir` is unset, console captures are discarded and nothing 
 !!! warning "Console output may contain sensitive workload content"
     The serial console log is the guest's raw console output, including anything a running Actions job printed to it before exit. Treat diagnostics files as sensitive: restrict directory access to operators who are cleared to see job output, and rotate or delete captures on a schedule appropriate to your workload sensitivity.
 
-For the full ownership and metadata model behind runner VMs, see [How incus-gh-runner works](../explanation/how-it-works.md). For every configuration key, see [Configuration reference](../reference/configuration.md).
+For the full cleanup and metadata model behind runner VMs, see [How incus-gh-runner works](../explanation/how-it-works.md). For every configuration key, see [Configuration reference](../reference/configuration.md).
 
 ## Change capacity or configuration safely
 
@@ -113,7 +113,7 @@ Existing runner VMs built from the old image are left running until they finish 
 | Repeated `GitHub message session disconnected; reconnecting` | A GitHub-side outage, or the App/PAT credential was revoked mid-run | Backoff is capped and automatic; no restart is needed for a transient outage. If it persists, verify the credential is still valid. |
 | Runner stays `provisioning`, then goes `terminal` after a while | Image doesn't implement the guest contract, the wrong image is configured, or the VM has no network reachability to GitHub | Check `incus.image` and `incus.bootstrap_timeout`; validate the image with [`image/validate-incus.sh`](./runner-images.md); confirm the VM's network path. |
 | `runner operation failed` repeats with growing `retry_after` | An Incus-side failure (API, storage, hypervisor) put that operation into cooldown | Creates share one cooldown; each runner's delete has its own. A fresh successful inventory list (`operation: list`) must land before further mutation is attempted — check Incus itself for the underlying error reported in the `error` field. |
-| A runner VM refuses deletion | The controller's ownership marker on the instance doesn't match `incus.owner` | Expected behavior — the controller never deletes VMs it does not own. Confirm the VM's `user.incus-gh-runner.owner` metadata and your configured `incus.owner`, and delete manually via Incus if it is genuinely orphaned. |
+| A runner VM refuses deletion | The controller's cleanup selector on the instance doesn't match `incus.owner` | Expected behavior — the controller refuses deletion outside its exact selector. Confirm the VM's `user.incus-gh-runner.owner` metadata and your configured `incus.owner`, and delete manually via Incus if it is genuinely orphaned. The selector prevents accidental cleanup; another project writer can forge it. |
 
 ## Related
 

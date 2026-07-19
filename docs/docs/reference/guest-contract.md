@@ -84,7 +84,7 @@ The controller sets these keys on every instance it creates:
 
 | Key | Value | Purpose |
 |---|---|---|
-| `user.incus-gh-runner.owner` | The configured `incus.owner` value | Exact-match ownership marker; instances without a matching value are excluded from listing and refused on delete |
+| `user.incus-gh-runner.owner` | The configured `incus.owner` value | Exact-match cleanup selector; instances without a matching value are excluded from listing and refused on delete, but another project writer can forge it |
 | `user.incus-gh-runner.correlation-id` | Generated UUID | Unique per-instance identifier, also used to derive the instance name |
 | `user.incus-gh-runner.created-at` | RFC3339Nano timestamp, UTC | Anchor for the `incus.bootstrap_timeout` calculation |
 | `user.incus-gh-runner.image` | The configured `incus.image` value | Records which image alias or fingerprint the instance was created from |
@@ -117,4 +117,4 @@ For obtaining, verifying, importing, or building this image, see [Runner images]
 
 - [Configuration Reference](configuration.md) — `incus.owner`, `incus.image`, `incus.bootstrap_timeout`, `incus.diagnostics_dir`
 - [Runner images](../how-to/runner-images.md) — obtaining, verifying, building, and validating images against this contract
-- [How incus-gh-runner works](../explanation/how-it-works.md) — runner lifecycle states and the ownership boundary
+- [How incus-gh-runner works](../explanation/how-it-works.md) — runner lifecycle states and the cleanup boundary

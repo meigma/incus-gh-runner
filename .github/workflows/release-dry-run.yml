@@ -128,6 +128,8 @@ jobs:
             *) echo "unexpected version output: $output" >&2; exit 1 ;;
           esac
 
+          "$bin" validate --help >/dev/null
+
   # Rehearse the container build: build per-arch signed apks on native runners and
   # assemble the image with apko, WITHOUT pushing, signing, or attesting.
   melange-build-dry-run:
@@ -252,6 +254,7 @@ jobs:
 
           docker run --rm incus-gh-runner:dry-run --version
           docker run --rm incus-gh-runner:dry-run --help >/dev/null
+          docker run --rm incus-gh-runner:dry-run validate --help >/dev/null
 
   reference-image-dry-run:
     name: Reference Image Dry Run

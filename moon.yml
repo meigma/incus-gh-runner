@@ -18,6 +18,9 @@ fileGroups:
   goSources:
     - 'cmd/**/*.go'
     - 'internal/**/*.go'
+    - 'deploy/incus/*.go'
+    - 'deploy/incus/cue/deployment.cue'
+    - 'deploy/incus/baseline.example.json'
     - 'go.mod'
     - 'go.sum'
     # Tool/version pins. Under the `system` toolchain moon does not hash the Go
@@ -40,6 +43,10 @@ fileGroups:
     - 'image/**/*'
   systemdSources:
     - 'deploy/systemd/**/*'
+  incusIsolationSources:
+    - 'deploy/incus/**/*'
+    - 'scripts/live/live-incus-hostile-isolation.sh'
+    - 'image/tests/live-incus-hostile-isolation-contract-test.sh'
 
 workspace:
   inheritedTasks:
@@ -83,6 +90,7 @@ tasks:
       - 'root:build'
       - 'root:test'
       - 'root:image-contract-test'
+      - 'root:incus-isolation-contract-test'
       - 'root:release-config-test'
       - 'root:systemd-unit-test'
       - 'docs:build'
@@ -90,6 +98,7 @@ tasks:
       - '@group(goSources)'
       - '@group(lintConfig)'
       - '@group(releaseConfig)'
+      - '@group(incusIsolationSources)'
     options:
       cache: false
       runInCI: true
@@ -98,6 +107,18 @@ tasks:
     command: 'bash image/tests/guest-entrypoint-test.sh'
     inputs:
       - '@group(imageSources)'
+      - 'mise.toml'
+      - 'mise.lock'
+    options:
+      cache: false
+      runInCI: true
+
+  incus-isolation-contract-test:
+    script: |
+      bash deploy/incus/cue/tests/render-test.sh
+      bash image/tests/live-incus-hostile-isolation-contract-test.sh
+    inputs:
+      - '@group(incusIsolationSources)'
       - 'mise.toml'
       - 'mise.lock'
     options:

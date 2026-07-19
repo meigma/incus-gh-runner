@@ -11,9 +11,10 @@ deletes the VM when its one job finishes.
   afterward, so no state leaks between jobs.
 - Hot standby pool: a configurable minimum of connected idle runners absorbs
   bursts, bounded by a configurable maximum.
-- Ownership-scoped reconciliation: the controller only counts, creates, and
-  deletes VMs carrying its exact ownership marker, and keeps no database of its
-  own.
+- Cleanup-scoped reconciliation: the controller only counts and deletes VMs
+  carrying its exact cleanup marker, and keeps no database of its own. The
+  marker prevents accidental cross-controller cleanup; it is not an Incus
+  authorization boundary.
 - Unattended operation: GitHub session recovery with capped backoff, bounded
   shutdown escalation, and a hardened systemd unit with credential isolation.
 - Reference VM image: a reproducible, offline-built Ubuntu 24.04 image with a
@@ -21,10 +22,11 @@ deletes the VM when its one job finishes.
 
 ## Requirements
 
-- A Linux host running Incus 7.0 or newer with QEMU VM support. Incus 6 is not
-  supported.
+- A dedicated, single-purpose Linux host running Incus 7.0 or newer with QEMU
+  VM support. Incus 6 is not supported.
 - Membership in the `incus-admin` group for the controller process. This is
-  root-equivalent on the host, so a dedicated runner host is recommended.
+  root-equivalent on the host. Do not deploy the current controller on an Incus
+  host shared with unrelated trusted workloads.
 - A GitHub App or personal access token authorized to manage runner scale sets
   at the configured repository or organization.
 
@@ -73,8 +75,8 @@ github:
     private_key_file: /path/to/private-key.pem
 incus:
   project: github-runners
-  image: incus-gh-runner:v1
-  profiles: [default]
+  image: incus-gh-runner-v1
+  profiles: [github-runner]
   owner: incus-gh-runner-example
 ```
 
@@ -100,14 +102,17 @@ jobs:
 
 For production, run the controller under the hardened systemd unit in
 [`deploy/systemd/`](deploy/systemd/), selecting the GitHub App or PAT credential
-drop-in. Follow the
+drop-in. Apply and validate the restricted project, network, profile, storage,
+resource limits, and controlled-egress baseline with the CUE policy and
+read-only drift tooling in
+[`deploy/incus/`](deploy/incus/) first. Follow the
 [deployment guide](docs/docs/how-to/deploy.md) for the end-to-end path.
 
 ## Documentation
 
 - [Deploy to production](docs/docs/how-to/deploy.md) — host preparation,
-  repository or organization scope, GitHub App or PAT setup, and the systemd
-  installation.
+  restricted Incus preparation, repository or organization scope, GitHub App
+  or PAT setup, and the systemd installation.
 - [Operate and troubleshoot](docs/docs/how-to/operate.md) — logs, VM
   diagnostics, safe configuration changes, and upgrades.
 - [Runner images](docs/docs/how-to/runner-images.md) — obtaining, verifying,
@@ -117,7 +122,7 @@ drop-in. Follow the
 - [Guest contract reference](docs/docs/reference/guest-contract.md) — the
   controller-guest interface for auditing or replacing the reference image.
 - [How incus-gh-runner works](docs/docs/explanation/how-it-works.md) — the
-  capacity model, runner lifecycle, ownership boundary, and security model.
+  capacity model, runner lifecycle, cleanup boundary, and security model.
 
 ## Development
 
