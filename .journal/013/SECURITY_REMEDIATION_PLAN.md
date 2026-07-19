@@ -1,6 +1,6 @@
 ---
 title: Security remediation plan
-status: review-draft
+status: approved
 date: 2026-07-18
 session: 013
 reviewed_commit: f493f93f6a11403ccd9af12e55c58e3b2caf7eaf
