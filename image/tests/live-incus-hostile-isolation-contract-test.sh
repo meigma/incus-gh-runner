@@ -8,7 +8,6 @@ bash -n "$harness"
 grep -Fq "readonly disposable_key='user.incus-gh-runner.disposable'" "$harness"
 grep -Fq "readonly mutation_opt_in='I_UNDERSTAND_THIS_PROJECT_IS_DISPOSABLE'" "$harness"
 grep -Fq 'the host br_netfilter kernel module loaded' "$harness"
-grep -Fq "incus_cmd launch \"\$image\" \"\$instance\"" "$harness"
 grep -Fq "user.incus-gh-runner.acceptance-id=\"\$run_id\"" "$harness"
 grep -Fq 'refusing to delete %s: acceptance markers changed' "$harness"
 grep -Fq 'cross-runner-a-to-b' "$harness"
@@ -31,6 +30,12 @@ grep -Fq '.stress_duration == "10m0s"' "$harness"
 grep -Fq '[[ -d /sys/module/br_netfilter ]]' "$harness"
 grep -Fq 'host br_netfilter kernel module is not loaded' "$harness"
 grep -Fq "record_result bridge-netfilter passed 'host br_netfilter kernel module is loaded'" "$harness"
+
+launch_vm_function="$(
+  sed -n '/^launch_vm()/,/^}/p' "$harness"
+)"
+grep -Fq 'incus_cmd launch "$image" "$instance" </dev/null' \
+  <<<"$launch_vm_function"
 
 runtime_probe_function="$(
   sed -n '/^run_runtime_probe()/,/^}/p' "$harness"

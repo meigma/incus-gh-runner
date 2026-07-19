@@ -447,7 +447,7 @@ done
 launch_vm() {
   local instance="$1"
 
-  incus_cmd launch "$image" "$instance" \
+  incus_cmd launch "$image" "$instance" </dev/null \
     --vm \
     --profile "$profile" \
     --config user.incus-gh-runner.acceptance-id="$run_id" \
