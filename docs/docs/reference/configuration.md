@@ -41,7 +41,7 @@ Duration values use Go duration syntax (for example `30s`, `5m`).
 | `incus.project` | string | — | Required. Non-empty. Must already exist. |
 | `incus.image` | string | — | Required. Non-empty. Existing local image alias or fingerprint. |
 | `incus.profiles` | list of strings | `[]` | Optional. No empty entries. Profiles must already exist. |
-| `incus.owner` | string | — | Required. Non-empty. Exact ownership marker written to every instance this process manages. |
+| `incus.owner` | string | — | Required. Non-empty. Exact cleanup selector written to every instance this process manages; not an authorization boundary. |
 | `incus.bootstrap_timeout` | duration | `5m` | Must be greater than `0`. |
 | `incus.diagnostics_dir` | string | `""` | Optional. Directory for terminal-runner serial console diagnostics. |
 

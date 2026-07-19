@@ -1,12 +1,12 @@
 # How incus-gh-runner works
 
-incus-gh-runner turns Incus virtual machines into disposable, single-job GitHub Actions runners. It watches a GitHub Actions runner scale set for demand and keeps a population of Incus VMs matched to that demand, creating runners when jobs need them and deleting runners once their job is done. This page explains the mental model behind that behavior: how demand becomes capacity, how a runner moves through its life, why the controller is safe to point at a shared Incus host, how it responds to failure, and what its security posture assumes.
+incus-gh-runner turns Incus virtual machines into disposable, single-job GitHub Actions runners. It watches a GitHub Actions runner scale set for demand and keeps a population of Incus VMs matched to that demand, creating runners when jobs need them and deleting runners once their job is done. This page explains the mental model behind that behavior: how demand becomes capacity, how a runner moves through its life, why the current controller requires a dedicated Incus host, how it responds to failure, and what its security posture assumes.
 
 It intentionally does not list configuration keys, CLI flags, or wire-level schemas. Those live in the [configuration reference](../reference/configuration.md) and the [guest contract reference](../reference/guest-contract.md).
 
 ## Demand flow: from GitHub to Incus
 
-GitHub Actions runner scale sets communicate demand through a long-lived message session: the controller opens a session against `github.config_url` for a given `github.scale_set`, and GitHub pushes job assignment events down that session for as long as it stays open. There is exactly one message session per controller process, feeding exactly one reconciler. incus-gh-runner does not fan out across multiple scale sets or multiple Incus environments — that scope boundary is a deliberate design choice. A single process manages a single scale set against a single Incus project and image, which keeps the ownership and capacity model simple enough to reason about at a glance.
+GitHub Actions runner scale sets communicate demand through a long-lived message session: the controller opens a session against `github.config_url` for a given `github.scale_set`, and GitHub pushes job assignment events down that session for as long as it stays open. There is exactly one message session per controller process, feeding exactly one reconciler. incus-gh-runner does not fan out across multiple scale sets or multiple Incus environments — that scope boundary is a deliberate design choice. A single process manages a single scale set against a single Incus project and image, which keeps the cleanup and capacity model simple enough to reason about at a glance.
 
 The reconciler turns that stream of demand into a target VM count using one formula:
 

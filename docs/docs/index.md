@@ -22,7 +22,7 @@ See [Deploy to production](how-to/deploy.md) for the full host and GitHub prereq
 [Runner images](how-to/runner-images.md) covers obtaining, verifying, and importing a released reference image, plus building and validating one locally.
 
 **Understand it**
-[How incus-gh-runner works](explanation/how-it-works.md) explains the capacity model, runner lifecycle, the controller's ownership boundary over Incus resources, its failure-handling philosophy, and its security model.
+[How incus-gh-runner works](explanation/how-it-works.md) explains the capacity model, runner lifecycle, the controller's cleanup boundary over Incus resources, its failure-handling philosophy, and its security model.
 
 **Look up facts**
 
