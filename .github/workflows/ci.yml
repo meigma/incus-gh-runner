@@ -25,6 +25,8 @@ jobs:
       # Never auto-download a Go toolchain other than the mise-pinned one
       # (mise [env] is not carried by the action's shims, so set it on the job).
       GOTOOLCHAIN: local
+      # Keep Moon on mise's verified PATH instead of its embedded Proto manager.
+      MOON_TOOLCHAIN_FORCE_GLOBALS: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

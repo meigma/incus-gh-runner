@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -143,10 +145,17 @@ func initializeConfig(cmd *cobra.Command, vp *viper.Viper, optionalConfigPath st
 		configPath = explicitConfigPath
 	}
 	vp.SetConfigFile(configPath)
-	if err := vp.ReadInConfig(); err != nil {
+	contents, err := os.ReadFile(configPath)
+	if err != nil {
 		if explicitConfigPath == "" && isConfigNotFound(err) {
 			return nil
 		}
+		return fmt.Errorf("read configuration %q: %w", configPath, err)
+	}
+	if err := config.ValidateYAML(contents); err != nil {
+		return fmt.Errorf("validate configuration %q: %w", configPath, err)
+	}
+	if err := vp.ReadConfig(bytes.NewReader(contents)); err != nil {
 		return fmt.Errorf("read configuration %q: %w", configPath, err)
 	}
 

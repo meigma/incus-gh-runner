@@ -53,13 +53,16 @@ State these as rules:
 
 `mise.toml`:
 
-- `[tools]`: `go = "1.26.4"`, `python = "3.14.3"` (core backends), and six CLIs
+- `[tools]`: `go = "1.26.5"`, `python = "3.14.3"` (core backends), and seven CLIs
   pinned via explicit `aqua:` refs (`golangci/golangci-lint`, `astral-sh/uv`,
-  `moonrepo/moon`, `chainguard-dev/melange`, `chainguard-dev/apko`, `sigstore/cosign`).
+  `moonrepo/moon`, `chainguard-dev/melange`, `chainguard-dev/apko`,
+  `sigstore/cosign`, `jqlang/jq`).
 - `[env] GOTOOLCHAIN = "local"`: never auto-download a Go toolchain other than the
-  pinned one; matches `go.mod`'s `go 1.26.4`. mise `[env]` is **not** carried by the
-  CI action's shims, so `ci.yml` also sets `GOTOOLCHAIN: local` at job level — keep
-  both in sync.
+  pinned one; matches `go.mod`'s `go 1.26.5`.
+- `[env] MOON_TOOLCHAIN_FORCE_GLOBALS = "true"`: keeps Moon on mise's verified PATH
+  instead of its embedded Proto manager. mise `[env]` is **not** carried by the CI
+  action's shims, so workflows that invoke Moon repeat the relevant values at job
+  level — keep them in sync.
 - `[settings] lockfile = true` (read/write `mise.lock`) and `locked = true` (the
   integrity gate; equivalent to the `--locked` flag / `MISE_LOCKED=1`).
 
@@ -95,8 +98,9 @@ of the four platforms: `linux-x64`, `linux-arm64`, `macos-x64`, `macos-arm64`.
   checksum here would be unexpected, not normal.)
 - A subset additionally records a `provenance` field, reflecting the verification
   the aqua registry applies for that tool: `provenance = "github-attestations"` on
-  `uv`, `golangci-lint`, and `python`; `provenance = "cosign"` on `cosign`. The
-  remaining tools (`go`, `melange`, `apko`, `moon`) carry no `provenance` field. Do
+  `uv`, `golangci-lint`, `jq`, and `python`; `provenance = "cosign"` on `cosign`. The
+  remaining tools (`go`, `distrobuilder`, `melange`, `apko`, `moon`) carry no
+  `provenance` field. Do
   **not** claim every tool is attestation-verified; the always-on guarantees are the
   pinned `url` and the `checksum`.
 

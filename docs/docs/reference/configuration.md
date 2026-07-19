@@ -15,6 +15,8 @@ Each key is resolved independently, so different keys in the same run may come f
 
 The default configuration file path is `/etc/incus-gh-runner/config.yaml`. This path is optional: if no file exists there, startup continues using environment variables, flags, and defaults. An explicit `--config` path is not optional — if the file does not exist or cannot be read, the process exits with an error before startup completes.
 
+Configuration files are decoded exactly before source precedence is applied. Unknown or duplicate keys, misspellings, wrong YAML scalar or container types, aliases, merge keys, and multiple YAML documents are rejected. Field-level errors identify the field; validation errors do not include field values.
+
 ## YAML configuration keys
 
 Duration values use Go duration syntax (for example `30s`, `5m`).
@@ -23,9 +25,9 @@ Duration values use Go duration syntax (for example `30s`, `5m`).
 
 | Key | Type | Default | Required / validation |
 |---|---|---|---|
-| `github.config_url` | string | — | Required. Absolute `http` or `https` URL (organization or repository). |
-| `github.scale_set` | string | — | Required. Non-empty. Also used as the default runner label. |
-| `github.runner_group` | string | `default` | Non-empty. |
+| `github.config_url` | string | — | Required. Absolute HTTPS GitHub or GHES organization or repository URL. GitHub-hosted domains may not specify a port; GHES ports must be valid. Enterprise URLs, trailing DNS dots, userinfo, query strings, fragments, escaped paths, and other path shapes are rejected. |
+| `github.scale_set` | string | — | Required. Non-empty and exactly representable by the GitHub client without query decoding. Also used as the sole runner label. A pre-existing scale set must have that exact label and runner self-update disabled. |
+| `github.runner_group` | string | `default` | Controller validation requires a non-empty, exactly representable value, `default` at repository scope, and an explicit non-default name at organization scope. Operators must separately restrict that organization group to selected repositories and commit-pinned workflows. |
 | `github.token_file` | string | — | PAT file read once at startup. Mutually exclusive with `github.app` and `INCUS_GH_RUNNER_GITHUB_TOKEN`. |
 | `github.app.client_id` | string | — | Required if GitHub App credentials are configured. |
 | `github.app.installation_id` | int64 | — | Required if GitHub App credentials are configured. Must be greater than `0`. |
@@ -81,7 +83,9 @@ Duration values use Go duration syntax (for example `30s`, `5m`).
 
 ## Environment variables
 
-Every YAML key binds to an environment variable named `INCUS_GH_RUNNER_` followed by the key path, uppercased, with `.` and `_` both rendered as `_`.
+Every scalar YAML key binds to an environment variable named
+`INCUS_GH_RUNNER_` followed by the key path, uppercased, with `.` and `_` both
+rendered as `_`. The list-valued `incus.profiles` key is YAML-only.
 
 Examples:
 

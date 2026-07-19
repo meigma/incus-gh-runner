@@ -14,23 +14,23 @@ Contributors should:
 2. Add or update tests when observable behavior changes.
 3. Update documentation when user-facing behavior changes.
 4. Use Conventional Commit subjects, such as `feat(controller): reconcile demand`.
-5. Run `moon run root:check` before requesting review.
+5. Run `mise exec -- moon run root:check` before requesting review.
 
 ## Local setup
 
 ```sh
 mise install
-moon run root:check
+mise exec -- moon run root:check
 ```
 
 Useful focused commands are:
 
 ```sh
-moon run root:format
-moon run root:lint
-moon run root:build
-moon run root:test
-go run ./cmd/incus-gh-runner --version
+mise exec -- moon run root:format
+mise exec -- moon run root:lint
+mise exec -- moon run root:build
+mise exec -- moon run root:test
+mise exec -- go run ./cmd/incus-gh-runner --version
 ```
 
 Release Please uses Conventional Commit subjects to prepare release notes and

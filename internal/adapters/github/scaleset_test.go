@@ -32,7 +32,7 @@ func TestResolveScaleSetUsesExistingOrCreatesPersistentScaleSet(t *testing.T) {
 				client.getRunnerScaleSet = func(_ context.Context, groupID int, name string) (*scaleset.RunnerScaleSet, error) {
 					assert.Equal(t, defaultRunnerGroupID, groupID)
 					assert.Equal(t, "incus-runner-scale-set", name)
-					return &scaleset.RunnerScaleSet{ID: 41, Name: name}, nil
+					return validRunnerScaleSetResponse(41, name, 0, "Default"), nil
 				}
 			},
 			wantID: 41,
@@ -41,7 +41,8 @@ func TestResolveScaleSetUsesExistingOrCreatesPersistentScaleSet(t *testing.T) {
 			name:        "creates a missing scale set in a named group",
 			runnerGroup: "Build Runners",
 			configureClient: func(client *fakeScaleSetClient) {
-				client.getRunnerGroup = func(context.Context, string) (*scaleset.RunnerGroup, error) {
+				client.getRunnerGroup = func(_ context.Context, name string) (*scaleset.RunnerGroup, error) {
+					assert.Equal(t, "Build Runners", name)
 					return &scaleset.RunnerGroup{ID: 17, Name: "Build Runners"}, nil
 				}
 				client.getRunnerScaleSet = func(context.Context, int, string) (*scaleset.RunnerScaleSet, error) {
@@ -50,7 +51,7 @@ func TestResolveScaleSetUsesExistingOrCreatesPersistentScaleSet(t *testing.T) {
 				client.createRunnerScaleSet = func(_ context.Context, requested *scaleset.RunnerScaleSet) (*scaleset.RunnerScaleSet, error) {
 					created := *requested
 					client.created = &created
-					return &scaleset.RunnerScaleSet{ID: 52, Name: requested.Name}, nil
+					return validRunnerScaleSetResponse(52, requested.Name, 0, "Build Runners"), nil
 				}
 			},
 			wantID: 52,
@@ -80,6 +81,150 @@ func TestResolveScaleSetUsesExistingOrCreatesPersistentScaleSet(t *testing.T) {
 			assert.Equal(t, tt.wantCreated, client.created)
 			assert.Equal(t, tt.wantID, client.systemInfo.ScaleSetID)
 		})
+	}
+}
+
+func TestResolveScaleSetRejectsMismatchedAPIIdentities(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		runnerGroup     string
+		configureClient func(*fakeScaleSetClient)
+		wantErr         string
+	}{
+		{
+			name:        "named lookup resolves the default group",
+			runnerGroup: "Build Runners",
+			configureClient: func(client *fakeScaleSetClient) {
+				client.getRunnerGroup = func(context.Context, string) (*scaleset.RunnerGroup, error) {
+					return &scaleset.RunnerGroup{ID: defaultRunnerGroupID, Name: "Build Runners", IsDefault: true}, nil
+				}
+			},
+			wantErr: "response identifies the default group",
+		},
+		{
+			name:        "runner group response has another name",
+			runnerGroup: "Build Runners",
+			configureClient: func(client *fakeScaleSetClient) {
+				client.getRunnerGroup = func(context.Context, string) (*scaleset.RunnerGroup, error) {
+					return &scaleset.RunnerGroup{ID: 17, Name: "Other Runners"}, nil
+				}
+			},
+			wantErr: "response name does not match",
+		},
+		{
+			name:        "runner group response has a negative ID",
+			runnerGroup: "Build Runners",
+			configureClient: func(client *fakeScaleSetClient) {
+				client.getRunnerGroup = func(context.Context, string) (*scaleset.RunnerGroup, error) {
+					return &scaleset.RunnerGroup{ID: -1, Name: "Build Runners"}, nil
+				}
+			},
+			wantErr: "response has no ID",
+		},
+		{
+			name:        "scale set response has another name",
+			runnerGroup: scaleset.DefaultRunnerGroup,
+			configureClient: func(client *fakeScaleSetClient) {
+				client.getRunnerScaleSet = func(context.Context, int, string) (*scaleset.RunnerScaleSet, error) {
+					return validRunnerScaleSetResponse(
+						41,
+						"other-scale-set",
+						defaultRunnerGroupID,
+						"Default",
+					), nil
+				}
+			},
+			wantErr: "response name does not match",
+		},
+		{
+			name:        "scale set response belongs to another group",
+			runnerGroup: scaleset.DefaultRunnerGroup,
+			configureClient: func(client *fakeScaleSetClient) {
+				client.getRunnerScaleSet = func(_ context.Context, _ int, name string) (*scaleset.RunnerScaleSet, error) {
+					return validRunnerScaleSetResponse(41, name, 17, "Other Runners"), nil
+				}
+			},
+			wantErr: "response runner group does not match",
+		},
+		{
+			name:        "scale set response has a negative ID",
+			runnerGroup: scaleset.DefaultRunnerGroup,
+			configureClient: func(client *fakeScaleSetClient) {
+				client.getRunnerScaleSet = func(_ context.Context, _ int, name string) (*scaleset.RunnerScaleSet, error) {
+					return validRunnerScaleSetResponse(-1, name, defaultRunnerGroupID, "Default"), nil
+				}
+			},
+			wantErr: "response has no ID",
+		},
+		{
+			name:        "scale set response names another group",
+			runnerGroup: scaleset.DefaultRunnerGroup,
+			configureClient: func(client *fakeScaleSetClient) {
+				client.getRunnerScaleSet = func(_ context.Context, _ int, name string) (*scaleset.RunnerScaleSet, error) {
+					return validRunnerScaleSetResponse(41, name, defaultRunnerGroupID, "Other Runners"), nil
+				}
+			},
+			wantErr: "response runner group name does not match",
+		},
+		{
+			name:        "scale set response has an extra routing label",
+			runnerGroup: scaleset.DefaultRunnerGroup,
+			configureClient: func(client *fakeScaleSetClient) {
+				client.getRunnerScaleSet = func(_ context.Context, _ int, name string) (*scaleset.RunnerScaleSet, error) {
+					response := validRunnerScaleSetResponse(41, name, defaultRunnerGroupID, "Default")
+					response.Labels = append(response.Labels, scaleset.Label{Name: "generic-builder"})
+					return response, nil
+				}
+			},
+			wantErr: "response labels do not match",
+		},
+		{
+			name:        "scale set response allows runner self-update",
+			runnerGroup: scaleset.DefaultRunnerGroup,
+			configureClient: func(client *fakeScaleSetClient) {
+				client.getRunnerScaleSet = func(_ context.Context, _ int, name string) (*scaleset.RunnerScaleSet, error) {
+					response := validRunnerScaleSetResponse(41, name, defaultRunnerGroupID, "Default")
+					response.RunnerSetting.DisableUpdate = false
+					return response, nil
+				}
+			},
+			wantErr: "does not disable runner self-update",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client := newFakeScaleSetClient()
+			tt.configureClient(client)
+
+			resolved, err := resolveScaleSet(context.Background(), client, ScaleSetOptions{
+				Name:        "incus-runner-scale-set",
+				RunnerGroup: tt.runnerGroup,
+			})
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+			assert.Nil(t, resolved)
+		})
+	}
+}
+
+func validRunnerScaleSetResponse(
+	id int,
+	name string,
+	runnerGroupID int,
+	runnerGroupName string,
+) *scaleset.RunnerScaleSet {
+	return &scaleset.RunnerScaleSet{
+		ID:              id,
+		Name:            name,
+		RunnerGroupID:   runnerGroupID,
+		RunnerGroupName: runnerGroupName,
+		Labels:          []scaleset.Label{{Name: name, Type: "System"}},
+		RunnerSetting:   scaleset.RunnerSetting{DisableUpdate: true},
 	}
 }
 
