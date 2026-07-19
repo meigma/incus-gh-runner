@@ -1,22 +1,20 @@
 # incus-gh-runner
 
-`incus-gh-runner` is an early-stage controller for running ephemeral GitHub
-Actions jobs in Incus virtual machines. The controller will consume GitHub
-runner scale-set demand, maintain a bounded pool of hot standby runners, and
-delete each VM after its one assigned job.
+`incus-gh-runner` is a controller for running ephemeral GitHub Actions jobs in
+Incus virtual machines. It consumes GitHub runner scale-set demand, maintains a
+bounded pool of hot standby runners, and deletes each VM after its one assigned
+job.
 
-The phase 1 controller core reconciles coalesced demand through a bounded worker
-pool using explicit demand-source and runner-backend ports. Phase 2 adds a
-checksummed, offline-built reference VM image and a versioned one-shot guest
-contract. Phase 3 adds periodic ownership inventory and the real Incus backend
-for create, start, payload injection, observation, diagnostics, and deletion.
-Phase 4 wires persistent GitHub scale-set resolution, message polling, demand
-statistics, and fresh per-VM JIT configuration into that lifecycle.
-The phase 4 hardware proof ran one genuine job on Incus 7.2 and returned the
-owned inventory to zero. Phase 5 proved hot-standby replacement and restart
-reconciliation for the primary live path. Phase 6 hardens unattended operation
-with GitHub session recovery, bounded shutdown escalation, and a protected
-systemd deployment.
+The controller reconciles coalesced demand through a bounded worker pool using
+explicit demand-source and runner-backend ports. It ships a checksummed,
+offline-built reference VM image with a versioned one-shot guest contract, and
+drives the full Incus lifecycle — create, start, payload injection,
+observation, diagnostics, and deletion — under periodic ownership inventory.
+Persistent GitHub scale-set resolution, message polling, demand statistics, and
+fresh per-VM JIT configuration feed that lifecycle, with hot-standby
+replacement and restart reconciliation on the primary live path. Unattended
+operation is hardened with GitHub session recovery, bounded shutdown
+escalation, and a protected systemd deployment.
 
 ## v1 boundaries
 
@@ -55,13 +53,13 @@ The smallest real single-runner configuration is:
 ```yaml
 github:
   config_url: https://github.com/meigma/incus-gh-runner
-  scale_set: incus-gh-runner-phase4
+  scale_set: incus-gh-runner-example
   runner_group: default
 incus:
   project: runner-test
   image: incus-gh-runner:test
   profiles: [default]
-  owner: incus-gh-runner-phase4
+  owner: incus-gh-runner-example
   bootstrap_timeout: 5m
   diagnostics_dir: /var/log/incus-gh-runner/runners
 capacity:
@@ -85,9 +83,10 @@ file, then defaults. `--config` selects a required file; otherwise
 `INCUS_GH_RUNNER_CAPACITY_MAX_RUNNERS`.
 
 Production authentication uses a GitHub App configured with `client_id`,
-`installation_id`, and a protected `private_key_file`. The initial development
-path accepts a PAT only through `INCUS_GH_RUNNER_GITHUB_TOKEN`; the token is not
-decoded from YAML and has no CLI flag. The process resolves or creates the
+`installation_id`, and a protected `private_key_file`. A personal access token
+is also accepted for local testing, only through
+`INCUS_GH_RUNNER_GITHUB_TOKEN`; the token is not decoded from YAML and has no
+CLI flag. The process resolves or creates the
 configured scale set and leaves that persistent scale set in place across
 controller restarts.
 
@@ -150,14 +149,14 @@ closes one real message session without creating a runner:
 
 ```sh
 INCUS_GH_RUNNER_TEST_GITHUB_CONFIG_URL=https://github.com/meigma/incus-gh-runner \
-INCUS_GH_RUNNER_TEST_GITHUB_SCALE_SET=incus-gh-runner-phase4 \
+INCUS_GH_RUNNER_TEST_GITHUB_SCALE_SET=incus-gh-runner-test \
 INCUS_GH_RUNNER_GITHUB_TOKEN="$(gh auth token)" \
 go test ./internal/adapters/github -run TestScaleSetSessionFunctional -count=1 -v
 ```
 
 The Incus lifecycle test is opt-in and destructive only for instances carrying
 its unique ownership marker. It refuses the default project and expects the
-phase 2 reference image to be imported already:
+reference image to be imported already:
 
 ```sh
 INCUS_GH_RUNNER_TEST_PROJECT=runner-test \
@@ -167,27 +166,28 @@ go test ./internal/adapters/incus -run TestIncusLifecycleFunctional -count=1 -v
 ```
 
 `INCUS_GH_RUNNER_TEST_PROFILES` and `INCUS_GH_RUNNER_TEST_SOCKET` are optional.
-The proof drives one unit of fake demand through the controller, injects a
+The test drives one unit of fake demand through the controller, injects a
 credential-free probe payload, captures the live terminal serial history during
 the guest's bounded diagnostic grace window, deletes the exact owned VM, and
 verifies that the owned inventory returns to zero.
 
-The manual `Runner Functional Proof` workflow accepts an exact runner label and
+The manual `Runner Functional Check` workflow accepts an exact runner label and
 executes a minimal unprivileged Linux job on that scale set. Prepare all costly
 live-test inputs before allocating hardware:
 
 ```sh
-scripts/live/phase4-prepare.sh
+scripts/live/live-bundle-prepare.sh
 ```
 
-That command cross-compiles the controller and phase 3 functional test, starts
-and downloads a fresh hosted reference-image build, verifies its checksum, and
-assembles the transfer bundle under `build/live-phase4`. On a fresh Ubuntu
-24.04 Incus-capable host, `phase4-host-prepare.sh` installs the native Incus and
-QEMU packages, creates a non-default project, and runs the phase 2 and phase 3
-live gates before the controller is started for the genuine phase 4 job.
+That command cross-compiles the controller and the Incus lifecycle functional
+test, starts and downloads a fresh hosted reference-image build, verifies its
+checksum, and assembles the transfer bundle under `build/live-bundle`. On a
+fresh Ubuntu 24.04 Incus-capable host, `live-host-prepare.sh` installs the
+native Incus and QEMU packages, creates a non-default project, and runs the
+image-validation and Incus lifecycle live gates before the controller is
+started to run a real job.
 
-The phase 5 hot-standby harness starts the controller, waits for GitHub to
+The hot-standby harness starts the controller, waits for GitHub to
 report exactly one connected idle runner, dispatches a held one-shot job,
 observes that runner become busy and a different idle replacement connect,
 then verifies job success and exact deletion. It restarts around the idle
@@ -197,14 +197,14 @@ inventory to zero. Use a dedicated repository scale set with
 
 ```sh
 INCUS_GH_RUNNER_GITHUB_TOKEN="$(gh auth token)" \
-scripts/live/phase5-hot-standby.sh \
+scripts/live/live-hot-standby.sh \
   meigma/incus-gh-runner \
-  incus-gh-runner-phase5 \
+  incus-gh-runner-hotstandby \
   runner-test \
-  phase5-live-20260718 \
+  <run-id> \
   /path/to/incus-gh-runner \
   /path/to/config.yaml \
-  /var/log/incus-gh-runner/phase5-hot-standby
+  /var/log/incus-gh-runner/hot-standby
 ```
 
 The token must be able to run and inspect repository workflows. Readiness is
@@ -226,9 +226,7 @@ summary has been reviewed.
 Release PRs rehearse the controller binary, OCI image, and reference VM build
 paths without uploading GitHub release assets. See the
 [runner image guide](docs/docs/how-to/runner-images.md)
-for download, checksum, provenance, and Incus boot verification commands. The
-first public v1 release remains pending until the complete phase 7 acceptance
-scenario succeeds.
+for download, checksum, provenance, and Incus boot verification commands.
 
 ## Contributing and security
 

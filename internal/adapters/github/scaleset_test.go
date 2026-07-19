@@ -31,7 +31,7 @@ func TestResolveScaleSetUsesExistingOrCreatesPersistentScaleSet(t *testing.T) {
 			configureClient: func(client *fakeScaleSetClient) {
 				client.getRunnerScaleSet = func(_ context.Context, groupID int, name string) (*scaleset.RunnerScaleSet, error) {
 					assert.Equal(t, defaultRunnerGroupID, groupID)
-					assert.Equal(t, "incus-phase4", name)
+					assert.Equal(t, "incus-runner-scale-set", name)
 					return &scaleset.RunnerScaleSet{ID: 41, Name: name}, nil
 				}
 			},
@@ -55,9 +55,9 @@ func TestResolveScaleSetUsesExistingOrCreatesPersistentScaleSet(t *testing.T) {
 			},
 			wantID: 52,
 			wantCreated: &scaleset.RunnerScaleSet{
-				Name:          "incus-phase4",
+				Name:          "incus-runner-scale-set",
 				RunnerGroupID: 17,
-				Labels:        []scaleset.Label{{Name: "incus-phase4"}},
+				Labels:        []scaleset.Label{{Name: "incus-runner-scale-set"}},
 				RunnerSetting: scaleset.RunnerSetting{DisableUpdate: true},
 			},
 		},
@@ -70,7 +70,7 @@ func TestResolveScaleSetUsesExistingOrCreatesPersistentScaleSet(t *testing.T) {
 			tt.configureClient(client)
 
 			resolved, err := resolveScaleSet(context.Background(), client, ScaleSetOptions{
-				Name:        "incus-phase4",
+				Name:        "incus-runner-scale-set",
 				RunnerGroup: tt.runnerGroup,
 				SystemInfo:  scaleset.SystemInfo{System: "test"},
 			})

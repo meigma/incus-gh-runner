@@ -1,6 +1,6 @@
 # Minimal, multi-arch, nonroot runtime image assembled from the locally-built
-# incus-gh-runner apk (melange.yaml) plus the Wolfi base packages. Mirrors the former
-# gcr.io/distroless/static-debian12:nonroot posture (uid 65532, ca-certs, tzdata,
+# incus-gh-runner apk (melange.yaml) plus the Wolfi base packages. Provides
+# a distroless-equivalent nonroot posture (uid 65532, ca-certs, tzdata,
 # no shell). The Wolfi base intentionally floats to the latest (fresh CA
 # bundle/timezones, low CVE surface); the exact resolved versions are recorded in
 # the per-build SBOM + provenance attestation rather than pinned in a lockfile.

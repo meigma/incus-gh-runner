@@ -18,7 +18,7 @@ for command_name in gh git jq mise shasum; do
 done
 
 repo_root="$(git rev-parse --show-toplevel)"
-output="${1:-${repo_root}/build/live-phase4}"
+output="${1:-${repo_root}/build/live-bundle}"
 mkdir -p "$output"
 if [[ -n "$(find "$output" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
   printf 'output directory must be empty: %s\n' "$output" >&2
@@ -74,12 +74,12 @@ mise exec -- env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go test -c -o "${binary_directory}/incus-lifecycle.test" ./internal/adapters/incus
 
 cp "${repo_root}/image/validate-incus.sh" "${output}/validate-incus.sh"
-cp "${repo_root}/scripts/live/phase4-host-prepare.sh" "${output}/phase4-host-prepare.sh"
+cp "${repo_root}/scripts/live/live-host-prepare.sh" "${output}/live-host-prepare.sh"
 chmod 0755 \
   "${binary_directory}/incus-gh-runner" \
   "${binary_directory}/incus-lifecycle.test" \
   "${output}/validate-incus.sh" \
-  "${output}/phase4-host-prepare.sh"
+  "${output}/live-host-prepare.sh"
 
 jq --null-input \
   --arg workflow_run_id "$run_id" \
@@ -95,4 +95,4 @@ jq --null-input \
     lifecycle_test: $lifecycle_test
   }' >"${output}/manifest.json"
 
-printf 'phase 4 live-test bundle prepared at %s\n' "$output"
+printf 'live-test bundle prepared at %s\n' "$output"

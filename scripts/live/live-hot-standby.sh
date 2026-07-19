@@ -16,7 +16,7 @@ incus_project="$3"
 incus_owner="$4"
 controller="$5"
 config="$6"
-evidence_directory="${7:-phase5-hot-standby-evidence}"
+evidence_directory="${7:-hot-standby-evidence}"
 
 [[ "$repository" =~ ^[^/]+/[^/]+$ ]] || {
   printf 'repository must use owner/name form: %s\n' "$repository" >&2
@@ -79,21 +79,21 @@ stop_controller_checked() {
   controller_pid=''
 }
 
-interrupt_proof() {
+interrupt_check() {
   exit 130
 }
 
-terminate_proof() {
+terminate_check() {
   exit 143
 }
 
 trap stop_controller EXIT
-trap interrupt_proof INT
-trap terminate_proof TERM
+trap interrupt_check INT
+trap terminate_check TERM
 
 require_controller() {
   if ! kill -0 "$controller_pid" 2>/dev/null; then
-    printf 'controller stopped before the proof completed; inspect %s\n' "$controller_log" >&2
+    printf 'controller stopped before the check completed; inspect %s\n' "$controller_log" >&2
     exit 1
   fi
 }
@@ -239,11 +239,11 @@ dispatch_workflow() {
     --repo "$repository" \
     --ref master \
     -f "runner_label=${runner_label}" \
-    -f "proof_id=${correlation_id}" \
+    -f "correlation_id=${correlation_id}" \
     -f "hold_seconds=${hold_seconds}" \
     >/dev/null
 
-  run_title="Phase 5 runner proof (${correlation_id})"
+  run_title="Runner functional check (${correlation_id})"
   run_id=''
   for ((attempt = 1; attempt <= 60; attempt++)); do
     runs="$(GH_TOKEN="$INCUS_GH_RUNNER_GITHUB_TOKEN" gh run list \
@@ -267,7 +267,7 @@ dispatch_workflow() {
 }
 
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-proof_id="phase5-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+check_id="hot-standby-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 GH_TOKEN="$INCUS_GH_RUNNER_GITHUB_TOKEN" gh auth status >/dev/null
 
 "$controller" --config "$config" >"$controller_log" 2>&1 &
@@ -275,7 +275,7 @@ controller_pid="$!"
 
 wait_for_single_idle "$initial_snapshot"
 initial_runner="$observed_runner"
-dispatch_workflow "$proof_id" 30
+dispatch_workflow "$check_id" 30
 run_id="$observed_run_id"
 
 wait_for_busy "$initial_runner" "$run_id" "$busy_snapshot"
@@ -296,8 +296,8 @@ controller_log="$idle_restart_log"
 controller_pid="$!"
 wait_for_single_idle "$idle_restart_snapshot" "$replacement_runner"
 
-cleanup_proof_id="${proof_id}-cleanup"
-dispatch_workflow "$cleanup_proof_id" 30
+cleanup_check_id="${check_id}-cleanup"
+dispatch_workflow "$cleanup_check_id" 30
 cleanup_run_id="$observed_run_id"
 wait_for_busy "$replacement_runner" "$cleanup_run_id" "$busy_restart_snapshot"
 stop_controller_checked
@@ -317,7 +317,7 @@ stop_controller_checked
 
 completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 jq --null-input \
-  --arg proof_id "$proof_id" \
+  --arg check_id "$check_id" \
   --arg repository "$repository" \
   --arg runner_label "$runner_label" \
   --arg initial_runner "$initial_runner" \
@@ -327,7 +327,7 @@ jq --null-input \
   --arg started_at "$started_at" \
   --arg completed_at "$completed_at" \
   '{
-    proof_id: $proof_id,
+    check_id: $check_id,
     repository: $repository,
     runner_label: $runner_label,
     initial_runner: $initial_runner,
@@ -339,4 +339,4 @@ jq --null-input \
     completed_at: $completed_at
   }' >"${evidence_directory}/manifest.json"
 
-printf 'phase 5 hot-standby proof passed; evidence: %s\n' "$evidence_directory"
+printf 'hot-standby check passed; evidence: %s\n' "$evidence_directory"

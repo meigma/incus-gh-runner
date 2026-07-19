@@ -38,7 +38,7 @@ func TestScaleSetSessionFunctional(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	session, err := client.MessageSessionClient(testContext, resolved.ID(), "phase4-functional-preflight")
+	session, err := client.MessageSessionClient(testContext, resolved.ID(), "functional-preflight")
 	require.NoError(t, err)
 	assert.NotNil(t, session.Session().Statistics)
 	require.NoError(t, session.Close(testContext))

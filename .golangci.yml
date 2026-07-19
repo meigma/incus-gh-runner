@@ -115,8 +115,7 @@ linters:
     # testpackage disabled: tests intentionally use whitebox style to exercise
     # unexported helpers, fake implementations of unexported interfaces
     # (e.g. tsnetServer), and shared internal fixtures across multiple test
-    # files. Re-enable if/when the test layout grows large enough that
-    # blackbox-only is worth the export pollution.
+    # files.
     #- testpackage
     - tparallel # detects inappropriate usage of t.Parallel() method in your Go test codes
     - unconvert # removes unnecessary type conversions

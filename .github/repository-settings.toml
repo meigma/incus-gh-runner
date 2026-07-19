@@ -118,7 +118,7 @@ prevent_direct_alert_dismissals = false
 grouped_security_updates = true
 dependabot_version_updates = false
 
-# General settings not currently handled in v1.
+# General settings not currently applied by this configurator.
 code_quality_preview = true
 commit_comments_on_individual_commits = true
 pull_request_creation_permissions = "all_users"
