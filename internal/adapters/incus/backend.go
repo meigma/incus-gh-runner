@@ -373,7 +373,7 @@ func (b *Backend) runnerState(ctx context.Context, instance api.Instance) (contr
 			switch observed.State {
 			case guestStatusStarting:
 			case "running":
-				return controller.RunnerBusy, nil
+				return controller.RunnerReady, nil
 			case "exited", "failed":
 				return controller.RunnerTerminal, nil
 			default:

@@ -130,9 +130,11 @@ func (s *ResilientDemandSource) Run(ctx context.Context, publish func(controller
 
 	backoff := newReconnectBackoff(s.options.ReconnectInitial, s.options.ReconnectMaximum)
 	var disconnectErr error
+	var generation uint64
 	for {
 		if session != nil {
-			disconnectErr = s.runSession(ctx, session, publish, backoff.Reset)
+			generation++
+			disconnectErr = s.runSession(ctx, session, publish, backoff.Reset, generation)
 			s.closeSession(session)
 			session = nil
 			if ctx.Err() != nil {
@@ -158,13 +160,17 @@ func (s *ResilientDemandSource) runSession(
 	session messageSession,
 	publish func(controller.Demand),
 	onContact func(),
+	generation uint64,
 ) error {
 	source, err := NewDemandSource(session, s.options)
 	if err != nil {
 		return err
 	}
 	source.onContact = onContact
-	if err := source.Run(ctx, publish); err != nil {
+	if err := source.Run(ctx, func(demand controller.Demand) {
+		demand.Generation = generation
+		publish(demand)
+	}); err != nil {
 		return err
 	}
 	return errors.New("scale-set listener stopped unexpectedly")

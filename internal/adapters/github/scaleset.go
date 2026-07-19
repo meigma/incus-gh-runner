@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -182,6 +183,35 @@ func (s *ScaleSet) JITConfig(ctx context.Context, runnerName string) (string, er
 	return jit.EncodedJITConfig, nil
 }
 
+// Fence removes runnerID from the resolved scale set and confirms its registration is absent.
+func (s *ScaleSet) Fence(ctx context.Context, runnerID string) error {
+	if strings.TrimSpace(runnerID) == "" {
+		return errors.New("runner ID is required")
+	}
+	runner, err := s.client.GetRunnerByName(ctx, runnerID)
+	if err != nil {
+		return fmt.Errorf("resolve runner %q before fence: %w", runnerID, err)
+	}
+	if runner == nil {
+		return nil
+	}
+	if runner.ID <= 0 || runner.Name != runnerID || runner.RunnerScaleSetID != s.id {
+		return fmt.Errorf("runner %q registration does not match the resolved scale set", runnerID)
+	}
+	if removeErr := s.client.RemoveRunner(ctx, int64(runner.ID)); removeErr != nil {
+		return fmt.Errorf("remove runner %q registration: %w", runnerID, removeErr)
+	}
+	remaining, err := s.client.GetRunnerByName(ctx, runnerID)
+	if err != nil {
+		return fmt.Errorf("confirm runner %q registration fence: %w", runnerID, err)
+	}
+	if remaining != nil {
+		return fmt.Errorf("confirm runner %q registration fence: registration still exists", runnerID)
+	}
+
+	return nil
+}
+
 // scaleSetClient is the upstream client surface used by persistent resolution and JIT generation.
 type scaleSetClient interface {
 	GetRunnerGroupByName(ctx context.Context, runnerGroup string) (*scaleset.RunnerGroup, error)
@@ -196,6 +226,8 @@ type scaleSetClient interface {
 		jitRunnerSetting *scaleset.RunnerScaleSetJitRunnerSetting,
 		scaleSetID int,
 	) (*scaleset.RunnerScaleSetJitRunnerConfig, error)
+	GetRunnerByName(ctx context.Context, runnerName string) (*scaleset.RunnerReference, error)
+	RemoveRunner(ctx context.Context, runnerID int64) error
 	SetSystemInfo(info scaleset.SystemInfo)
 }
 
@@ -261,7 +293,12 @@ func (s *DemandSource) Run(ctx context.Context, publish func(controller.Demand))
 	if publish == nil {
 		return errors.New("demand publisher is required")
 	}
-	handler := demandHandler{options: s.options, publish: publish, onContact: s.onContact}
+	handler := demandHandler{
+		options:   s.options,
+		publish:   publish,
+		onContact: s.onContact,
+		busy:      make(map[string]struct{}),
+	}
 	if err := s.listener.Run(ctx, &handler); err != nil {
 		return fmt.Errorf("run scale-set listener: %w", err)
 	}
@@ -279,6 +316,7 @@ type demandHandler struct {
 	options   DemandSourceOptions
 	publish   func(controller.Demand)
 	onContact func()
+	busy      map[string]struct{}
 }
 
 // HandleDesiredRunnerCount publishes current assigned jobs and reports the bounded target.
@@ -287,13 +325,21 @@ func (h *demandHandler) HandleDesiredRunnerCount(_ context.Context, count int) (
 		h.onContact()
 	}
 	assignedJobs := max(count, 0)
-	h.publish(controller.Demand{AssignedJobs: assignedJobs})
+	busyRunners := make([]string, 0, len(h.busy))
+	for runnerID := range h.busy {
+		busyRunners = append(busyRunners, runnerID)
+	}
+	sort.Strings(busyRunners)
+	h.publish(controller.Demand{AssignedJobs: assignedJobs, BusyRunners: busyRunners})
 	return min(h.options.MaxRunners, h.options.MinRunners+assignedJobs), nil
 }
 
 // HandleJobStarted records a secret-safe lifecycle event.
 func (h *demandHandler) HandleJobStarted(ctx context.Context, job *scaleset.JobStarted) error {
 	if job != nil {
+		if job.RunnerName != "" {
+			h.busy[job.RunnerName] = struct{}{}
+		}
 		h.options.Logger.InfoContext(
 			ctx,
 			"GitHub Actions job started",
@@ -309,6 +355,9 @@ func (h *demandHandler) HandleJobStarted(ctx context.Context, job *scaleset.JobS
 // HandleJobCompleted records a secret-safe lifecycle event.
 func (h *demandHandler) HandleJobCompleted(ctx context.Context, job *scaleset.JobCompleted) error {
 	if job != nil {
+		if job.RunnerName != "" {
+			delete(h.busy, job.RunnerName)
+		}
 		h.options.Logger.InfoContext(
 			ctx,
 			"GitHub Actions job completed",

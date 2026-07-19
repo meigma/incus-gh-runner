@@ -34,6 +34,8 @@ type Options struct {
 	DemandSource DemandSource
 	// RunnerBackend performs owned runner lifecycle operations.
 	RunnerBackend controller.Backend
+	// RunnerFencer removes GitHub registration before idle scale-down.
+	RunnerFencer controller.Fencer
 	// Logger receives structured, secret-safe lifecycle events.
 	Logger *slog.Logger
 }
@@ -57,6 +59,7 @@ func New(options Options) (*Application, error) {
 	mailbox := controller.NewMailbox()
 	ctrl, err := controller.New(controller.Options{
 		Backend:           options.RunnerBackend,
+		Fencer:            options.RunnerFencer,
 		Demand:            mailbox.Updates(),
 		Logger:            options.Logger,
 		MinRunners:        options.Config.Capacity.MinRunners,

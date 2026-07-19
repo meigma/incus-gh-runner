@@ -16,7 +16,7 @@ target = min(max_runners, min_runners + assigned_jobs)
 
 `assigned_jobs` is the number of jobs GitHub currently wants this scale set to run. `min_runners` is a hot-standby floor: a number of runners the controller keeps alive and idle even when there is no work queued, so that the first jobs of a burst land on a VM that is already provisioned and connected rather than waiting for one to boot. `max_runners` is a hard ceiling that protects the Incus host from unbounded growth regardless of how much demand GitHub reports. Raising `min_runners` trades idle compute cost for lower job start latency; raising `max_runners` trades host capacity for burst headroom. The formula is the whole story — there is no separate scale-down cooldown or queue-depth heuristic layered on top of it. Every reconcile pass simply recomputes the target and moves the current runner count toward it.
 
-The reconciler itself is event-driven rather than polling GitHub on a fixed cadence: new demand, completed Incus operations, and a periodic inventory refresh all feed a single coalescing mailbox that keeps only the newest demand signal, so a burst of updates collapses into one reconcile decision rather than a queue of stale ones. A configurable number of Incus operations run concurrently, because creating or deleting a VM is comparatively slow and the reconciler would otherwise serialize on it.
+The reconciler itself is event-driven rather than polling GitHub on a fixed cadence: new demand, exact runner-busy observations, completed external operations, and a periodic Incus inventory refresh all feed a single coalescing mailbox that keeps only the newest authoritative GitHub snapshot. A burst of updates therefore collapses into one reconcile decision rather than a queue of stale ones. A configurable number of external operations run concurrently, because creating a VM or fencing its GitHub registration is comparatively slow and the reconciler would otherwise serialize on it.
 
 ## The lifecycle of a runner
 
@@ -29,7 +29,22 @@ Every runner is a single Incus VM that exists to run exactly one GitHub Actions 
 
 The one-job-per-VM design is the load-bearing decision here. Because a VM never runs a second job, there is no cleanup step that has to scrub a workspace between jobs, no risk of one job's state leaking into the next, and no need to trust that a long-lived runner stays healthy across dozens of jobs. Reproducibility comes from throwing the VM away, not from disciplined cleanup inside it.
 
-Two systems cooperate to drive a runner through provisioning to termination, and each owns a different half of the lifecycle. Inside the guest, the runner's own init system watches for a one-time job payload, launches the Actions Runner against it, and — this is deliberate — powers the VM off itself the moment that single job exits, successfully or not. The guest does not wait to be told to shut down; it is responsible for ending its own life once its purpose is fulfilled. Outside the guest, the controller only ever observes state (by combining the VM's Incus power state with a status file the guest publishes) and acts on the terminal state it sees: before it deletes a terminal VM, it captures the VM's serial console output as diagnostics, then stops and deletes the instance. This split matters operationally — a runner that finishes its job and shuts down is not "stuck" or "leaking" while it waits in the terminal state; it is waiting for the controller's next reconcile pass to be cleaned up and have its diagnostics preserved. See the [guest contract reference](../reference/guest-contract.md) for the exact status values and file formats involved.
+Three sources cooperate to drive a runner through provisioning to termination.
+The guest status file proves that the runner process has launched, but it does
+not claim whether that process is idle or busy. The current GitHub message
+session supplies exact `JobStarted` events, which protect named busy runners
+from scale-down. The reconciler treats any ready runner reconstructed after a
+controller restart or message-session reconnect as ambiguous and preserves it.
+
+When demand falls, only a ready runner created under the current message
+session and not marked busy can become a scale-down candidate. The controller
+first removes its exact GitHub registration and confirms that registration is
+absent. That fence prevents a new assignment; it does not stop the VM. The
+guest runner process then exits, publishes its terminal status, and powers off.
+Only after observing that terminal state does the controller capture console
+diagnostics and delete the Incus instance. A job-writable hook is never used as
+lifecycle authority. See the [guest contract reference](../reference/guest-contract.md)
+for the exact status values and file formats involved.
 
 ## Cleanup scope, not authorization
 
@@ -57,7 +72,13 @@ turn controller compromise into compromise of those workloads as well.
 
 incus-gh-runner treats "cannot get started" and "was working, then hit a problem" as different situations that deserve different responses.
 
-At startup, failure is fast and loud. If the initial GitHub message session cannot be opened, or if the Incus preflight check finds the configured image or any configured profile missing, the process exits rather than retrying quietly in a degraded state. The reasoning is that a controller which cannot even confirm its dependencies exist has nothing useful to offer by staying up — better to fail immediately and visibly than to sit in a loop reporting a problem no one asked it to retry.
+At startup, invalid configuration and failed dependency setup are fast and
+loud. If the initial GitHub message session cannot be opened, or if the Incus
+preflight check finds the configured image or any configured profile missing,
+the process exits. Once those dependencies are resolved, an uncertain initial
+owned-runner inventory is different: the controller stays alive and retries
+with capped backoff while scheduling no mutation. This avoids systemd restart
+limits turning a transient guest-agent outage into an operator-only recovery.
 
 Once running, the posture flips. A dropped GitHub message session is not fatal — the controller closes the stale session and reopens a new one, backing off with capped exponential delay between attempts (starting at `retry.initial`, capped at `retry.maximum`) so a transient GitHub-side hiccup does not turn into a hot retry loop, and a successful reconnection resets that backoff. Incus operation failures follow the same shape: each failure applies a per-operation cooldown that doubles up to the same cap, so a host that is temporarily overloaded gets progressively more breathing room rather than being hammered with retries.
 
@@ -65,7 +86,13 @@ Any Incus failure also does something more conservative than just backing off th
 
 There is a deliberate final escalation path underneath all of this: if the demand-tracking and reconcile components of the process ever get wedged relative to each other — one stops responding and the other cannot shut down cleanly within its budget — the process exits non-zero rather than limping in a half-alive state. systemd's restart policy is the intended backstop for that case, which is why the unit is configured to restart on failure. The controller does not try to be its own supervisor; it fails in a way a process supervisor can act on.
 
-One consequence of this philosophy is worth calling out directly because it affects how operators should think about restarts: stopping or restarting the controller does not touch VMs that are currently running a job. Busy runners are left alone through a controller shutdown or crash and pick up again from GitHub's perspective once the controller comes back — a controller restart is not equivalent to canceling in-flight work.
+One consequence of this philosophy is worth calling out directly because it
+affects how operators should think about restarts: stopping or restarting the
+controller does not touch ready VMs whose exact idle state cannot be
+reconstructed. They continue to count as capacity but are ineligible for
+scale-down. A restart is therefore not equivalent to canceling in-flight work,
+and ambiguity may temporarily retain excess capacity until each one-job runner
+finishes naturally.
 
 ## Security model
 

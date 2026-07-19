@@ -284,6 +284,88 @@ func TestScaleSetJITConfigUsesRunnerIdentityAndRejectsEmptyResponse(t *testing.T
 	}
 }
 
+func TestScaleSetFenceRemovesOnlyMatchingRegistration(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		lookups     []*scaleset.RunnerReference
+		lookupErr   error
+		removeErr   error
+		wantRemoved []int64
+		wantErr     string
+	}{
+		{name: "already absent", lookups: []*scaleset.RunnerReference{nil}},
+		{
+			name: "removes and confirms exact registration",
+			lookups: []*scaleset.RunnerReference{
+				{ID: 41, Name: "runner-123", RunnerScaleSetID: 73},
+				nil,
+			},
+			wantRemoved: []int64{41},
+		},
+		{
+			name:    "rejects another scale set",
+			lookups: []*scaleset.RunnerReference{{ID: 41, Name: "runner-123", RunnerScaleSetID: 74}},
+			wantErr: "does not match",
+		},
+		{
+			name:      "propagates lookup failure",
+			lookupErr: errors.New("inventory unavailable"),
+			wantErr:   "inventory unavailable",
+		},
+		{
+			name:        "propagates removal failure",
+			lookups:     []*scaleset.RunnerReference{{ID: 41, Name: "runner-123", RunnerScaleSetID: 73}},
+			removeErr:   errors.New("remove unavailable"),
+			wantRemoved: []int64{41},
+			wantErr:     "remove unavailable",
+		},
+		{
+			name: "fails when registration remains",
+			lookups: []*scaleset.RunnerReference{
+				{ID: 41, Name: "runner-123", RunnerScaleSetID: 73},
+				{ID: 41, Name: "runner-123", RunnerScaleSetID: 73},
+			},
+			wantRemoved: []int64{41},
+			wantErr:     "still exists",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client := newFakeScaleSetClient()
+			lookup := 0
+			client.getRunnerByName = func(_ context.Context, runnerName string) (*scaleset.RunnerReference, error) {
+				assert.Equal(t, "runner-123", runnerName)
+				if tt.lookupErr != nil {
+					return nil, tt.lookupErr
+				}
+				require.Less(t, lookup, len(tt.lookups))
+				response := tt.lookups[lookup]
+				lookup++
+				return response, nil
+			}
+			var removed []int64
+			client.removeRunner = func(_ context.Context, runnerID int64) error {
+				removed = append(removed, runnerID)
+				return tt.removeErr
+			}
+
+			err := (&ScaleSet{client: client, id: 73}).Fence(context.Background(), "runner-123")
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tt.wantRemoved, removed)
+		})
+	}
+}
+
 func TestDemandSourcePublishesAssignedJobsWithoutExternalWork(t *testing.T) {
 	t.Parallel()
 
@@ -312,6 +394,33 @@ func TestDemandSourcePublishesAssignedJobsWithoutExternalWork(t *testing.T) {
 
 	require.EqualError(t, err, "run scale-set listener: poll stopped")
 	assert.Equal(t, controller.Demand{AssignedJobs: 9}, <-mailbox.Updates())
+}
+
+func TestDemandSourcePublishesAuthoritativeBusyRunnerSnapshot(t *testing.T) {
+	t.Parallel()
+
+	var observed []controller.Demand
+	upstream := &fakeDemandListener{run: func(ctx context.Context, scaler listener.Scaler) error {
+		require.NoError(t, scaler.HandleJobStarted(ctx, &scaleset.JobStarted{RunnerName: "runner-1"}))
+		_, err := scaler.HandleDesiredRunnerCount(ctx, 1)
+		require.NoError(t, err)
+		require.NoError(t, scaler.HandleJobCompleted(ctx, &scaleset.JobCompleted{RunnerName: "runner-1"}))
+		_, err = scaler.HandleDesiredRunnerCount(ctx, 0)
+		require.NoError(t, err)
+		return errors.New("poll stopped")
+	}}
+	source, err := newDemandSource(upstream, DemandSourceOptions{MaxRunners: 2})
+	require.NoError(t, err)
+
+	err = source.Run(context.Background(), func(demand controller.Demand) {
+		observed = append(observed, demand)
+	})
+
+	require.EqualError(t, err, "run scale-set listener: poll stopped")
+	assert.Equal(t, []controller.Demand{
+		{AssignedJobs: 1, BusyRunners: []string{"runner-1"}},
+		{BusyRunners: []string{}},
+	}, observed)
 }
 
 func TestResilientDemandSourceCapsReconnectBackoff(t *testing.T) {
@@ -401,11 +510,15 @@ func TestResilientDemandSourceResetsBackoffAfterHealthyPolling(t *testing.T) {
 		SessionCloseTimeout: time.Second,
 	}, wait)
 	require.NoError(t, err)
+	var generations []uint64
 
-	err = source.Run(ctx, func(controller.Demand) {})
+	err = source.Run(ctx, func(demand controller.Demand) {
+		generations = append(generations, demand.Generation)
+	})
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, []time.Duration{time.Second, 2 * time.Second, time.Second}, delays)
+	assert.Equal(t, []uint64{1, 2, 2}, generations)
 	assert.Equal(t, 1, initial.closeCount)
 	assert.Equal(t, 1, healthy.closeCount)
 }
@@ -416,6 +529,8 @@ type fakeScaleSetClient struct {
 	getRunnerScaleSet    func(context.Context, int, string) (*scaleset.RunnerScaleSet, error)
 	createRunnerScaleSet func(context.Context, *scaleset.RunnerScaleSet) (*scaleset.RunnerScaleSet, error)
 	generateJIT          func(context.Context, *scaleset.RunnerScaleSetJitRunnerSetting, int) (*scaleset.RunnerScaleSetJitRunnerConfig, error)
+	getRunnerByName      func(context.Context, string) (*scaleset.RunnerReference, error)
+	removeRunner         func(context.Context, int64) error
 	created              *scaleset.RunnerScaleSet
 	systemInfo           scaleset.SystemInfo
 }
@@ -434,6 +549,12 @@ func newFakeScaleSetClient() *fakeScaleSetClient {
 		},
 		generateJIT: func(context.Context, *scaleset.RunnerScaleSetJitRunnerSetting, int) (*scaleset.RunnerScaleSetJitRunnerConfig, error) {
 			return nil, errors.New("unexpected GenerateJitRunnerConfig call")
+		},
+		getRunnerByName: func(context.Context, string) (*scaleset.RunnerReference, error) {
+			return nil, errors.New("unexpected GetRunnerByName call")
+		},
+		removeRunner: func(context.Context, int64) error {
+			return errors.New("unexpected RemoveRunner call")
 		},
 	}
 }
@@ -467,6 +588,19 @@ func (f *fakeScaleSetClient) GenerateJitRunnerConfig(
 	scaleSetID int,
 ) (*scaleset.RunnerScaleSetJitRunnerConfig, error) {
 	return f.generateJIT(ctx, setting, scaleSetID)
+}
+
+// GetRunnerByName invokes the configured runner lookup behavior.
+func (f *fakeScaleSetClient) GetRunnerByName(
+	ctx context.Context,
+	runnerName string,
+) (*scaleset.RunnerReference, error) {
+	return f.getRunnerByName(ctx, runnerName)
+}
+
+// RemoveRunner invokes the configured runner-registration removal behavior.
+func (f *fakeScaleSetClient) RemoveRunner(ctx context.Context, runnerID int64) error {
+	return f.removeRunner(ctx, runnerID)
 }
 
 // SetSystemInfo records the configured scale-set identity.

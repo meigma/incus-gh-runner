@@ -119,6 +119,7 @@ func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *sl
 		Config:        cfg,
 		DemandSource:  demandSource,
 		RunnerBackend: backend,
+		RunnerFencer:  resolved,
 		Logger:        logger.WithGroup("controller"),
 	})
 	if applicationErr != nil {
