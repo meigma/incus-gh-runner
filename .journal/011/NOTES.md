@@ -79,3 +79,9 @@ sole git author). SPDX "Apache-2.0 OR MIT" recorded in melange.yaml package
 copyright and apko.yaml OCI licenses annotation. Removed the "no license"
 README caveat. root:check green; pushed to PR #25; PR body updated; CI
 monitor running.
+
+## 2026-07-18 17:40 — PR #25 merged
+Squash-merged PR #25 at master fd7e72c (process-language cleanup + README
+rewrite + Apache-2.0/MIT dual license). Worktree removed. Release Please
+will refresh release PR #24 against the cleaned tree; publishing remains
+the maintainer's decision. Agent-infra shipping question still open.
