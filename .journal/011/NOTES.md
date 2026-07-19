@@ -68,3 +68,14 @@ residue grep clean. PR #25 open, CI monitored.
 Note: Release Please regenerated release PR #24 (1.0.0) after the docs
 commit reached master — expected while the gate is enabled; merging it is
 the maintainer's call.
+
+## 2026-07-18 17:30 — README rewrite and dual license added to PR #25
+Rewrote README per readme-writer skill: description, features, requirements,
+installation (release binary names from .goreleaser.yaml), usage (minimal
+valid config + runs-on example), documentation map to the new docs pages,
+condensed development section, dual-license section. Added LICENSE-APACHE
+(canonical apache.org text) and LICENSE-MIT (copyright 2026 Joshua Gilman,
+sole git author). SPDX "Apache-2.0 OR MIT" recorded in melange.yaml package
+copyright and apko.yaml OCI licenses annotation. Removed the "no license"
+README caveat. root:check green; pushed to PR #25; PR body updated; CI
+monitor running.
