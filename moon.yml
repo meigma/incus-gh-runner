@@ -18,6 +18,9 @@ fileGroups:
   goSources:
     - 'cmd/**/*.go'
     - 'internal/**/*.go'
+    - 'deploy/incus/*.go'
+    - 'deploy/incus/cue/deployment.cue'
+    - 'deploy/incus/baseline.example.json'
     - 'go.mod'
     - 'go.sum'
     # Tool/version pins. Under the `system` toolchain moon does not hash the Go
@@ -113,7 +116,6 @@ tasks:
   incus-isolation-contract-test:
     script: |
       bash deploy/incus/cue/tests/render-test.sh
-      bash deploy/incus/tests/validate-test.sh
       bash image/tests/live-incus-hostile-isolation-contract-test.sh
     inputs:
       - '@group(incusIsolationSources)'

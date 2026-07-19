@@ -3,13 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
+	incuspolicy "github.com/meigma/incus-gh-runner/deploy/incus"
+	incusadapter "github.com/meigma/incus-gh-runner/internal/adapters/incus"
 	"github.com/meigma/incus-gh-runner/internal/cli"
 	"github.com/meigma/incus-gh-runner/internal/config"
+	"github.com/meigma/incus-gh-runner/internal/incusvalidate"
 	runnerruntime "github.com/meigma/incus-gh-runner/internal/runtime"
 )
 
@@ -46,6 +50,7 @@ func run() int {
 				Commit:  commit,
 			}, logger)
 		},
+		Validate: validateIncusBaseline,
 	})
 	if err := root.ExecuteContext(ctx); err != nil {
 		if _, writeErr := fmt.Fprintln(os.Stderr, err); writeErr != nil {
@@ -56,4 +61,59 @@ func run() int {
 	}
 
 	return 0
+}
+
+// validateIncusBaseline checks one rendered baseline without initializing controller runtime state.
+func validateIncusBaseline(
+	ctx context.Context,
+	baselinePath string,
+	socketPath string,
+) (cli.ValidationResult, error) {
+	data, err := readIncusBaseline(baselinePath)
+	if err != nil {
+		return cli.ValidationResult{}, err
+	}
+	baseline, err := incusvalidate.ParseBaseline(baselinePath, data, incuspolicy.ValidateBaseline)
+	if err != nil {
+		return cli.ValidationResult{}, err
+	}
+
+	reader, err := incusadapter.ConnectValidationReader(ctx, socketPath)
+	if err != nil {
+		return cli.ValidationResult{}, err
+	}
+	defer reader.Close()
+
+	result, err := incusvalidate.Validate(ctx, baseline, reader)
+	if err != nil {
+		return cli.ValidationResult{}, err
+	}
+
+	return cli.ValidationResult{Notices: result.Notices}, nil
+}
+
+// readIncusBaseline bounds manifest reads before policy parsing and socket access.
+func readIncusBaseline(baselinePath string) ([]byte, error) {
+	info, err := os.Stat(baselinePath)
+	if err != nil {
+		return nil, fmt.Errorf("stat baseline %q: %w", baselinePath, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("baseline %q must be a regular file", baselinePath)
+	}
+
+	file, err := os.Open(baselinePath)
+	if err != nil {
+		return nil, fmt.Errorf("open baseline %q: %w", baselinePath, err)
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+
+	data, err := io.ReadAll(io.LimitReader(file, incuspolicy.MaximumBaselineBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read baseline %q: %w", baselinePath, err)
+	}
+
+	return data, nil
 }

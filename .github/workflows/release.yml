@@ -140,6 +140,8 @@ jobs:
             *) echo "unexpected version output: $output" >&2; exit 1 ;;
           esac
 
+          "$bin" validate --help >/dev/null
+
       - name: Upload assets to draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -486,6 +488,7 @@ jobs:
 
           docker run --rm "$IMAGE_REF" --version
           docker run --rm "$IMAGE_REF" --help >/dev/null
+          docker run --rm "$IMAGE_REF" validate --help >/dev/null
 
       - name: Sign image (keyless, Sigstore/Fulcio via OIDC)
         env:

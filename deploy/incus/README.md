@@ -92,11 +92,27 @@ weaker compatibility path.
 
 ## Validate without changing Incus
 
-The validator issues only `GET` requests through `incus query`:
+The installed controller binary also provides a standalone validator:
 
 ```console
-deploy/incus/validate.sh /etc/incus-gh-runner/incus-baseline.json
+incus-gh-runner validate /etc/incus-gh-runner/incus-baseline.json
 ```
+
+It compiles the embedded CUE policy in process, checks the rendered baseline
+against that policy, and reads the effective Incus state through the local Unix
+socket. It does not invoke external `cue`, `incus`, or `jq` executables. The
+validator uses only read operations and never creates, changes, or deletes
+Incus resources. Its default socket is `/var/lib/incus/unix.socket`; select a
+different local socket explicitly when required:
+
+```console
+incus-gh-runner validate --socket /run/incus/unix.socket /etc/incus-gh-runner/incus-baseline.json
+```
+
+`validate` does not load the controller YAML configuration or require GitHub
+credentials. Its inputs are the explicit baseline path and local socket path.
+Socket access is still root-equivalent, so run it only from a trusted host
+administration context.
 
 It rejects malformed manifests, missing API extensions, non-`nftables`
 firewalls, clustered hosts, any Incus network API listener, and any effective
@@ -105,6 +121,12 @@ authority is `dedicated-host-unix-socket` with both HTTPS listener settings
 empty. The storage comparison ignores only the server-generated
 `volatile.initial_source` field observed on Incus 7.0.1; `source`,
 `zfs.pool_name`, and every other effective storage setting remain fail-closed.
+
+The rendered baseline records the resource ceilings derived by CUE, but not the
+physical host totals and reserved-headroom inputs used to derive them. Runtime
+validation can detect drift in those effective ceilings; it cannot re-measure
+or re-prove physical-host headroom. Re-render and review the baseline whenever
+host capacity or reservations change.
 
 The current Unix-socket controller connection remains root-equivalent, so this
 baseline requires a dedicated single-purpose host and treats controller
@@ -138,11 +160,8 @@ KVM-capable host. The root disk `limits.max` value is desired configuration
 only; effective disk-I/O throttling, especially with ZFS, has not been
 demonstrated and must not be treated as a proven security control.
 
-The offline test replaces the `incus` executable with a read-only fake:
-
-```console
-deploy/incus/tests/validate-test.sh
-```
+The Go test suite exercises policy validation and the read-only Incus adapter
+without replacing command-line executables.
 
 ## Incus references
 

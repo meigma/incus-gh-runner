@@ -39,6 +39,11 @@ jq -S . "${tmp_dir}/rendered.json" >"${tmp_dir}/actual.json"
 cmp -s "${tmp_dir}/expected.json" "${tmp_dir}/actual.json" ||
   fail 'the default CUE input no longer renders the live-proven baseline'
 
+# Materialize the hidden definition as an embedded root schema so cue vet can
+# exercise the same closed baseline independently of #Deployment inputs.
+run_cue def deployment.cue -e _#Baseline -o "${tmp_dir}/baseline-schema.cue"
+run_cue vet -c "${tmp_dir}/baseline-schema.cue" "${tmp_dir}/rendered.json"
+
 run_cue export ./tests -t case=customSizing -e _result.output --out json >"${tmp_dir}/custom.json"
 run_cue export ./tests -t case=customSizing -e _result.controller --out json \
   >"${tmp_dir}/custom-controller.json"
@@ -60,6 +65,37 @@ jq -e '
   .capacity.max_runners == 3
 ' "${tmp_dir}/custom-controller.json" >/dev/null ||
   fail 'controller capacity and Incus selection drifted from the derived baseline'
+run_cue vet -c "${tmp_dir}/baseline-schema.cue" "${tmp_dir}/custom.json"
+
+jq '.profile.config["security.secureboot"] = "false"' \
+  "${tmp_dir}/rendered.json" >"${tmp_dir}/schema-weakened-policy.json"
+jq '.project.config["limits.cpu"] = "21"' \
+  "${tmp_dir}/rendered.json" >"${tmp_dir}/schema-inconsistent-capacity.json"
+jq '.unexpected = true' \
+  "${tmp_dir}/rendered.json" >"${tmp_dir}/schema-unknown-field.json"
+
+schema_invalid_cases=(
+  schema-weakened-policy
+  schema-inconsistent-capacity
+  schema-unknown-field
+)
+
+for case_name in "${schema_invalid_cases[@]}"; do
+  if run_cue vet -c "${tmp_dir}/baseline-schema.cue" \
+    "${tmp_dir}/${case_name}.json" >"${tmp_dir}/${case_name}.stdout" \
+    2>"${tmp_dir}/${case_name}.stderr"; then
+    fail "invalid rendered baseline unexpectedly passed the schema: ${case_name}"
+  fi
+done
+
+grep -Fq 'conflicting values "true" and "false"' \
+  "${tmp_dir}/schema-weakened-policy.stderr" ||
+  fail 'the runtime schema did not reject weakened fixed policy'
+grep -Fq '_projectCPU: conflicting values 20 and 21' \
+  "${tmp_dir}/schema-inconsistent-capacity.stderr" ||
+  fail 'the runtime schema did not reject inconsistent derived capacity'
+grep -Fq 'field not allowed' "${tmp_dir}/schema-unknown-field.stderr" ||
+  fail 'the runtime schema did not reject an unknown field'
 
 invalid_cases=(
   defaultProject

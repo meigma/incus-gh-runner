@@ -185,3 +185,116 @@ func TestRootCommandPassesExecutionContext(t *testing.T) {
 
 	require.NoError(t, root.ExecuteContext(ctx))
 }
+
+// TestValidateCommandBypassesControllerInitialization proves the subcommand has an isolated startup path.
+func TestValidateCommandBypassesControllerInitialization(t *testing.T) {
+	t.Setenv(config.EnvGitHubTokenFile, filepath.Join(t.TempDir(), "missing-token"))
+	invalidConfigPath := filepath.Join(t.TempDir(), "invalid.yaml")
+	require.NoError(t, os.WriteFile(invalidConfigPath, []byte("unknown: true\n"), 0o600))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	controllerCalled := false
+	validationCalled := false
+	root := NewRootCommand(Options{
+		Out:               &stdout,
+		Err:               &stderr,
+		Viper:             viper.New(),
+		DefaultConfigPath: invalidConfigPath,
+		Run: func(context.Context, config.Config) error {
+			controllerCalled = true
+			return nil
+		},
+		Validate: func(_ context.Context, baselinePath string, socketPath string) (ValidationResult, error) {
+			validationCalled = true
+			assert.Equal(t, "baseline.json", baselinePath)
+			assert.Equal(t, "/run/incus/unix.socket", socketPath)
+			return ValidationResult{Notices: []string{"retain compensating control"}}, nil
+		},
+	})
+	root.SetArgs([]string{"validate", "--socket", "/run/incus/unix.socket", "baseline.json"})
+
+	require.NoError(t, root.ExecuteContext(context.Background()))
+	assert.True(t, validationCalled)
+	assert.False(t, controllerCalled)
+	assert.Equal(t, "Incus isolation baseline matches baseline.json\n", stdout.String())
+	assert.Equal(t, "NOTICE: retain compensating control\n", stderr.String())
+}
+
+// TestValidateCommandUsesTheDocumentedDefaultSocket proves the stable validation flag default.
+func TestValidateCommandUsesTheDocumentedDefaultSocket(t *testing.T) {
+	var receivedSocket string
+	root := NewRootCommand(Options{
+		Validate: func(_ context.Context, _ string, socketPath string) (ValidationResult, error) {
+			receivedSocket = socketPath
+			return ValidationResult{}, nil
+		},
+	})
+	root.SetArgs([]string{"validate", "baseline.json"})
+
+	require.NoError(t, root.ExecuteContext(context.Background()))
+	assert.Equal(t, defaultValidationSocketPath, receivedSocket)
+}
+
+// TestValidateCommandRequiresOneBaseline proves the operand contract.
+func TestValidateCommandRequiresOneBaseline(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "missing baseline", args: []string{"validate"}},
+		{name: "extra baseline", args: []string{"validate", "one.json", "two.json"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			called := false
+			root := NewRootCommand(Options{
+				Validate: func(context.Context, string, string) (ValidationResult, error) {
+					called = true
+					return ValidationResult{}, nil
+				},
+			})
+			root.SetArgs(tt.args)
+
+			require.Error(t, root.ExecuteContext(context.Background()))
+			assert.False(t, called)
+		})
+	}
+}
+
+// TestValidateCommandPassesExecutionContext proves cancellation reaches the validation adapter.
+func TestValidateCommandPassesExecutionContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	root := NewRootCommand(Options{
+		Validate: func(ctx context.Context, _ string, _ string) (ValidationResult, error) {
+			assert.ErrorIs(t, ctx.Err(), context.Canceled)
+			return ValidationResult{}, nil
+		},
+	})
+	root.SetArgs([]string{"validate", "baseline.json"})
+
+	require.NoError(t, root.ExecuteContext(ctx))
+}
+
+// TestRootCommandRejectsUnexpectedOperands proves a misspelled subcommand cannot start the controller.
+func TestRootCommandRejectsUnexpectedOperands(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	root := NewRootCommand(Options{
+		Run: func(context.Context, config.Config) error {
+			called = true
+			return nil
+		},
+	})
+	root.SetArgs([]string{"validte"})
+
+	require.Error(t, root.ExecuteContext(context.Background()))
+	assert.False(t, called)
+}

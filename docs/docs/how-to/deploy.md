@@ -62,11 +62,27 @@ Validate the effective API state before importing an image or starting the
 controller:
 
 ```sh
-deploy/incus/validate.sh incus-baseline.json
+incus-gh-runner validate incus-baseline.json
 ```
 
-The validator is read-only and fails on drift. Resolve every failure; do not
-weaken or bypass it to continue deployment. See
+The validator defaults to `/var/lib/incus/unix.socket`. Pass another local
+socket explicitly when needed:
+
+```sh
+incus-gh-runner validate --socket /run/incus/unix.socket incus-baseline.json
+```
+
+This command is read-only and fails on drift. It validates the baseline against
+the embedded CUE policy in process and reads effective state from the local
+Incus socket; it does not invoke external `cue`, `incus`, or `jq` executables.
+It does not load controller configuration or require GitHub credentials. The
+socket remains root-equivalent, so run the command only from a trusted host
+administration context.
+
+The validator confirms the effective resource ceilings, but it cannot re-prove
+the physical-host capacity and reserved headroom used when CUE generated them.
+Re-render and review the baseline after changing host capacity or reservations.
+Resolve every failure; do not weaken or bypass it to continue deployment. See
 [`deploy/incus/README.md`](https://github.com/meigma/incus-gh-runner/tree/master/deploy/incus)
 for the manifest contract, controlled-egress model, compatibility residuals,
 and the official Incus references behind each setting.

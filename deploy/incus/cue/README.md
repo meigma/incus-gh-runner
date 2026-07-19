@@ -1,9 +1,10 @@
 # Incus runner CUE module
 
 This dependency-free CUE module models the supported operator inputs and emits
-the complete fail-closed Incus baseline consumed by `../validate.sh`. Its module
-path is reserved as `github.com/meigma/incus-gh-runner/config@v0`, but this
-proof increment is not yet published to a registry.
+the complete fail-closed Incus baseline consumed by
+`incus-gh-runner validate <baseline>`. Its module path is reserved as
+`github.com/meigma/incus-gh-runner/config@v0`, but this proof increment is not
+yet published to a registry.
 
 The public contract has two definitions:
 
@@ -40,6 +41,13 @@ The controller export is intentionally partial: merge it into the full
 controller configuration alongside environment-specific GitHub, image, owner,
 and minimum-runner settings.
 
+Host capacity and reserved headroom are generation-time inputs. The rendered
+baseline contains the resulting Incus ceilings, not those physical-host
+measurements. `incus-gh-runner validate` embeds this CUE policy and checks both
+the rendered baseline and live Incus state in process, but it cannot re-prove
+physical-host headroom at runtime. Re-render after host capacity or reservation
+changes.
+
 ## Validate the module
 
 From the repository root:
@@ -60,4 +68,4 @@ been reviewed and exercised. A later release increment should inspect a
 semantic version from an approval-gated clean tag, and retain the module with
 the release artifacts. Production validation must not depend on registry
 availability: the host continues to consume a rendered baseline and perform
-read-only Incus API drift checks.
+read-only Incus API drift checks with the embedded policy.

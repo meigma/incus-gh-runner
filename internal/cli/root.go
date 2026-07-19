@@ -18,7 +18,10 @@ import (
 	"github.com/meigma/incus-gh-runner/internal/projectinfo"
 )
 
-const defaultConfigPath = "/etc/incus-gh-runner/config.yaml"
+const (
+	defaultConfigPath           = "/etc/incus-gh-runner/config.yaml"
+	defaultValidationSocketPath = "/var/lib/incus/unix.socket"
+)
 
 // BuildInfo describes linker-injected build metadata printed by --version.
 type BuildInfo struct {
@@ -32,6 +35,15 @@ type BuildInfo struct {
 
 // RunFunc starts the configured controller application.
 type RunFunc func(ctx context.Context, cfg config.Config) error
+
+// ValidateFunc validates one rendered baseline against an Incus Unix socket.
+type ValidateFunc func(ctx context.Context, baselinePath string, socketPath string) (ValidationResult, error)
+
+// ValidationResult describes successful host validation output.
+type ValidationResult struct {
+	// Notices contains non-fatal security residuals printed to stderr.
+	Notices []string
+}
 
 // Options customizes root command construction.
 type Options struct {
@@ -47,6 +59,8 @@ type Options struct {
 	Viper *viper.Viper
 	// Run starts the controller after configuration is loaded.
 	Run RunFunc
+	// Validate compares one rendered baseline with live Incus state.
+	Validate ValidateFunc
 	// DefaultConfigPath overrides the optional system configuration path.
 	DefaultConfigPath string
 }
@@ -60,7 +74,8 @@ func NewRootCommand(options Options) *cobra.Command {
 		Version:       options.Build.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+		Args:          cobra.NoArgs,
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
 			return initializeConfig(cmd, options.Viper, options.DefaultConfigPath)
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -84,6 +99,7 @@ func NewRootCommand(options Options) *cobra.Command {
 	root.SetOut(options.Out)
 	root.SetErr(options.Err)
 	addConfigFlags(root.Flags())
+	root.AddCommand(newValidateCommand(options))
 	return root
 }
 
@@ -106,11 +122,44 @@ func (o Options) withDefaults() Options {
 			return errors.New("controller runtime adapters are not implemented")
 		}
 	}
+	if o.Validate == nil {
+		o.Validate = func(context.Context, string, string) (ValidationResult, error) {
+			return ValidationResult{}, errors.New("incus validator runtime adapter is not implemented")
+		}
+	}
 	if o.DefaultConfigPath == "" {
 		o.DefaultConfigPath = defaultConfigPath
 	}
 	o.Build = o.Build.withDefaults()
 	return o
+}
+
+// newValidateCommand creates the read-only Incus baseline validation command.
+func newValidateCommand(options Options) *cobra.Command {
+	socketPath := defaultValidationSocketPath
+	command := &cobra.Command{
+		Use:   "validate <baseline>",
+		Short: "Validate a rendered baseline against local Incus state",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			result, err := options.Validate(cmd.Context(), args[0], socketPath)
+			if err != nil {
+				return err
+			}
+			for _, notice := range result.Notices {
+				if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "NOTICE: %s\n", notice); err != nil {
+					return fmt.Errorf("write validation notice: %w", err)
+				}
+			}
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Incus isolation baseline matches %s\n", args[0]); err != nil {
+				return fmt.Errorf("write validation result: %w", err)
+			}
+
+			return nil
+		},
+	}
+	command.Flags().StringVar(&socketPath, "socket", socketPath, "local Incus Unix socket path")
+	return command
 }
 
 // withDefaults fills missing build metadata with development values.

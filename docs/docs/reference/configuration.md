@@ -4,7 +4,8 @@ Complete listing of configuration sources, YAML keys, environment variables, CLI
 
 ## Sources and precedence
 
-Configuration is assembled from four sources. Precedence, highest first:
+Controller-mode configuration is assembled from four sources. Precedence,
+highest first:
 
 1. CLI flags
 2. Environment variables (`INCUS_GH_RUNNER_` prefix)
@@ -129,7 +130,10 @@ The packaged systemd deployment supplies either `github.app.private_key_file` or
 
 ## CLI
 
-`incus-gh-runner` is a single command with no subcommands.
+Running `incus-gh-runner` without a subcommand starts the controller. The
+controller configuration sources and flags documented above apply to that
+mode. The `validate` subcommand is independent of controller configuration and
+GitHub credentials.
 
 ### `--config`
 
@@ -162,9 +166,36 @@ incus-gh-runner <version> (<commit>) built <date>
 
 In a release build, `<version>`, `<commit>`, and `<date>` are populated at build time. In a development build, these render as `dev`, `none`, and `unknown` respectively.
 
+### `validate <baseline>`
+
+Validates exactly one rendered JSON baseline against the embedded CUE policy,
+then compares it with effective state read from a local Incus Unix socket. The
+command performs read operations only; it never creates, changes, or deletes
+Incus resources and does not invoke external `cue`, `incus`, or `jq`
+executables.
+
+| Flag | Type | Default |
+|---|---|---|
+| `--socket` | string | `/var/lib/incus/unix.socket` |
+
+`--socket` selects a local Incus Unix socket. The command does not load
+`/etc/incus-gh-runner/config.yaml`, controller flags or environment variables,
+or GitHub credentials. A successful validation prints one human-readable line
+to stdout; compatibility notices are written to stderr.
+
+The live comparison confirms effective resource ceilings but cannot re-measure
+or re-prove the physical-host capacity and reserved headroom used to generate
+them. Re-render and review the baseline after those generation-time inputs
+change.
+
 ### Exit behavior
 
-The process exits `0` on clean shutdown. It exits `1` on configuration load failure, configuration validation failure, or runtime failure, printing the error to stderr. There is no flag to control log level or log format; logs are always structured JSON on stdout.
+Controller mode exits `0` on clean shutdown. It exits `1` on configuration
+load failure, configuration validation failure, or runtime failure, printing
+the error to stderr. There is no flag to control controller log level or log
+format; controller logs are always structured JSON on stdout. `validate` exits
+`0` only when policy and live-state checks pass and exits non-zero with an error
+on stderr otherwise.
 
 ## systemd unit facts
 
