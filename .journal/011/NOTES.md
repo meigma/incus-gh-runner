@@ -33,3 +33,22 @@ run-name; validate-incus.sh phase2-probe prefix must match its heredoc glob.
 Agent-protocol infra (.session.md, .agents/skills, scaffold/.journal,
 CLAUDE.md, AGENTS.md) deliberately excluded; flagged separately to the user.
 Next: await user decision on applying fixes (and on whether agent infra ships).
+
+## 2026-07-18 17:10 — Operator docs overhaul (PR #23)
+Approved plan: delete the three phase-narrative docs pages and replace with a
+7-page operator Diátaxis set (index; how-to deploy/operate/runner-images;
+reference configuration/guest-contract; explanation how-it-works), MkDocs
+infra kept. Executed on branch `docs-operator-overhaul` (worktree .wt/).
+Workflow `operator-docs-write` (run wf_eed52023-f5a): 7 Sonnet 5 writers →
+7 Opus 4.8 verifiers → 1 Opus 4.8 coherence editor; 15 agents, ~695k tokens.
+I grounded writers with an inventory extracted by an Explore agent from
+config.go, the unit file, controller/adapters, and image/guest sources.
+Post-workflow fixes by hand: ungrounded "systemd 250" claim reworded to
+capability-based prereq; `owned Incus runner started` log-event meaning
+corrected (fires at create completion, still provisioning). Spot-verified
+config table, unit directives, guest script messages, log event fields, and
+script output strings against source — all match. Strict docs build passes;
+process-language grep clean. README links and unit Documentation= URL updated
+to new paths. PR #23 opened; CI monitor running.
+Still pending from earlier: applying the 98-finding language sweep (separate
+task, user decision on agent-infra shipping still open).
