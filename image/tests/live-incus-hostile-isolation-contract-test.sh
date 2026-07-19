@@ -18,15 +18,6 @@ grep -Fq "for index in \"\${!allowed_urls[@]}\"" "$harness"
 grep -Fq "for instance_suffix in \"a:\$vm_a\" \"b:\$vm_b\"" "$harness"
 grep -Fq "guest_egress \"\$instance\" \"\${allowed_urls[\$index]}\"" "$harness"
 grep -Fq "\"\$spoof_probe_url\" \"\$egress_proxy\"" "$harness"
-grep -Fq -- '--runtime-probe <executable> --baseline <rendered-baseline>' "$harness"
-grep -Fq 'runtime probe and baseline must be provided together' "$harness"
-grep -Fq 'runtime probe must be a non-symlink regular executable' "$harness"
-grep -Fq 'baseline must be a non-symlink readable regular file' "$harness"
-grep -Fq 'runtime_probe: $runtime_probe' "$harness"
-grep -Fq '.acceptance_sha256 == $acceptance_sha256' "$harness"
-grep -Fq '.source_revision | test("^[a-f0-9]{40}([a-f0-9]{24})?$")' "$harness"
-grep -Fq '.source_modified == false' "$harness"
-grep -Fq '.stress_duration == "10m0s"' "$harness"
 grep -Fq '[[ -d /sys/module/br_netfilter ]]' "$harness"
 grep -Fq 'host br_netfilter kernel module is not loaded' "$harness"
 grep -Fq "record_result bridge-netfilter passed 'host br_netfilter kernel module is loaded'" "$harness"
@@ -43,23 +34,6 @@ launch_vm_function="$(
 )"
 grep -Fq 'incus_cmd launch "$image" "$instance" </dev/null' \
   <<<"$launch_vm_function"
-
-runtime_probe_function="$(
-  sed -n '/^run_runtime_probe()/,/^}/p' "$harness"
-)"
-for expected in \
-  'incus_cmd image info "$image" >"$image_info"' \
-  '--baseline "$baseline"' \
-  '--project "$project"' \
-  '--profile "$profile"' \
-  '--image-fingerprint "$image_fingerprint"' \
-  '--vm-a "$vm_a"' \
-  '--vm-b "$vm_b"' \
-  '--run-id "$run_id"' \
-  '--allowed-url "$spoof_probe_url"' \
-  '--evidence-directory "$probe_evidence"'; do
-  grep -Fq -- "$expected" <<<"$runtime_probe_function"
-done
 
 direct_forbidden_function="$(
   sed -n '/^expect_forbidden_direct_block()/,/^}/p' "$harness"
@@ -143,25 +117,6 @@ esac
 FAKE_INCUS
 chmod 0755 "${fake_bin}/incus"
 
-fake_runtime_probe="${test_root}/incus-gh-runner-acceptance"
-cat >"$fake_runtime_probe" <<'FAKE_RUNTIME_PROBE'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-
-: >"${FAKE_RUNTIME_PROBE_CALLED:?}"
-exit 97
-FAKE_RUNTIME_PROBE
-chmod 0755 "$fake_runtime_probe"
-
-baseline="${test_root}/baseline.json"
-printf '{}\n' >"$baseline"
-runtime_probe_symlink="${test_root}/runtime-probe-symlink"
-baseline_symlink="${test_root}/baseline-symlink.json"
-invalid_baseline="${test_root}/invalid-baseline.json"
-ln -s "$fake_runtime_probe" "$runtime_probe_symlink"
-ln -s "$baseline" "$baseline_symlink"
-printf 'not-json\n' >"$invalid_baseline"
-
 common_args=(
   --project secure-test
   --profile runner
@@ -186,34 +141,12 @@ assert_no_mutation "$preflight_log"
 jq --exit-status \
   '.mode == "preflight" and
    .outcome == "passed" and
-   .runtime_probe == null and
    .allowed_urls == ["https://github.com/", "https://api.github.com"] and
    (has("allowed_url") | not) and
    (.limitations | length == 2) and
    (.results | any(.name == "mutation-gate" and .outcome == "passed"))' \
   "${preflight_evidence}/manifest.json" >/dev/null
 (cd "$preflight_evidence" && sha256sum --check checksums.sha256 >/dev/null)
-
-paired_preflight_log="${test_root}/paired-preflight-incus.log"
-paired_preflight_evidence="${test_root}/paired-preflight-evidence"
-probe_called="${test_root}/runtime-probe-called"
-FAKE_INCUS_LOG="$paired_preflight_log" \
-FAKE_RUNTIME_PROBE_CALLED="$probe_called" \
-PATH="${fake_bin}:$PATH" \
-  "$harness" "${common_args[@]}" \
-    --runtime-probe "$fake_runtime_probe" \
-    --baseline "$baseline" \
-    --evidence-directory "$paired_preflight_evidence"
-assert_no_mutation "$paired_preflight_log"
-[[ ! -e "$probe_called" ]]
-jq --exit-status \
-  '.mode == "preflight" and
-   .outcome == "passed" and
-   .runtime_probe == null and
-   (.limitations | length == 2) and
-   (.results | any(.name == "mutation-gate" and .outcome == "passed"))' \
-  "${paired_preflight_evidence}/manifest.json" >/dev/null
-(cd "$paired_preflight_evidence" && sha256sum --check checksums.sha256 >/dev/null)
 
 missing_opt_in_log="${test_root}/missing-opt-in-incus.log"
 missing_opt_in_evidence="${test_root}/missing-opt-in-evidence"
@@ -367,24 +300,5 @@ assert_input_rejected image-remote-prefix \
   'image must be a safe local alias or fingerprint' \
   --project secure-test --profile runner --image images:ubuntu/24.04 \
   --allowed-url https://github.com/ --forbidden-url http://169.254.169.254/
-
-assert_input_rejected runtime-probe-without-baseline \
-  'runtime probe and baseline must be provided together' \
-  "${common_args[@]}" --runtime-probe "$fake_runtime_probe"
-assert_input_rejected baseline-without-runtime-probe \
-  'runtime probe and baseline must be provided together' \
-  "${common_args[@]}" --baseline "$baseline"
-assert_input_rejected runtime-probe-symlink \
-  'runtime probe must be a non-symlink regular executable' \
-  "${common_args[@]}" \
-  --runtime-probe "$runtime_probe_symlink" --baseline "$baseline"
-assert_input_rejected baseline-symlink \
-  'baseline must be a non-symlink readable regular file' \
-  "${common_args[@]}" \
-  --runtime-probe "$fake_runtime_probe" --baseline "$baseline_symlink"
-assert_input_rejected invalid-baseline \
-  'baseline must contain one JSON object' \
-  "${common_args[@]}" \
-  --runtime-probe "$fake_runtime_probe" --baseline "$invalid_baseline"
 
 printf 'hostile Incus isolation harness contract tests passed\n'

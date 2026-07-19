@@ -7,8 +7,7 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 - Incus 7.0 or newer, initialized with QEMU VM support, on a host reachable at the target Incus socket. Incus 6 is not supported.
 - The host `br_netfilter` kernel module loaded at boot. Incus requires it when
   starting bridged NICs with `security.ipv4_filtering` or
-  `security.ipv6_filtering`; the hostile runtime gate refuses to launch VMs
-  when it is absent.
+  `security.ipv6_filtering`; filtered bridged NICs cannot start without it.
 - The `incus-admin` group exists on the host (`getent group incus-admin`). Membership in this group grants root-equivalent access to the Incus socket.
 
     !!! warning "Root-equivalent socket access"
@@ -29,8 +28,8 @@ test -d /sys/module/br_netfilter
 ```
 
 Treat a failed check as a host-preparation error. The API drift validator
-cannot prove kernel-module state, so this remains an explicit host prerequisite
-and a live-gate precondition.
+cannot prove kernel-module state, so verify the module after provisioning and
+after every host reboot.
 
 Start from the fail-closed desired-state example instead of creating an
 unrestricted project and attaching the project's `default` profile:
@@ -49,12 +48,13 @@ registry-published, so the rendered files remain local deployment artifacts for
 this increment.
 
 Edit the copy for the target host. In particular, replace every documentation
-address, bridge subnet, resource name, ZFS source, and capacity limit. The
-example proxy and DNS addresses are non-routable and intentionally provide no
-useful egress until replaced. Configure a controlled proxy to allow only
-GitHub or GHES and the dependency destinations approved for this builder. Do
-not replace the proxy boundary with unrestricted TCP/443 and call it a GitHub
-allowlist.
+address, bridge subnet, resource name, ZFS source, and capacity limit. Managed
+bridge names must be 2 to 15 characters, start with a lowercase letter, and
+otherwise contain only lowercase letters, digits, or hyphens. The example proxy
+and DNS addresses are non-routable and intentionally provide no useful egress
+until replaced. Configure a controlled proxy to allow only GitHub or GHES and
+the dependency destinations approved for this builder. Do not replace the proxy
+boundary with unrestricted TCP/443 and call it a GitHub allowlist.
 
 `baseline.example.json` is reviewable desired state, not an input Incus can
 apply directly. Materialize the exact project, network, ACL, profile, and
@@ -136,98 +136,10 @@ no retained workloads. The script also requires the exact
 `INCUS_GH_RUNNER_LIVE_MUTATION` opt-in it prints. Never mark the production
 project disposable.
 
-For the combined runtime gate, render and apply a disposable-host copy of the
-CUE baseline with `inputs.runners.maximum: 2`. Use the same rendered JSON for
-drift validation and the gate. This exact two-runner budget is intentional: the
-harness fills it with two live VMs and requires Incus to reject a third VM for
-an identifiable project-limit reason.
-
-Build the source-only acceptance helper for the disposable host. The following
-example targets the x86_64 Linux host used by the acceptance procedure; use the
-matching `GOARCH` for a different disposable host:
-
-```sh
-test -z "$(git status --porcelain --untracked-files=all)" || {
-  echo "refusing to build acceptance evidence from modified source" >&2
-  exit 1
-}
-revision="$(git rev-parse --verify HEAD)"
-provenance_package=github.com/meigma/incus-gh-runner/internal/liveacceptance
-provenance_flags="-X ${provenance_package}.acceptanceSourceRevision=${revision}"
-provenance_flags="${provenance_flags} -X ${provenance_package}.acceptanceSourceModified=false"
-mkdir -p build
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=readonly -trimpath -buildvcs=false \
-  -ldflags "$provenance_flags" \
-  -o build/incus-gh-runner-acceptance \
-  ./cmd/incus-gh-runner-acceptance
-```
-
-The explicit source fields are intentional. Go can discover the wrong VCS root
-in nested worktree layouts, so the helper rejects missing, malformed, or dirty
-build provenance instead of trusting automatic VCS stamping. The parent
-harness also binds the result to the helper's SHA-256 digest and requires the
-injected revision to be clean.
-
-This helper is not included in controller releases, native packages, or the
-controller image. It is invoked by the hostile-runner harness, copies itself
-temporarily into one test VM through the Incus agent, and is removed during
-cleanup. Do not install it as a second production service or binary; the
-shipped `incus-gh-runner` binary remains the controller and read-only
-`validate` command.
-
-Run the combined gate as root so it can inspect the exact QEMU processes and
-their file descriptors. Use a new evidence directory and pass the exact
-rendered baseline and helper paths:
-
-```sh
-sudo env \
-  INCUS_GH_RUNNER_LIVE_MUTATION=I_UNDERSTAND_THIS_PROJECT_IS_DISPOSABLE \
-  scripts/live/live-incus-hostile-isolation.sh \
-    --execute \
-    --project github-runners-acceptance \
-    --profile github-runner \
-    --image incus-gh-runner-v0.1.0 \
-    --allowed-url https://github.com/ \
-    --forbidden-url http://169.254.169.254/ \
-    --forbidden-url "$INCUS_HOST_CANARY_ORIGIN" \
-    --egress-proxy "$RUNNER_PROXY_ORIGIN" \
-    --baseline "$PWD/incus-acceptance-baseline.json" \
-    --runtime-probe "$PWD/build/incus-gh-runner-acceptance" \
-    --evidence-directory "$PWD/incus-isolation-acceptance"
-```
-
-The helper writes its evidence beneath `runtime-probe/`. The parent harness
-checks that the result matches its run ID and immutable image fingerprint,
-clean source revision, and exact helper digest, then embeds that result in the
-top-level `manifest.json`. Preserve and verify the complete evidence directory
-rather than copying only the summary.
-
-A passing combined gate records all of the earlier network checks and also:
-
-- confirms `/dev/kvm` is a host character device and that the Incus
-  API-reported runtime PID is the exact named QEMU process with it open;
-- checks the expanded Secure Boot setting and the guest's Secure Boot EFI
-  variable, then round-trips a synthetic canary through agent file push/pull;
-- demonstrates that self-assigned, alternate-source, and link-local IPv6
-  cannot bypass the deployed defense-in-depth controls, then confirms approved
-  IPv4 egress recovers;
-- applies bounded CPU, memory, and synchronous disk pressure in one VM while a
-  watchdog samples the Incus API, the unaffected VM, approved egress, and host
-  memory; and
-- requires stable Incus daemon identity, healthy ZFS state, sufficient host
-  memory, no matching kernel resource-failure reports, and exact baseline state
-  before and after the pressure window.
-
-Keep the gate's claims narrow. The IPv6 result proves no bypass under the
-combined NIC, bridge, ACL, filtering, and port-isolation controls; it does not
-attribute the drop to one control. Secure Boot is reported by both Incus and
-the guest, but the gate does not boot a valid unsigned or otherwise untrusted
-EFI payload as a negative control. The workload proves host and control-plane
-survival under bounded pressure, not aggregate CPU or memory throttling.
-The local Incus Unix-socket identity remains root-equivalent, so this result
-requires a dedicated host and does not prove least-privilege Incus
-authorization. Configured NIC and ZFS disk-I/O throughput ceilings remain
-unbenchmarked and must not be treated as proven enforcement.
+The bounded `--execute` harness proves concurrent-VM L2/L3 isolation,
+allowed and forbidden egress, and MAC and IPv4 spoof rejection on a disposable
+copy of the production configuration. It does not prove IPv6 enforcement,
+Secure Boot trust, aggregate runtime throttling, or NIC and ZFS throughput.
 
 ## 2. Choose the GitHub scope and credential
 

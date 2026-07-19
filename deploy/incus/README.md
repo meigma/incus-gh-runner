@@ -54,8 +54,10 @@ environment-specific value before applying it:
 - replace the `192.0.2.10/32` proxy and `192.0.2.53/32` DNS documentation
   addresses with dedicated endpoint IPv4 `/32` CIDRs;
 - replace the bridge subnet, names, ZFS `source` and `zfs.pool_name`, and
-  capacity limits; the storage source must be a dedicated existing zpool or
-  dataset under Incus control;
+  capacity limits; managed bridge names must be 2 to 15 characters, start with
+  a lowercase letter, and otherwise contain only lowercase letters, digits, or
+  hyphens; the storage source must be a dedicated existing zpool or dataset
+  under Incus control;
 - size aggregate limits below physical host capacity so Incus, the controller,
   and the host retain explicit CPU, memory, and disk headroom; keep the VM
   count at or above `capacity.max_runners`, and size aggregate CPU, memory, and
@@ -87,7 +89,7 @@ test -d /sys/module/br_netfilter
 
 Incus requires bridge netfilter when the profile enables IPv4 or IPv6 address
 filtering. The read-only API validator cannot observe kernel-module state; the
-mutating hostile-runner gate checks it before launching either VM.
+operator must verify the module after provisioning and after every reboot.
 
 The aggregate project CPU and memory values are admission budgets: Incus uses
 the declared per-instance limits when deciding whether another VM fits. They
@@ -167,59 +169,18 @@ profile. A future TLS design must pin the server certificate and prove a
 least-privilege authorization boundary that cannot mutate those remaining
 isolation controls before this validator can report success for it.
 
-## Proof status
+## Assurance boundaries
 
-This validator proves API configuration shape, not runtime enforcement. The
-available Incus 7.0.1 configuration-validation host confirmed the required API
-surface and ZFS response shape and rejected a project-local bridge. It did not
-expose nested KVM.
+`validate` proves API configuration shape, not runtime enforcement. It does
+not re-measure physical capacity or continuously attest host kernel and VM
+behavior. Project CPU and memory totals are admission budgets, not aggregate
+runtime throttles for already-running VMs.
 
-The hostile-runner harness has an optional, source-only Go runtime probe for a
-separate disposable KVM host. It is deliberately not a second shipped binary:
-GoReleaser, native packages, and the controller image continue to contain only
-`incus-gh-runner`. The deployment guide documents how to build the temporary
-helper from `cmd/incus-gh-runner-acceptance` and bind it to the shell harness
-with the exact rendered baseline. That build injects the exact clean source
-revision explicitly, avoiding incorrect automatic VCS discovery in nested
-worktrees; the harness also checks the helper's SHA-256 digest.
-
-The combined gate requires a two-runner baseline. With both exact-profile VMs
-live, it requires a third initialization to fail for an identifiable project
-limit. For each live VM it requires `/dev/kvm` on the host, the Incus
-API-reported runtime PID to be the exact named QEMU process with an open
-`/dev/kvm` file descriptor, KVM reported by the guest, the expanded Secure Boot
-setting, a set Secure Boot guest EFI variable, and a successful synthetic-file
-push/pull through the Incus agent. It also requires the guest-facing Incus API
-device to remain absent.
-
-The network portion attempts self-assigned, alternate-source, and link-local
-IPv6 communication between the two runners and then checks approved IPv4
-egress recovery. A passing result establishes no IPv6 bypass under the
-deployed combination of NIC address denial, filtering, ACLs, bridge settings,
-and port isolation. Because those controls overlap, it does not establish
-which single control caused the denial.
-
-During bounded CPU, memory, and synchronous disk pressure in one VM, the gate
-watches the Incus API, the unaffected VM, approved egress, host
-`MemAvailable`, the Incus daemon identity and restart count, ZFS health, and
-kernel resource-failure reports. The defaults apply pressure for ten minutes
-and sample once per second. A pass allows no API or peer failures, caps API
-latency at one second at the 95th percentile and five seconds for any sample,
-caps the peer-heartbeat gap at five seconds, and keeps `MemAvailable` at or
-above the greater of 2 GiB and ten percent of host memory. It supports a
-host-survival and control-plane-availability claim for that bounded workload;
-it does not turn the project CPU or memory admission budgets into proven
-aggregate runtime throttles.
-
-Two enforcement claims remain outside the combined gate. Secure Boot is
-reported active by Incus and the guest, but rejection of a valid unsigned or
-otherwise untrusted EFI payload is not exercised. The configured NIC
-bandwidth and ZFS disk-I/O throughput ceilings are not benchmarked. In
-particular, the root disk `limits.max` value remains desired configuration and
-must not be treated as demonstrated I/O throttling.
-
-See [How to deploy incus-gh-runner to production](../../docs/docs/how-to/deploy.md)
-for the preflight, build, mutation gate, and evidence invocation.
+Treat Secure Boot as required configuration, not proof that an untrusted EFI
+payload is rejected. Likewise, the NIC bandwidth and ZFS disk-I/O values are
+requested limits until their effective throughput has been benchmarked on the
+production host. Explicit NIC-level IPv6 denial and filtering remain required,
+but operators must validate their runtime behavior on the deployed host.
 
 The Go test suite exercises policy validation and the read-only Incus adapter
 without replacing command-line executables.
