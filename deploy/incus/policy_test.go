@@ -82,6 +82,15 @@ func TestValidateBaselineRejectsWeakening(t *testing.T) {
 			},
 		},
 		{
+			name: "overlong managed bridge name",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				const network = "runtime-acceptance-network"
+				policyObject(t, baseline, "names")["network"] = network
+				policyObject(t, baseline, "project", "config")["restricted.networks.access"] = network
+				policyObject(t, baseline, "profile", "devices", "eth0")["network"] = network
+			},
+		},
+		{
 			name: "permissive network default",
 			mutate: func(t *testing.T, baseline map[string]any) {
 				policyObject(t, baseline, "network", "config")["security.acls.default.egress.action"] = "allow"

@@ -24,6 +24,8 @@ and port isolation. It also cannot enable NIC-level IPv6 assignment: the
 profile fixes `ipv6.address=none` alongside IPv6 filtering. The module
 intentionally does not expose arbitrary direct egress rules; v0 keeps the
 controlled DNS and proxy boundary established by the live Incus proof.
+Managed bridge names are capped at 15 characters because Incus uses the name
+as a Linux network-interface name.
 
 ## Render the example
 

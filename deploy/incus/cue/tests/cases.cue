@@ -63,6 +63,9 @@ _cases: {
 	defaultProject: inputs: _#FixtureInputs & {
 		names: project: "default"
 	}
+	overlongNetwork: inputs: _#FixtureInputs & {
+		names: network: "runtime-acceptance-network"
+	}
 	invalidDNS: inputs: _#FixtureInputs & {
 		network: dnsAddress: "999.0.2.53"
 	}

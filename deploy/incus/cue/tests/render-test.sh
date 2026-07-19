@@ -77,12 +77,18 @@ jq '.project.config["limits.cpu"] = "21"' \
   "${tmp_dir}/rendered.json" >"${tmp_dir}/schema-inconsistent-capacity.json"
 jq '.unexpected = true' \
   "${tmp_dir}/rendered.json" >"${tmp_dir}/schema-unknown-field.json"
+jq '
+  .names.network = "runtime-acceptance-network" |
+  .project.config["restricted.networks.access"] = "runtime-acceptance-network" |
+  .profile.devices.eth0.network = "runtime-acceptance-network"
+' "${tmp_dir}/rendered.json" >"${tmp_dir}/schema-overlong-network.json"
 
 schema_invalid_cases=(
   schema-weakened-policy
   schema-missing-ipv6-denial
   schema-weakened-ipv6-denial
   schema-inconsistent-capacity
+  schema-overlong-network
   schema-unknown-field
 )
 
@@ -105,6 +111,7 @@ grep -Fq 'field not allowed' "${tmp_dir}/schema-unknown-field.stderr" ||
 
 invalid_cases=(
   defaultProject
+  overlongNetwork
   insufficientCPUHeadroom
   insufficientMemoryHeadroom
   insufficientStorageHeadroom
@@ -119,6 +126,7 @@ invalid_cases=(
 expected_failure_text() {
   case "$1" in
     defaultProject) printf '%s' 'dedicated Incus resource name must not be default' ;;
+    overlongNetwork) printf '%s' 'managed bridge name must fit the 15-character Linux interface limit' ;;
     insufficientCPUHeadroom) printf '%s' '_cpuHeadroom: invalid value' ;;
     insufficientMemoryHeadroom) printf '%s' '_memoryHeadroomGiB: invalid value' ;;
     insufficientStorageHeadroom) printf '%s' '_storageHeadroomGiB: invalid value' ;;
