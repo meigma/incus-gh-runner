@@ -77,6 +77,18 @@ unchanged example fails closed by having no useful external connectivity.
 The bridge keeps DHCP but sets `raw.dnsmasq=port=0` so runners cannot bypass the
 declared resolver through the bridge host's DNS forwarding service.
 
+Load `br_netfilter` before starting runner VMs and persist it through reboots:
+
+```console
+sudo modprobe br_netfilter
+printf 'br_netfilter\n' | sudo tee /etc/modules-load.d/incus-gh-runner.conf >/dev/null
+test -d /sys/module/br_netfilter
+```
+
+Incus requires bridge netfilter when the profile enables IPv4 or IPv6 address
+filtering. The read-only API validator cannot observe kernel-module state; the
+mutating hostile-runner gate checks it before launching either VM.
+
 The aggregate project CPU and memory values are admission budgets: Incus uses
 the declared per-instance limits when deciding whether another VM fits. They
 are not runtime aggregate throttles that dynamically divide CPU or memory

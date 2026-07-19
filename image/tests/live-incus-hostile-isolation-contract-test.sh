@@ -27,6 +27,9 @@ grep -Fq '.acceptance_sha256 == $acceptance_sha256' "$harness"
 grep -Fq '.source_revision | test("^[a-f0-9]{40}([a-f0-9]{24})?$")' "$harness"
 grep -Fq '.source_modified == false' "$harness"
 grep -Fq '.stress_duration == "10m0s"' "$harness"
+grep -Fq '[[ -d /sys/module/br_netfilter ]]' "$harness"
+grep -Fq 'host br_netfilter kernel module is not loaded' "$harness"
+grep -Fq "record_result bridge-netfilter passed 'host br_netfilter kernel module is loaded'" "$harness"
 
 runtime_probe_function="$(
   sed -n '/^run_runtime_probe()/,/^}/p' "$harness"

@@ -430,6 +430,12 @@ disposable_value="$(incus project get "$project" "$disposable_key" 2>/dev/null |
 }
 record_result mutation-gate passed 'non-default disposable project and exact operator opt-in verified'
 
+[[ -d /sys/module/br_netfilter ]] || {
+  printf 'refusing live mutation: host br_netfilter kernel module is not loaded\n' >&2
+  exit 1
+}
+record_result bridge-netfilter passed 'host br_netfilter kernel module is loaded'
+
 for instance in "$vm_a" "$vm_b"; do
   if incus_cmd info "$instance" >/dev/null 2>&1; then
     printf 'generated acceptance instance already exists: %s\n' "$instance" >&2

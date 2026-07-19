@@ -5,6 +5,10 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 ## Prerequisites
 
 - Incus 7.0 or newer, initialized with QEMU VM support, on a host reachable at the target Incus socket. Incus 6 is not supported.
+- The host `br_netfilter` kernel module loaded at boot. Incus requires it when
+  starting bridged NICs with `security.ipv4_filtering` or
+  `security.ipv6_filtering`; the hostile runtime gate refuses to launch VMs
+  when it is absent.
 - The `incus-admin` group exists on the host (`getent group incus-admin`). Membership in this group grants root-equivalent access to the Incus socket.
 
     !!! warning "Root-equivalent socket access"
@@ -15,6 +19,18 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 - The `incus-gh-runner` binary for your platform, and a checked-out or downloaded copy of `deploy/systemd/` from the repository.
 
 ## 1. Prepare and validate Incus
+
+Load bridge netfilter now and persist it across host reboots:
+
+```sh
+sudo modprobe br_netfilter
+printf 'br_netfilter\n' | sudo tee /etc/modules-load.d/incus-gh-runner.conf >/dev/null
+test -d /sys/module/br_netfilter
+```
+
+Treat a failed check as a host-preparation error. The API drift validator
+cannot prove kernel-module state, so this remains an explicit host prerequisite
+and a live-gate precondition.
 
 Start from the fail-closed desired-state example instead of creating an
 unrestricted project and attaching the project's `default` profile:
