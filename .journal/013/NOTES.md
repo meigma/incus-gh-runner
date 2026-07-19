@@ -440,3 +440,50 @@ The previous disposable Latitude host was verified destroyed, and this local
 environment has neither a live Incus/KVM target nor a Latitude credential, so
 the paid-host acceptance gate requires a fresh operator-authorized hardware
 window before Slice 3A can be called complete.
+
+## 2026-07-19 15:54 — Slice 3A live agent-outage gate passed
+
+Correction to the preceding checkpoint: the repository journal identifies
+`lsh` as the authenticated Latitude CLI used for previous disposable hosts. It
+was locally available and authenticated even though no standalone Latitude
+credential environment variable was present. The user pointed out that prior
+workflow, and a fresh paid-host window was therefore available without asking
+for new credentials.
+
+Provisioned exact Latitude server `sv_dexA0qAO80lQV` in MEX2 with the same
+hourly `c3-small-x86` shape used by prior proofs. Installed Incus 7.0.1, the
+controller built from exact PR #30 head
+`fa729feb8661de8ad85f008bfaae4954e2a022f0`, and the checksum-verified image
+produced by exact-head workflow run 29706057178. The GitHub token was passed
+only through the systemd manager environment and was never written to disk.
+
+Dispatched two real functional workflow runs, 29706713014 and 29706716011. Both
+were actively running on separate VMs before their creation metadata was
+backdated beyond the bootstrap timeout and both Incus guest agents were made
+unavailable. Across ten samples spanning 46 seconds, both VMs stayed `Running`,
+their QEMU PIDs remained exactly `546449` and `546740`, and every guest-status
+read failed. No stop, restart, or delete affected either VM. Both workflows
+completed successfully on the exact PR head.
+
+After both VMs became terminal, a fresh controller inventory deleted exactly
+the two owned runners and preserved the unowned sentinel. Final owned inventory
+was zero. Removed the systemd credential, all test instances, the image, and
+the `runner-test` project; destroyed exact provider server
+`sv_dexA0qAO80lQV`; and verified its exact-ID lookup returned `404 NotFound`
+and the project server list was empty. The host existed for about 19 minutes,
+approximately `$0.16` at the quoted `$0.52/hour` before provider rounding.
+
+The disposable harness initially checked one asynchronous agent shutdown too
+early. Its orchestration was stopped, and the same two still-running jobs were
+used for the completed proof; no reusable source-only framework enters the
+repository. Full evidence and the transparent harness note are retained under
+`.journal/013/evidence/slice3a-agent-outage-incus-7.0.1/`.
+
+One adjacent behavior belongs in Slice 3B: a controller cold-started while
+inventory is already uncertain exits fail-closed, and the supplied systemd
+policy reaches its default start limit after five retries. This did not stop or
+delete either active job, but restart recovery should not require an operator
+to reset that limit.
+
+PR #30's body now records the live acceptance result and remains draft for
+human review. Slice 3A's local, hosted, and live gates are complete.
