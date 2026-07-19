@@ -144,3 +144,39 @@ GitHub Pages, Kusari Inspector, and the full reference-image build. The image
 job completed in 8m18s. Release-dry-run and Pages-deployment jobs were skipped
 by their normal event conditions, with no failed or pending checks. The PR
 remains a draft because the four Slice 2 acceptance gates above are still open.
+
+## 2026-07-18 23:47 — CUE configuration proof added to Slice 2
+
+Implemented the user-approved proof-sized CUE increment on
+`feat/security-slice-2`. The dependency-free
+`github.com/meigma/incus-gh-runner/config@v0` module exposes a closed operator
+surface for dedicated Incus names, declared host capacity and reserve, runner
+sizing, an IPv4 bridge, controlled DNS/proxy endpoints, and a ZFS source. It
+derives the complete existing fail-closed baseline plus a partial controller
+configuration that pins `incus.project`, the sole profile, and
+`capacity.max_runners` to the same inputs. Security controls remain exact and
+non-overridable; unknown fields, the `default` project, insufficient headroom,
+invalid endpoints, and attempted weakening all fail tests.
+
+CUE v0.16.1 is checksum-locked through mise for Linux/macOS on amd64/arm64.
+The module carries matching Apache-2.0 and MIT license texts and is exercised by
+format, tidy, concrete vet, golden-render, custom-sizing, controller-alignment,
+and negative-case tests in the Incus isolation Moon gate. The JSON validator
+now accepts one explicitly configured non-DNS TCP proxy port while retaining
+exact DNS and three-rule ACL shape checks.
+
+Local `mise exec -- moon ci --summary minimal`, `go test -race ./...`, shell
+syntax, CUE contract, validator, hostile-harness, documentation, and whitespace
+gates passed. Two independent security/correctness reviews found no remaining
+actionable issue in this proof-sized increment. A local
+`cue mod publish --out ... v0.0.1` rehearsal produced a valid OCI layout with
+the module, examples/tests, README, and both license texts; nothing was pushed
+to the CUE registry.
+
+Committed as `1e8cea9e13c5f4c03cc746afbac9f658711744d2`, pushed the existing
+branch, and updated draft PR #28 to describe the CUE increment and deferred
+publication boundary. All exact-head hosted checks are green: CI, CodeQL,
+GitHub Pages, Kusari Inspector, and the reference-image build (8m14s); five
+event-inapplicable jobs skipped normally. The PR remains draft and the existing
+Slice 2 KVM, IPv6 spoofing, resource-exhaustion, and least-authority gates remain
+open. No live Incus host or registry was mutated.
