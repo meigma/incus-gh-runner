@@ -68,7 +68,7 @@ const (
 	EnvGitHubToken = "INCUS_GH_RUNNER_GITHUB_TOKEN" //nolint:gosec // This is an environment variable name, not a credential.
 )
 
-// Config contains immutable phase 1 controller settings.
+// Config contains immutable controller settings.
 type Config struct {
 	// GitHub configures one persistent runner scale set and its credentials.
 	GitHub GitHub `mapstructure:"github"`
@@ -208,7 +208,7 @@ func ConfigureViper(vp *viper.Viper) error {
 	return nil
 }
 
-// Defaults returns the phase 1 controller defaults.
+// Defaults returns the controller defaults.
 func Defaults() Config {
 	return Config{
 		GitHub: GitHub{RunnerGroup: defaultRunnerGroup},

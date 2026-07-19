@@ -1,6 +1,6 @@
 # Builds the incus-gh-runner binary into a signed Wolfi apk; apko.yaml assembles it
 # into the minimal multi-arch runtime image. version/commit/date are stamped into
-# the binary via -ldflags, mirroring GoReleaser and the former Dockerfile.
+# the binary via -ldflags, mirroring GoReleaser.
 #
 # package.version is bumped by release-please (extra-files in release-please-config.json).
 # The build-time version/commit/date are injected via --vars-file (see the release
@@ -10,6 +10,8 @@ package:
   version: "0.0.0" # x-release-please-version
   epoch: 0
   description: Incus-backed GitHub Actions runner controller
+  copyright:
+    - license: Apache-2.0 OR MIT
 
 environment:
   contents:

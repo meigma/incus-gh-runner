@@ -141,7 +141,7 @@ func TestValidateRuntimeRequiresCompleteAdapterConfiguration(t *testing.T) {
 	valid := config.Config{
 		GitHub: config.GitHub{
 			ConfigURL:   "https://github.com/meigma/incus-gh-runner",
-			ScaleSet:    "incus-phase4",
+			ScaleSet:    "incus-runners",
 			RunnerGroup: "default",
 			Token:       "development-token",
 		},
@@ -149,7 +149,7 @@ func TestValidateRuntimeRequiresCompleteAdapterConfiguration(t *testing.T) {
 			Project:          "runner-test",
 			Image:            "incus-gh-runner:test",
 			Profiles:         []string{"default"},
-			Owner:            "phase4-test",
+			Owner:            "runner-test-owner",
 			BootstrapTimeout: time.Minute,
 		},
 		Capacity:          config.Capacity{MinRunners: 0, MaxRunners: 1},

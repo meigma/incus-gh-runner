@@ -42,13 +42,13 @@ func TestRootCommandLoadsFileEnvironmentAndFlagPrecedence(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	require.NoError(t, os.WriteFile(configPath, []byte(`github:
   config_url: https://github.com/meigma/incus-gh-runner
-  scale_set: incus-phase4
+  scale_set: incus-runners
   runner_group: default
 incus:
   project: runner-test
   image: incus-gh-runner:test
   profiles: [default]
-  owner: phase4-test
+  owner: runner-test-owner
   bootstrap_timeout: 3m
   diagnostics_dir: /tmp/incus-gh-runner-diagnostics
 capacity:
@@ -80,7 +80,7 @@ timeouts:
 	assert.Equal(t, time.Minute, received.Timeouts.IncusOperation)
 	assert.Equal(t, 10*time.Second, received.Timeouts.Shutdown)
 	assert.Equal(t, "https://github.com/meigma/incus-gh-runner", received.GitHub.ConfigURL)
-	assert.Equal(t, "incus-phase4", received.GitHub.ScaleSet)
+	assert.Equal(t, "incus-runners", received.GitHub.ScaleSet)
 	assert.Equal(t, "development-token", received.GitHub.Token)
 	assert.Equal(t, "runner-test", received.Incus.Project)
 	assert.Equal(t, []string{"default"}, received.Incus.Profiles)

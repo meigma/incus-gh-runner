@@ -4,11 +4,6 @@
 # mise.lock); moon runs every task against `system` binaries that mise puts on
 # PATH, so no language toolchain is declared here.
 
-# Stable non-JavaScript toolchains in Moon v2.
-# rust:
-#   version: 'REPLACE_ME_RUST_VERSION'
-#   components: ['clippy', 'rustfmt']
-
 # JavaScript ecosystems can be added later if the project needs them.
 # javascript:
 #   packageManager: 'pnpm'

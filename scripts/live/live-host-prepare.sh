@@ -17,7 +17,7 @@ validator="$4"
 lifecycle_test="$5"
 
 if [[ "${EUID}" -ne 0 ]]; then
-  printf 'phase4-host-prepare.sh must run as root\n' >&2
+  printf '%s must run as root\n' "$0" >&2
   exit 1
 fi
 if [[ "$project" == default ]]; then
@@ -48,7 +48,7 @@ incus project create "$project" \
 evidence_directory=/var/log/incus-gh-runner
 install -d -m 0700 "$evidence_directory"
 
-"$validator" "$project" "$archive" 2>&1 | tee "${evidence_directory}/phase2-image.log"
+"$validator" "$project" "$archive" 2>&1 | tee "${evidence_directory}/image-validation.log"
 
 if incus --project "$project" image info "$image_alias" >/dev/null 2>&1; then
   printf 'persistent live-test image alias already exists: %s\n' "$image_alias" >&2
@@ -62,6 +62,6 @@ INCUS_GH_RUNNER_TEST_IMAGE="$image_alias" \
   -test.run '^TestIncusLifecycleFunctional$' \
   -test.count=1 \
   -test.v \
-  2>&1 | tee "${evidence_directory}/phase3-lifecycle.log"
+  2>&1 | tee "${evidence_directory}/incus-lifecycle.log"
 
-printf 'phase 2 and phase 3 live gates passed in Incus project %s\n' "$project"
+printf 'image validation and Incus lifecycle checks passed in Incus project %s\n' "$project"

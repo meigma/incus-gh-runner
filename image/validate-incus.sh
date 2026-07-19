@@ -122,13 +122,13 @@ cat >"${temp_root}/run.sh" <<'RUNNER'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 [[ "$1" == --jitconfig ]]
-[[ "$2" == phase2-probe-* ]]
+[[ "$2" == validate-probe-* ]]
 printf 'probe-running\n' >/opt/actions-runner/probe.marker
 sleep 15
 RUNNER
 chmod 0755 "${temp_root}/run.sh"
 
-probe_secret="phase2-probe-${token}"
+probe_secret="validate-probe-${token}"
 jq --null-input --compact-output \
   --arg jit_config "$probe_secret" \
   '{version: 1, jit_config: $jit_config}' >"${temp_root}/payload.json"

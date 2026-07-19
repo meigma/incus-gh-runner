@@ -32,12 +32,12 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	mailbox := controller.NewMailbox()
-	probeSecret := "phase3-probe-" + uuid.NewString()
+	probeSecret := "functional-probe-" + uuid.NewString()
 	diagnosticsObserved := make(chan Diagnostics, 1)
 	backend, err := NewBackend(server, Options{
 		Image:            image,
 		Profiles:         splitProfiles(os.Getenv("INCUS_GH_RUNNER_TEST_PROFILES")),
-		Owner:            "phase3-functional-" + uuid.NewString(),
+		Owner:            "functional-test-" + uuid.NewString(),
 		BootstrapTimeout: 5 * time.Minute,
 		Logger:           logger,
 		Payloads: PayloadSourceFunc(func(context.Context, string) (Payload, error) {

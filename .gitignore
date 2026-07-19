@@ -2,7 +2,7 @@
 .moon/cache/
 .moon/docker/
 
-# Agent/runtime state
+# Local tooling and editor state
 .agents/
 .claude/
 .journal/

@@ -1,5 +1,5 @@
-name: Runner Functional Proof
-run-name: Phase 5 runner proof (${{ inputs.proof_id }})
+name: Runner Functional Check
+run-name: Runner functional check (${{ inputs.correlation_id }})
 
 on:
   workflow_dispatch:
@@ -8,8 +8,8 @@ on:
         description: Exact label of the disposable runner scale set
         required: true
         type: string
-      proof_id:
-        description: Correlation ID for the live proof
+      correlation_id:
+        description: Correlation ID for this run
         required: false
         default: manual
         type: string
@@ -22,7 +22,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: runner-functional-${{ inputs.runner_label }}-${{ inputs.proof_id }}
+  group: runner-functional-${{ inputs.runner_label }}-${{ inputs.correlation_id }}
   cancel-in-progress: false
 
 jobs:
@@ -32,27 +32,27 @@ jobs:
     timeout-minutes: 10
     permissions: {}
     steps:
-      - name: Prove the disposable Linux runner
+      - name: Verify the disposable Linux runner
         shell: bash
         env:
           HOLD_SECONDS: ${{ inputs.hold_seconds }}
-          PROOF_ID: ${{ inputs.proof_id }}
+          CORRELATION_ID: ${{ inputs.correlation_id }}
         run: |
           set -euo pipefail
 
           test "$(uname -s)" = Linux
           test "$(id -u)" -ne 0
 
-          proof_dir="$(mktemp -d)"
-          trap 'rm -rf -- "$proof_dir"' EXIT
+          evidence_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$evidence_dir"' EXIT
           printf 'run_id=%s\nrun_attempt=%s\nrunner_name=%s\n' \
             "$GITHUB_RUN_ID" \
             "$GITHUB_RUN_ATTEMPT" \
             "$RUNNER_NAME" \
-            >"$proof_dir/evidence.txt"
-          printf 'proof_id=%s\n' "$PROOF_ID" >>"$proof_dir/evidence.txt"
+            >"$evidence_dir/evidence.txt"
+          printf 'correlation_id=%s\n' "$CORRELATION_ID" >>"$evidence_dir/evidence.txt"
           [[ "$HOLD_SECONDS" =~ ^[0-9]+$ ]]
           if (( HOLD_SECONDS > 0 )); then
             sleep "$HOLD_SECONDS"
           fi
-          sha256sum "$proof_dir/evidence.txt"
+          sha256sum "$evidence_dir/evidence.txt"

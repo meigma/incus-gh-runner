@@ -1,6 +1,6 @@
 # mise: tool + environment management for incus-gh-runner.
 #
-# mise REPLACES Proto (the former .prototools + .moon/proto/*). The committed
+# mise manages tool and environment versions. The committed
 # mise.lock records per-platform download URLs + checksums; for aqua-backed tools
 # it additionally carries cosign / SLSA / GitHub-attestation verification.
 # `settings.locked` makes `mise install` FAIL CLOSED when a tool lacks a
@@ -53,11 +53,11 @@ python = "3.14.3"
 # a version-only backend (asdf/npm/cargo/pipx), which records no checksum.
 "aqua:golangci/golangci-lint" = "2.12.2"
 
-# Docs (MkDocs) toolchain — moved off moon's former unstable_python/unstable_uv.
+# Docs (MkDocs) toolchain via uv.
 "aqua:astral-sh/uv" = "0.11.0"
 
-# Build / CI / release / supply-chain CLIs. moon itself is now mise-managed (CI
-# installs it via mise instead of moonrepo/setup-toolchain). melange/apko/cosign
+# Build / CI / release / supply-chain CLIs. moon is installed via mise (CI
+# included). melange/apko/cosign
 # are consumed by the container build + image signing in the release workflow.
 "aqua:moonrepo/moon"          = "2.3.5"
 "aqua:chainguard-dev/melange" = "0.54.0"

@@ -731,7 +731,7 @@ def normalize_pages_state(current: dict[str, Any], keys: Any) -> dict[str, Any]:
 def extract_unsupported_settings(config: dict[str, Any]) -> list[UnsupportedSetting]:
     items: list[UnsupportedSetting] = []
     for key, desired in config.get("unsupported", {}).items():
-        reason = UNSUPPORTED_REASONS.get(key, "This setting is not applied by the v1 repository configurator.")
+        reason = UNSUPPORTED_REASONS.get(key, "This setting is not applied by the repository configurator.")
         items.append(UnsupportedSetting(key=key, desired=desired, reason=reason))
     return items
 
