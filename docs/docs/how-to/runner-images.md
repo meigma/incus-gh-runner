@@ -85,6 +85,19 @@ sha256sum --check incus-gh-runner-ubuntu-24.04-x86_64.tar.xz.sha256
 
 Import the resulting archive the same way as a released image (see above), or validate it first.
 
+### Root disk growth
+
+The reference archive starts with an 8 GiB virtual disk. On first boot,
+`cloud-initramfs-growroot` expands its root partition to the Incus root-device
+size, and the `x-systemd.growfs` mount option expands the ext4 filesystem. This
+makes the CUE module's `inputs.runners.rootDiskGiB` setting effective inside
+the guest instead of exposing only a larger virtual block device.
+
+Custom images must provide an equivalent, fail-closed partition and filesystem
+growth path when their baked disk is smaller than the configured Incus root
+device. Boot a disposable VM with the intended root-device size and verify the
+resulting filesystem before deploying a custom image.
+
 ## Validate any image
 
 Run the guest-contract probe against any unified image archive — a released image, a locally built one, or a custom image — before putting it into production.
@@ -96,6 +109,10 @@ image/validate-incus.sh <incus-project> <path-to-archive>
 Requires Incus 7.0 or newer and an existing, disposable, non-`default` Incus project. The script creates and deletes an image and an instance within that project; it refuses to run against `default`.
 
 The script imports the archive under a generated alias, launches one VM, and drives it through the full guest contract: payload delivery, status-file transitions, serial console lifecycle lines, absence of secrets on the console, and clean poweroff. It then deletes exactly the instance, alias, and image it created — nothing else in the project is touched.
+
+This validates the guest protocol and lifecycle only. It does not validate
+larger-root growth, Secure Boot enforcement, host or network isolation, or
+resource ceilings.
 
 !!! warning "Console diagnostics can carry sensitive output"
     The reference image's guest script never writes job secrets to the serial console, and `image/validate-incus.sh` checks for a known probe secret to confirm this. A custom guest image is responsible for the same guarantee — the probe checks for its own injected secret and does not catch every possible leak from a non-conforming image.

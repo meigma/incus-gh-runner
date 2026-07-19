@@ -82,6 +82,24 @@ func TestValidateBaselineRejectsWeakening(t *testing.T) {
 			},
 		},
 		{
+			name: "overlong managed bridge name",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				const network = "runner-network-x"
+				policyObject(t, baseline, "names")["network"] = network
+				policyObject(t, baseline, "project", "config")["restricted.networks.access"] = network
+				policyObject(t, baseline, "profile", "devices", "eth0")["network"] = network
+			},
+		},
+		{
+			name: "short managed bridge name",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				const network = "a"
+				policyObject(t, baseline, "names")["network"] = network
+				policyObject(t, baseline, "project", "config")["restricted.networks.access"] = network
+				policyObject(t, baseline, "profile", "devices", "eth0")["network"] = network
+			},
+		},
+		{
 			name: "permissive network default",
 			mutate: func(t *testing.T, baseline map[string]any) {
 				policyObject(t, baseline, "network", "config")["security.acls.default.egress.action"] = "allow"
@@ -91,6 +109,18 @@ func TestValidateBaselineRejectsWeakening(t *testing.T) {
 			name: "unlogged NIC default",
 			mutate: func(t *testing.T, baseline map[string]any) {
 				policyObject(t, baseline, "profile", "devices", "eth0")["security.acls.default.egress.logged"] = "false"
+			},
+		},
+		{
+			name: "missing explicit IPv6 denial",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				delete(policyObject(t, baseline, "profile", "devices", "eth0"), "ipv6.address")
+			},
+		},
+		{
+			name: "weakened explicit IPv6 denial",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyObject(t, baseline, "profile", "devices", "eth0")["ipv6.address"] = "auto"
 			},
 		},
 		{

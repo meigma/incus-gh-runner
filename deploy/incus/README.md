@@ -14,7 +14,8 @@ The example establishes:
   one dedicated ZFS pool;
 - per-VM CPU, memory, root-disk, network-bandwidth, and requested disk-I/O
   limits;
-- MAC, IPv4, and IPv6 anti-spoofing plus bridge-port isolation;
+- MAC and IPv4 anti-spoofing, explicit NIC-level IPv6 address denial, IPv6
+  filtering, and bridge-port isolation;
 - a network ACL attached to both the host-owned bridge and the profile NIC,
   with rejected and logged unmatched ingress and egress; and
 - egress only to an explicit DNS resolver and HTTP CONNECT proxy.
@@ -53,8 +54,10 @@ environment-specific value before applying it:
 - replace the `192.0.2.10/32` proxy and `192.0.2.53/32` DNS documentation
   addresses with dedicated endpoint IPv4 `/32` CIDRs;
 - replace the bridge subnet, names, ZFS `source` and `zfs.pool_name`, and
-  capacity limits; the storage source must be a dedicated existing zpool or
-  dataset under Incus control;
+  capacity limits; managed bridge names must be 2 to 15 characters, start with
+  a lowercase letter, and otherwise contain only lowercase letters, digits, or
+  hyphens; the storage source must be a dedicated existing zpool or dataset
+  under Incus control;
 - size aggregate limits below physical host capacity so Incus, the controller,
   and the host retain explicit CPU, memory, and disk headroom; keep the VM
   count at or above `capacity.max_runners`, and size aggregate CPU, memory, and
@@ -75,6 +78,24 @@ The example documentation addresses are deliberately non-routable, so an
 unchanged example fails closed by having no useful external connectivity.
 The bridge keeps DHCP but sets `raw.dnsmasq=port=0` so runners cannot bypass the
 declared resolver through the bridge host's DNS forwarding service.
+
+Load `br_netfilter` before starting runner VMs and persist it through reboots:
+
+```console
+sudo modprobe br_netfilter
+printf 'br_netfilter\n' | sudo tee /etc/modules-load.d/incus-gh-runner.conf >/dev/null
+test -d /sys/module/br_netfilter
+```
+
+Incus requires bridge netfilter when the profile enables IPv4 or IPv6 address
+filtering. The read-only API validator cannot observe kernel-module state; the
+operator must verify the module after provisioning and after every reboot.
+
+The aggregate project CPU and memory values are admission budgets: Incus uses
+the declared per-instance limits when deciding whether another VM fits. They
+are not runtime aggregate throttles that dynamically divide CPU or memory
+among already-running VMs. Keep explicit physical host headroom even when the
+project's derived totals are correct.
 
 Use only the named `github-runner` profile in the controller configuration.
 Do not add a second controller profile: an additional profile can add devices
@@ -148,17 +169,18 @@ profile. A future TLS design must pin the server certificate and prove a
 least-privilege authorization boundary that cannot mutate those remaining
 isolation controls before this validator can report success for it.
 
-## Proof status
+## Assurance boundaries
 
-This validator proves API configuration shape, not runtime enforcement. The
-available Incus 7.0.1 validation host confirmed the required API surface and
-the ZFS response shape, and rejected a project-local bridge. It did not expose
-nested KVM. End-to-end VM proofs for the combined host-network and direct-NIC
-ACL attachments, egress, intra-runner isolation, anti-spoofing, Secure Boot,
-bandwidth, and guest-agent behavior therefore remain acceptance work on a
-KVM-capable host. The root disk `limits.max` value is desired configuration
-only; effective disk-I/O throttling, especially with ZFS, has not been
-demonstrated and must not be treated as a proven security control.
+`validate` proves API configuration shape, not runtime enforcement. It does
+not re-measure physical capacity or continuously attest host kernel and VM
+behavior. Project CPU and memory totals are admission budgets, not aggregate
+runtime throttles for already-running VMs.
+
+Treat Secure Boot as required configuration, not proof that an untrusted EFI
+payload is rejected. Likewise, the NIC bandwidth and ZFS disk-I/O values are
+requested limits until their effective throughput has been benchmarked on the
+production host. Explicit NIC-level IPv6 denial and filtering remain required,
+but operators must validate their runtime behavior on the deployed host.
 
 The Go test suite exercises policy validation and the read-only Incus adapter
 without replacing command-line executables.

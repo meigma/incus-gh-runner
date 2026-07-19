@@ -5,6 +5,9 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 ## Prerequisites
 
 - Incus 7.0 or newer, initialized with QEMU VM support, on a host reachable at the target Incus socket. Incus 6 is not supported.
+- The host `br_netfilter` kernel module loaded at boot. Incus requires it when
+  starting bridged NICs with `security.ipv4_filtering` or
+  `security.ipv6_filtering`; filtered bridged NICs cannot start without it.
 - The `incus-admin` group exists on the host (`getent group incus-admin`). Membership in this group grants root-equivalent access to the Incus socket.
 
     !!! warning "Root-equivalent socket access"
@@ -15,6 +18,18 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 - The `incus-gh-runner` binary for your platform, and a checked-out or downloaded copy of `deploy/systemd/` from the repository.
 
 ## 1. Prepare and validate Incus
+
+Load bridge netfilter now and persist it across host reboots:
+
+```sh
+sudo modprobe br_netfilter
+printf 'br_netfilter\n' | sudo tee /etc/modules-load.d/incus-gh-runner.conf >/dev/null
+test -d /sys/module/br_netfilter
+```
+
+Treat a failed check as a host-preparation error. The API drift validator
+cannot prove kernel-module state, so verify the module after provisioning and
+after every host reboot.
 
 Start from the fail-closed desired-state example instead of creating an
 unrestricted project and attaching the project's `default` profile:
@@ -33,12 +48,13 @@ registry-published, so the rendered files remain local deployment artifacts for
 this increment.
 
 Edit the copy for the target host. In particular, replace every documentation
-address, bridge subnet, resource name, ZFS source, and capacity limit. The
-example proxy and DNS addresses are non-routable and intentionally provide no
-useful egress until replaced. Configure a controlled proxy to allow only
-GitHub or GHES and the dependency destinations approved for this builder. Do
-not replace the proxy boundary with unrestricted TCP/443 and call it a GitHub
-allowlist.
+address, bridge subnet, resource name, ZFS source, and capacity limit. Managed
+bridge names must be 2 to 15 characters, start with a lowercase letter, and
+otherwise contain only lowercase letters, digits, or hyphens. The example proxy
+and DNS addresses are non-routable and intentionally provide no useful egress
+until replaced. Configure a controlled proxy to allow only GitHub or GHES and
+the dependency destinations approved for this builder. Do not replace the proxy
+boundary with unrestricted TCP/443 and call it a GitHub allowlist.
 
 `baseline.example.json` is reviewable desired state, not an input Incus can
 apply directly. Materialize the exact project, network, ACL, profile, and
@@ -56,7 +72,9 @@ Set the project VM limit at or above the controller's
 profile-limited VMs while reserving explicit headroom for Incus, the
 controller, and the host. A project limit below `capacity.max_runners` makes
 requested capacity impossible; limits at physical capacity do not protect the
-host control plane from exhaustion.
+host control plane from exhaustion. Incus project CPU and memory ceilings are
+admission budgets calculated from the declared per-VM limits; they are not
+aggregate runtime throttles shared dynamically by running VMs.
 
 Validate the effective API state before importing an image or starting the
 controller:
@@ -116,9 +134,12 @@ a failed request does not prove the ACL blocked it. Exercise the mutating
 production baseline, sets `user.incus-gh-runner.disposable=true`, and contains
 no retained workloads. The script also requires the exact
 `INCUS_GH_RUNNER_LIVE_MUTATION` opt-in it prints. Never mark the production
-project disposable. The bounded harness proves concurrent-VM, allowed and
-forbidden egress, L2/L3 isolation, MAC spoof, and IPv4 spoof behavior; IPv6
-spoofing and resource-ceiling exhaustion remain separate acceptance tests.
+project disposable.
+
+The bounded `--execute` harness proves concurrent-VM L2/L3 isolation,
+allowed and forbidden egress, and MAC and IPv4 spoof rejection on a disposable
+copy of the production configuration. It does not prove IPv6 enforcement,
+Secure Boot trust, aggregate runtime throttling, or NIC and ZFS throughput.
 
 ## 2. Choose the GitHub scope and credential
 

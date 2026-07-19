@@ -12,6 +12,8 @@ _#Name: (string & =~"^[a-z][a-z0-9-]{0,62}$") |
 			error("name must be a lowercase Incus identifier of at most 63 characters")
 _#DedicatedName: (_#Name & !="default") |
 		error("dedicated Incus resource name must not be default")
+_#BridgeName: (_#DedicatedName & =~"^[a-z][a-z0-9-]{1,14}$") |
+		error("managed bridge name must be 2 to 15 characters to fit the Linux interface limit")
 _#PositiveInt: (int & >=1) | error("value must be a positive integer")
 _#ProxyPort:   (int & >=1 & <=65535 & !=53) |
 			error("proxy port must be between 1 and 65535 and must not be the DNS port")
@@ -27,8 +29,8 @@ _#StorageSource: (string & =~"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,254}$") |
 	names: {
 		// project names the restricted project that owns runner VMs and profiles.
 		project: _#DedicatedName & (*"github-runners" | string)
-		// network names the host-owned managed bridge available to the project.
-		network: _#DedicatedName & (*"runner-network" | string)
+		// network names the host-owned managed bridge and fits the Linux interface-name limit.
+		network: _#BridgeName & (*"runner-network" | string)
 		// networkACL names the host-owned default-deny network ACL.
 		networkACL: _#DedicatedName & (*"runner-egress" | string)
 		// profile names the sole profile applied to each runner VM.
@@ -147,8 +149,8 @@ _#Baseline: {
 	names: {
 		// project names the restricted project that owns runner VMs and profiles.
 		project: _#DedicatedName
-		// network names the host-owned managed bridge available to the project.
-		network: _#DedicatedName
+		// network names the host-owned managed bridge and fits the Linux interface-name limit.
+		network: _#BridgeName
 		// network_acl names the host-owned default-deny network ACL.
 		network_acl: _#DedicatedName
 		// profile names the sole profile applied to each runner VM.
@@ -401,6 +403,8 @@ _#Baseline: {
 				network: names.network
 				// `limits.max` applies the configured per-runner network ceiling.
 				"limits.max": _#PositiveMbitString
+				// `ipv6.address` rejects all guest IPv6 traffic when IPv6 filtering is enabled.
+				"ipv6.address"!: "none"
 				// `security.acls` attaches the default-deny runner ACL to the interface.
 				"security.acls": names.network_acl
 				// `security.acls.default.egress.action` rejects unmatched NIC egress.
@@ -520,7 +524,10 @@ _#Baseline: {
 				"limits.memory": "\(inputs.runners.memoryGiB)GiB"
 			}
 			devices: {
-				eth0: "limits.max": "\(inputs.runners.networkMbit)Mbit"
+				eth0: {
+					"limits.max":   "\(inputs.runners.networkMbit)Mbit"
+					"ipv6.address": "none"
+				}
 				root: {
 					size:         "\(inputs.runners.rootDiskGiB)GiB"
 					"limits.max": "\(inputs.runners.diskIOMiB)MiB"

@@ -7,7 +7,7 @@ harness="${repo_root}/scripts/live/live-incus-hostile-isolation.sh"
 bash -n "$harness"
 grep -Fq "readonly disposable_key='user.incus-gh-runner.disposable'" "$harness"
 grep -Fq "readonly mutation_opt_in='I_UNDERSTAND_THIS_PROJECT_IS_DISPOSABLE'" "$harness"
-grep -Fq "incus_cmd launch \"\$image\" \"\$instance\"" "$harness"
+grep -Fq 'the host br_netfilter kernel module loaded' "$harness"
 grep -Fq "user.incus-gh-runner.acceptance-id=\"\$run_id\"" "$harness"
 grep -Fq 'refusing to delete %s: acceptance markers changed' "$harness"
 grep -Fq 'cross-runner-a-to-b' "$harness"
@@ -18,6 +18,22 @@ grep -Fq "for index in \"\${!allowed_urls[@]}\"" "$harness"
 grep -Fq "for instance_suffix in \"a:\$vm_a\" \"b:\$vm_b\"" "$harness"
 grep -Fq "guest_egress \"\$instance\" \"\${allowed_urls[\$index]}\"" "$harness"
 grep -Fq "\"\$spoof_probe_url\" \"\$egress_proxy\"" "$harness"
+grep -Fq '[[ -d /sys/module/br_netfilter ]]' "$harness"
+grep -Fq 'host br_netfilter kernel module is not loaded' "$harness"
+grep -Fq "record_result bridge-netfilter passed 'host br_netfilter kernel module is loaded'" "$harness"
+
+listener_function="$(
+  sed -n '/^start_probe_listener()/,/^}/p' "$harness"
+)"
+grep -Fq -- '--inetd' <<<"$listener_function"
+grep -Fq -- '-- /bin/sh /run/incus-gh-runner-isolation-response' \
+  <<<"$listener_function"
+
+launch_vm_function="$(
+  sed -n '/^launch_vm()/,/^}/p' "$harness"
+)"
+grep -Fq 'incus_cmd launch "$image" "$instance" </dev/null' \
+  <<<"$launch_vm_function"
 
 direct_forbidden_function="$(
   sed -n '/^expect_forbidden_direct_block()/,/^}/p' "$harness"

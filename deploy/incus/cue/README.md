@@ -20,9 +20,13 @@ Security-sensitive Incus values are exact constraints, not CUE defaults. An
 operator cannot use the module to enable the Incus HTTPS listener, use the
 `default` project, relax project restrictions, disable Secure Boot, add raw
 Incus configuration, change default-deny ACL actions, or remove NIC filtering
-and port isolation. The module intentionally does not expose arbitrary direct
-egress rules; v0 keeps the controlled DNS and proxy boundary established by the
-live Incus proof.
+and port isolation. It also cannot enable NIC-level IPv6 assignment: the
+profile fixes `ipv6.address=none` alongside IPv6 filtering. The module
+intentionally does not expose arbitrary direct egress rules; v0 keeps the
+controlled DNS and proxy boundary fixed by the hardened deployment contract.
+Managed bridge names must contain 2 to 15 characters, start with a lowercase
+letter, and otherwise contain only lowercase letters, digits, or hyphens. Incus
+uses the name as a Linux network-interface name.
 
 ## Render the example
 
@@ -46,7 +50,9 @@ baseline contains the resulting Incus ceilings, not those physical-host
 measurements. `incus-gh-runner validate` embeds this CUE policy and checks both
 the rendered baseline and live Incus state in process, but it cannot re-prove
 physical-host headroom at runtime. Re-render after host capacity or reservation
-changes.
+changes. The derived project CPU and memory ceilings are admission budgets
+based on the declared per-runner limits; they are not aggregate runtime
+throttles for already-running VMs.
 
 ## Validate the module
 

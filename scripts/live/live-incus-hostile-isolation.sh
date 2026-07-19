@@ -14,6 +14,7 @@ usage: $0 --project <project> --profile <profile> --image <local-image> \\
 Without --execute, the harness only validates inputs and exports effective Incus
 configuration. Live mutation additionally requires:
 
+  * the host br_netfilter kernel module loaded;
   * a non-default project with ${disposable_key}=true; and
   * INCUS_GH_RUNNER_LIVE_MUTATION=${mutation_opt_in}
 
@@ -389,6 +390,12 @@ disposable_value="$(incus project get "$project" "$disposable_key" 2>/dev/null |
 }
 record_result mutation-gate passed 'non-default disposable project and exact operator opt-in verified'
 
+[[ -d /sys/module/br_netfilter ]] || {
+  printf 'refusing live mutation: host br_netfilter kernel module is not loaded\n' >&2
+  exit 1
+}
+record_result bridge-netfilter passed 'host br_netfilter kernel module is loaded'
+
 for instance in "$vm_a" "$vm_b"; do
   if incus_cmd info "$instance" >/dev/null 2>&1; then
     printf 'generated acceptance instance already exists: %s\n' "$instance" >&2
@@ -399,7 +406,7 @@ done
 launch_vm() {
   local instance="$1"
 
-  incus_cmd launch "$image" "$instance" \
+  incus_cmd launch "$image" "$instance" </dev/null \
     --vm \
     --profile "$profile" \
     --config user.incus-gh-runner.acceptance-id="$run_id" \
@@ -410,7 +417,6 @@ vm_a_expected=true
 launch_vm "$vm_a" >"${evidence_directory}/launch-a.log" 2>&1
 vm_b_expected=true
 launch_vm "$vm_b" >"${evidence_directory}/launch-b.log" 2>&1
-record_result concurrent-vms passed 'two generated hostile VMs launched and remained live together'
 
 wait_for_agent() {
   local instance="$1"
@@ -429,6 +435,7 @@ wait_for_agent "$vm_a"
 wait_for_agent "$vm_b"
 incus_cmd config show "$vm_a" --expanded >"${evidence_directory}/instance-a-expanded.yaml"
 incus_cmd config show "$vm_b" --expanded >"${evidence_directory}/instance-b-expanded.yaml"
+record_result concurrent-vms passed 'two generated hostile VMs launched and became agent-responsive together'
 
 guest_network_state() {
   local instance="$1"
@@ -477,7 +484,8 @@ chmod 0700 /run/incus-gh-runner-isolation-response
 nohup systemd-socket-activate \
   --listen="0.0.0.0:${port}" \
   --accept \
-  -- /run/incus-gh-runner-isolation-response \
+  --inetd \
+  -- /bin/sh /run/incus-gh-runner-isolation-response \
   >/run/incus-gh-runner-isolation-listener.log 2>&1 </dev/null &
 printf '%s\n' "$!" >/run/incus-gh-runner-isolation-listener.pid
 GUEST_LISTENER
