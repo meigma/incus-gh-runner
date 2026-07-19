@@ -1,0 +1,1 @@
+Error: Failed checking if instance creation allowed: Invalid device "eth1" on container "bad-nic" of project "runner-authority-spike": Only managed network devices are allowed

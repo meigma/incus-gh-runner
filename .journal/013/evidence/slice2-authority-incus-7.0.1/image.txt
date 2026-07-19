@@ -1,0 +1,29 @@
+Fingerprint: 03579e0f2c9fb3af7a385f807e16d3cdd426416a822cfad9621511b91cd7ecca
+Size: 129.23MiB
+Architecture: aarch64
+Type: container
+Public: no
+Timestamps:
+    Created: 2026/07/17 17:00 PDT
+    Uploaded: 2026/07/18 22:16 PDT
+    Expires: 1969/12/31 16:00 PST
+    Last used: never
+Properties:
+    release: noble
+    requirements.cgroup: v2
+    serial: 20260718_07:42
+    type: squashfs
+    variant: default
+    architecture: arm64
+    description: Ubuntu noble arm64 (20260718_07:42)
+    os: Ubuntu
+Aliases:
+    - authority-test
+Cached: no
+Auto update: disabled
+Source:
+    Server: https://images.linuxcontainers.org
+    Protocol: simplestreams
+    Alias: ubuntu/24.04
+Profiles:
+    - default

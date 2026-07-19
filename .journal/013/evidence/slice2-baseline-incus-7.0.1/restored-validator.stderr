@@ -1,0 +1,1 @@
+NOTICE: Incus 7.0-7.2 cannot enforce VM nesting at project level; exact profile security.nesting=false is the compensating control.

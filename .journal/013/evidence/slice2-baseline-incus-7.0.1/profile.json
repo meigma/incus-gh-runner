@@ -1,0 +1,38 @@
+{
+	"config": {
+		"boot.autostart": "false",
+		"limits.cpu": "1",
+		"limits.memory": "1GiB",
+		"security.guestapi": "false",
+		"security.nesting": "false",
+		"security.secureboot": "true"
+	},
+	"description": "Only profile applied to ephemeral GitHub runner VMs",
+	"devices": {
+		"eth0": {
+			"limits.max": "100Mbit",
+			"network": "slice2-net",
+			"security.acls": "slice2-egress",
+			"security.acls.default.egress.action": "reject",
+			"security.acls.default.egress.logged": "true",
+			"security.acls.default.ingress.action": "reject",
+			"security.acls.default.ingress.logged": "true",
+			"security.ipv4_filtering": "true",
+			"security.ipv6_filtering": "true",
+			"security.mac_filtering": "true",
+			"security.port_isolation": "true",
+			"type": "nic"
+		},
+		"root": {
+			"limits.max": "100MiB",
+			"path": "/",
+			"pool": "slice2-zfs-existing",
+			"size": "1GiB",
+			"type": "disk"
+		}
+	},
+	"name": "slice2-profile",
+	"project": "slice2-baseline",
+	"used_by": []
+}
+

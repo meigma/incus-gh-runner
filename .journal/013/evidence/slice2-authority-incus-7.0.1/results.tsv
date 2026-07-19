@@ -1,0 +1,22 @@
+server-ca-absent	PASS	no CA-wide client trust fallback exists
+pinned-server-certificate	PASS	client pins the exact daemon certificate
+project-inventory	PASS	restricted identity sees only its assigned project
+guest-agent-file-push	PASS	restricted identity wrote through the guest agent
+guest-agent-file-pull	PASS	restricted identity read through the guest agent
+console-log	PASS	restricted identity read the console log
+lifecycle-create-start-stop-delete	PASS	complete asynchronous lifecycle succeeded
+foreign-all-projects	PASS	foreign instance was filtered from the response
+foreign-default-project	PASS	foreign instance was filtered from the response
+foreign-project-metadata	PASS	operation was denied
+weaken-project-restrictions	PASS	operation was denied
+global-server-config	PASS	operation was denied
+self-escalate-certificate	PASS	operation was denied
+forbidden-host-path	PASS	operation was denied
+forbidden-unix-device	PASS	operation was denied
+forbidden-unmanaged-nic	PASS	operation was denied
+forbidden-extra-disk	PASS	operation was denied
+forbidden-raw-qemu	PASS	operation was denied
+forbidden-profile-host-path	PASS	operation was denied
+forbidden-container	PASS	operation was denied
+revoked-certificate	PASS	operation was denied
+authority-spike	PASS	restricted TLS lifecycle and negative boundaries passed

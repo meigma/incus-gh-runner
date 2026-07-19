@@ -1,0 +1,2 @@
+PASS	live Incus 7.0.1 baseline matched effective API state
+PASS	live network policy drift was rejected and restored state matched

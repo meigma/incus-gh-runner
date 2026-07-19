@@ -79,3 +79,59 @@ harness, and a parallel authority spike for a project-restricted TLS identity.
 No live Incus host, GitHub runner settings, paid infrastructure, or other
 external system has been mutated. Slice 0 repository guardrails and Slice 1's
 live negative scheduling proof remain separately open.
+
+## 2026-07-18 22:38 — Slice 2 baseline and authority increment proven
+
+Implemented the first Slice 2 increment on `feat/security-slice-2`. It now has
+a declarative Incus 7 baseline, GET-only fail-closed validator and offline drift
+matrix, hostile two-VM acceptance harness with destructive opt-in and
+marker-checked cleanup, Moon/CI integration, and corrected production guidance.
+The controller examples use only the validated runner profile, describe
+`incus.owner` as a forgeable cleanup selector, require a single-purpose host,
+and replace the old unrestricted Incus setup commands.
+
+Live discovery on disposable Multipass VM
+`incus-gh-runner-slice2-20260718` materially changed the design. Incus 7.0.1
+rejected a project-local managed bridge, so the final baseline uses a
+host-owned bridge and ACL in `default`, sets `features.networks=false` and
+`limits.networks=0` in the runner project, and attaches the default-deny ACL at
+both the host network and direct NIC layers. The final manifest matched the
+effective API state with an existing ZFS pool. A live change from default
+egress `reject` to `allow` was rejected as network drift, then the restored
+state matched again.
+
+A project-restricted, server-pinned TLS certificate passed the complete
+container-compatible lifecycle and negative authority matrix: project-scoped
+inventory, create/start, operation waits, guest-agent file push/pull, console,
+stop/delete, foreign-project isolation, forbidden devices/config, container
+blocking, and revocation. It did not prove KVM boot or VM guest-agent readiness.
+More importantly, the identity can still mutate project-local profiles and
+therefore weaken direct NIC ACL, anti-spoofing, or port isolation. The slice
+keeps `incus-admin` plus the mandatory dedicated host instead of presenting
+restricted TLS as a finished least-privilege boundary.
+
+Checksummed effective configuration, negative output, authority results, and
+the exact disposable scripts are indexed in `SLICE_2_EVIDENCE.md`. The
+disposable VM was permanently purged after export. Local `moon ci --summary
+minimal`, `go test -race ./...`, shell syntax, JSON parsing, documentation, and
+whitespace gates passed after clearing a stale golangci-lint cache that still
+pointed at the removed Slice 1 worktree.
+
+Open Slice 2 exit gates: KVM-backed hostile VMs; IPv6 spoofing; resource-limit
+exhaustion without host/control-plane degradation; and a controller identity
+that cannot weaken every enforced isolation control. This increment must remain
+draft/in-progress and must not be described as full Slice 2 completion. Slice 0
+and the Slice 1 negative GitHub scheduling proof also remain open.
+
+## 2026-07-18 22:48 — Slice 2 increment opened for review
+
+Committed the documentation trust-boundary correction as `88185de` and the
+baseline, validator, hostile-test harness, documentation, and CI increment as
+`0e6d70cd0205517ae2272e552610624f94e560c9`. Pushed
+`feat/security-slice-2` and opened draft PR #28:
+https://github.com/meigma/incus-gh-runner/pull/28
+
+GitHub reports the draft as mergeable at the exact expected head. Hosted CI,
+CodeQL, GitHub Pages, Kusari Inspector, and the reference-image build started
+and remain pending at this checkpoint. The PR body carries the four open Slice
+2 gates explicitly; no completion or readiness claim has been made.

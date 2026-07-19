@@ -1,0 +1,47 @@
+{
+	"config": {
+		"features.images": "true",
+		"features.networks": "false",
+		"features.profiles": "true",
+		"features.storage.buckets": "true",
+		"features.storage.volumes": "true",
+		"images.auto_update_cached": "false",
+		"images.auto_update_interval": "0",
+		"limits.containers": "0",
+		"limits.cpu": "2",
+		"limits.disk": "2GiB",
+		"limits.disk.pool.slice2-zfs-existing": "2GiB",
+		"limits.instances": "2",
+		"limits.memory": "2GiB",
+		"limits.networks": "0",
+		"limits.virtual-machines": "2",
+		"restricted": "true",
+		"restricted.backups": "block",
+		"restricted.cluster.target": "block",
+		"restricted.containers.interception": "block",
+		"restricted.containers.lowlevel": "block",
+		"restricted.containers.nesting": "block",
+		"restricted.containers.privilege": "unprivileged",
+		"restricted.devices.disk": "block",
+		"restricted.devices.gpu": "block",
+		"restricted.devices.infiniband": "block",
+		"restricted.devices.nic": "managed",
+		"restricted.devices.pci": "block",
+		"restricted.devices.proxy": "block",
+		"restricted.devices.unix-block": "block",
+		"restricted.devices.unix-char": "block",
+		"restricted.devices.unix-hotplug": "block",
+		"restricted.devices.usb": "block",
+		"restricted.networks.access": "slice2-net",
+		"restricted.snapshots": "block",
+		"restricted.storage-pools.access": "slice2-zfs-existing",
+		"restricted.virtual-machines.lowlevel": "block"
+	},
+	"description": "Restricted project for ephemeral GitHub runner VMs",
+	"name": "slice2-baseline",
+	"used_by": [
+		"/1.0/profiles/default?project=slice2-baseline",
+		"/1.0/profiles/slice2-profile?project=slice2-baseline"
+	]
+}
+

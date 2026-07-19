@@ -1,0 +1,38 @@
+{
+	"config": {},
+	"description": "Default-deny runner egress through controlled DNS and HTTPS proxy",
+	"egress": [
+		{
+			"action": "allow",
+			"description": "Controlled DNS over UDP",
+			"destination": "192.0.2.53/32",
+			"destination_port": "53",
+			"protocol": "udp",
+			"state": "enabled"
+		},
+		{
+			"action": "allow",
+			"description": "Controlled DNS over TCP",
+			"destination": "192.0.2.53/32",
+			"destination_port": "53",
+			"protocol": "tcp",
+			"state": "enabled"
+		},
+		{
+			"action": "allow",
+			"description": "Controlled HTTP CONNECT proxy",
+			"destination": "192.0.2.10/32",
+			"destination_port": "3128",
+			"protocol": "tcp",
+			"state": "enabled"
+		}
+	],
+	"ingress": [],
+	"name": "slice2-egress",
+	"project": "default",
+	"used_by": [
+		"/1.0/networks/slice2-net",
+		"/1.0/profiles/slice2-profile?project=slice2-baseline"
+	]
+}
+

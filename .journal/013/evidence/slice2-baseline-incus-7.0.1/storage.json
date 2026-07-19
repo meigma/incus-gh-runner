@@ -1,0 +1,17 @@
+{
+	"config": {
+		"source": "slice2-zpool",
+		"zfs.pool_name": "slice2-zpool"
+	},
+	"description": "Dedicated ZFS pool for ephemeral runner images and VM roots",
+	"driver": "zfs",
+	"locations": [
+		"none"
+	],
+	"name": "slice2-zfs-existing",
+	"status": "Created",
+	"used_by": [
+		"/1.0/profiles/slice2-profile?project=slice2-baseline"
+	]
+}
+

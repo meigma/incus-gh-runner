@@ -1,0 +1,20 @@
+config:
+  features.images: "false"
+  features.networks: "false"
+  features.networks.zones: "false"
+  features.profiles: "true"
+  features.storage.buckets: "false"
+  features.storage.volumes: "false"
+  limits.containers: "1"
+  limits.instances: "1"
+  limits.virtual-machines: "1"
+  restricted: "true"
+  restricted.devices.disk: block
+  restricted.devices.nic: managed
+  restricted.networks.access: incusbr0
+  restricted.storage-pools.access: default
+  restricted.virtual-machines.lowlevel: block
+description: ""
+name: runner-authority-spike
+used_by:
+  - /1.0/profiles/default?project=runner-authority-spike

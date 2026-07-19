@@ -1,0 +1,14 @@
+config: {}
+description: Default Incus profile for project runner-authority-spike
+devices:
+  eth0:
+    name: eth0
+    network: incusbr0
+    type: nic
+  root:
+    path: /
+    pool: default
+    type: disk
+name: default
+used_by: []
+project: runner-authority-spike
