@@ -15,3 +15,6 @@ Implemented the bounded credential slice on `feat/production-pat-auth` at `b3f87
 Made the base systemd unit credential-neutral and added explicit GitHub App and PAT drop-ins. The deployment guide now covers repository-scoped pairing, explains why GitHub's one-time registration token cannot drive the ephemeral controller, documents current App/PAT permissions, and gives secure installation commands for both methods.
 
 Verification passed with `mise exec -- moon run root:check`; hosted PR checks also passed, including Linux `systemd-analyze`, CodeQL, CI, GitHub Pages build, and Kusari Inspector. Opened PR #26 at https://github.com/meigma/incus-gh-runner/pull/26. The PR is ready for human review and has not been merged.
+
+## 2026-07-18 19:22 — PR merged
+After maintainer approval, reverified PR #26 at reviewed head `b3f8776f2c263a6584d3c452f97287cc9d29c491` with a clean merge state and passing required CI, then squash-merged it on GitHub as `f493f93f6a11403ccd9af12e55c58e3b2caf7eaf` (`feat(auth): support production PAT credentials (#26)`). Fast-forwarded the local `master` checkout to the merge commit and confirmed it matches `origin/master`. Deleted the remote feature branch and removed the integrated Worktrunk branch/worktree. Session 012 remains active until an explicit session-close request.
