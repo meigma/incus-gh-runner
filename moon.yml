@@ -112,6 +112,7 @@ tasks:
 
   incus-isolation-contract-test:
     script: |
+      bash deploy/incus/cue/tests/render-test.sh
       bash deploy/incus/tests/validate-test.sh
       bash image/tests/live-incus-hostile-isolation-contract-test.sh
     inputs:

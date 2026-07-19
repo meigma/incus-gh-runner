@@ -1,9 +1,10 @@
 # Incus isolation baseline
 
-This directory contains a reviewable desired-state example and a read-only
-drift validator for a single-purpose Incus 7 runner host. It does not configure
-or mutate Incus. Apply an environment-specific copy through the Incus CLI or
-your infrastructure-management system, then validate the effective API state.
+This directory contains a reviewable desired-state example, a CUE policy module,
+and a read-only drift validator for a single-purpose Incus 7 runner host. None
+of them configure or mutate Incus. Render or adapt an environment-specific
+baseline, apply it through the Incus CLI or your infrastructure-management
+system, then validate the effective API state.
 
 The example establishes:
 
@@ -36,7 +37,17 @@ default actions to reject and log unmatched traffic.
 
 ## Adapt the example
 
-Copy `baseline.example.json` outside the checkout and change every
+The dependency-free module under [`cue/`](cue/) accepts a closed set of names,
+host capacity, runner sizing, network endpoints, and storage inputs. It derives
+aggregate limits and emits a complete baseline while keeping the security
+controls non-overridable. It also emits the controller project, sole profile,
+and `capacity.max_runners` as one partial configuration so those values cannot
+drift from the baseline. Its default example is continuously checked for
+semantic equality with `baseline.example.json`.
+
+Registry publication is not part of this proof increment. Until the `@v0`
+module interface is reviewed and published, `baseline.example.json` remains the
+portable deployment artifact. Copy it outside the checkout and change every
 environment-specific value before applying it:
 
 - replace the `192.0.2.10/32` proxy and `192.0.2.53/32` DNS documentation

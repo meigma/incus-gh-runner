@@ -131,6 +131,10 @@ grep -Fxq "query -X GET /1.0/networks/$(jq -r .names.network "$baseline")?projec
 grep -Fxq "query -X GET /1.0/network-acls/$(jq -r .names.network_acl "$baseline")?project=default" "$calls"
 grep -Fxq "query -X GET /1.0/profiles/$(jq -r .names.profile "$baseline")?project=$(jq -r .names.project "$baseline")" "$calls"
 
+custom_proxy_port="${temp_root}/custom-proxy-port.json"
+jq '.network_acl.egress[2].destination_port = "8080"' "$baseline" >"$custom_proxy_port"
+run_validator valid "$custom_proxy_port" "${temp_root}/custom-proxy-port.output"
+
 expect_failure missing-extension "$baseline" 'required Incus API extension is unavailable'
 expect_failure nesting-project-extension-available "$baseline" 'baseline must be upgraded to enforce the project-level restriction'
 expect_failure exposed-api "$baseline" 'core.https_address drift detected'
@@ -191,5 +195,13 @@ expect_failure valid "$wide_acl_destination" 'required fail-closed invariant is 
 malformed_acl_destination="${temp_root}/malformed-acl-destination.json"
 jq '.network_acl.egress[0].destination = "999.0.0.1/32"' "$baseline" >"$malformed_acl_destination"
 expect_failure valid "$malformed_acl_destination" 'required fail-closed invariant is invalid'
+
+proxy_on_dns_port="${temp_root}/proxy-on-dns-port.json"
+jq '.network_acl.egress[2].destination_port = "53"' "$baseline" >"$proxy_on_dns_port"
+expect_failure valid "$proxy_on_dns_port" 'required fail-closed invariant is invalid'
+
+invalid_proxy_port="${temp_root}/invalid-proxy-port.json"
+jq '.network_acl.egress[2].destination_port = "65536"' "$baseline" >"$invalid_proxy_port"
+expect_failure valid "$invalid_proxy_port" 'required fail-closed invariant is invalid'
 
 printf 'Incus isolation validator tests passed\n'

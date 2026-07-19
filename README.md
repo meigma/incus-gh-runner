@@ -103,7 +103,8 @@ jobs:
 For production, run the controller under the hardened systemd unit in
 [`deploy/systemd/`](deploy/systemd/), selecting the GitHub App or PAT credential
 drop-in. Apply and validate the restricted project, network, profile, storage,
-resource limits, and controlled-egress baseline in
+resource limits, and controlled-egress baseline with the CUE policy and
+read-only drift tooling in
 [`deploy/incus/`](deploy/incus/) first. Follow the
 [deployment guide](docs/docs/how-to/deploy.md) for the end-to-end path.
 

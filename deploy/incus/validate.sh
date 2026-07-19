@@ -48,7 +48,7 @@ manifest_filter='
     (.description | type == "string" and length > 0) and
     (.destination | ipv4_host_cidr) and
     (.protocol == "tcp" or .protocol == "udp") and
-    (.destination_port | type == "string" and test("^[0-9]+$"));
+    (.destination_port | decimal_between(1; 65535));
 
   . as $baseline |
   type == "object" and
@@ -119,8 +119,12 @@ manifest_filter='
     .config == {} and .ingress == [] and
     (.egress |
       type == "array" and length == 3 and all(.[]; rule) and
-      ([.[] | [.protocol, .destination_port]] | sort) == [["tcp", "3128"], ["tcp", "53"], ["udp", "53"]] and
-      ([.[] | select(.destination_port == "53") | .destination] | unique | length) == 1)) and
+      ([.[] | select(.destination_port == "53")] as $dns |
+        ($dns | length) == 2 and
+        ([$dns[] | .protocol] | sort) == ["tcp", "udp"] and
+        ([$dns[] | .destination] | unique | length) == 1) and
+      ([.[] | select(.destination_port != "53")] as $proxy |
+        ($proxy | length) == 1 and $proxy[0].protocol == "tcp"))) and
   (.profile |
     type == "object" and keys_are(["description", "config", "devices"]) and
     (.description | type == "string" and length > 0) and

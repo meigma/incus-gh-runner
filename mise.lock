@@ -64,6 +64,26 @@ url = "https://github.com/chainguard-dev/melange/releases/download/v0.54.0/melan
 checksum = "sha256:e7b44654803809bf9f79daec70097bbede9a5d33c1d925888ef1e19d5b4cb1a7"
 url = "https://github.com/chainguard-dev/melange/releases/download/v0.54.0/melange_0.54.0_darwin_amd64.tar.gz"
 
+[[tools."aqua:cue-lang/cue"]]
+version = "0.16.1"
+backend = "aqua:cue-lang/cue"
+
+[tools."aqua:cue-lang/cue"."platforms.linux-arm64"]
+checksum = "sha256:3cc715a9e969f87b93c4fa34cfaef5388b93e96efa20b248e8ad6826abd25a83"
+url = "https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_linux_arm64.tar.gz"
+
+[tools."aqua:cue-lang/cue"."platforms.linux-x64"]
+checksum = "sha256:5d644c1305a2b86504c8dcd2ec829cf5b4999efc2cf51ee375624e0455f774ae"
+url = "https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_linux_amd64.tar.gz"
+
+[tools."aqua:cue-lang/cue"."platforms.macos-arm64"]
+checksum = "sha256:a72b0cddb377c52d1b003bed9a335d893b70cd75a182cd5e3fee8bae30ddb6d6"
+url = "https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_darwin_arm64.tar.gz"
+
+[tools."aqua:cue-lang/cue"."platforms.macos-x64"]
+checksum = "sha256:97b0d78e4c5ee49ff72145fd6ef4f4bab0bb332d55f29660de3fec2af5ec96a9"
+url = "https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_darwin_amd64.tar.gz"
+
 [[tools."aqua:golangci/golangci-lint"]]
 version = "2.12.2"
 backend = "aqua:golangci/golangci-lint"

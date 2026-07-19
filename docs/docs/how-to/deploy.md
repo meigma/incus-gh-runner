@@ -23,6 +23,15 @@ unrestricted project and attaching the project's `default` profile:
 cp deploy/incus/baseline.example.json incus-baseline.json
 ```
 
+The repository also ships the dependency-free CUE policy prototype under
+`deploy/incus/cue/`. Its default input renders exactly the JSON above, derives
+aggregate project ceilings from host and runner capacity, and rejects attempts
+to weaken fixed isolation controls. It also renders a partial controller
+configuration that keeps `incus.project`, the sole Incus profile, and
+`capacity.max_runners` aligned with those ceilings. The module is not yet
+registry-published, so the rendered files remain local deployment artifacts for
+this increment.
+
 Edit the copy for the target host. In particular, replace every documentation
 address, bridge subnet, resource name, ZFS source, and capacity limit. The
 example proxy and DNS addresses are non-routable and intentionally provide no
