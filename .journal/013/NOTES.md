@@ -61,3 +61,21 @@ in 9m51s. Release-dry-run and Pages-deployment jobs were skipped by their normal
 event conditions, with no failed or pending checks. The draft PR is merge-clean
 and remains paused for human review; the live negative scheduling acceptance
 gate documented above is still open.
+
+## 2026-07-18 21:52 — Slice 1 merged and Slice 2 started
+
+The user approved PR #27 with the documented live negative-scheduling gap still
+open. Rechecked the exact reviewed head and required checks, marked the PR ready,
+and squash-merged it through GitHub with head matching enforced. `master` now
+contains `fix(security): fail closed on controller inputs` at
+`f04f474510e2fbeff0ed23ed976e0a72e65a720b`; the local default worktree was
+fast-forwarded to the same commit.
+
+Started the next numerical remediation slice on isolated branch
+`feat/security-slice-2`. The first proof-sized increment is intentionally
+bounded to a secure reference Incus project/network/profile baseline, a
+fail-closed drift validator, an explicitly disposable hostile-VM acceptance
+harness, and a parallel authority spike for a project-restricted TLS identity.
+No live Incus host, GitHub runner settings, paid infrastructure, or other
+external system has been mutated. Slice 0 repository guardrails and Slice 1's
+live negative scheduling proof remain separately open.
