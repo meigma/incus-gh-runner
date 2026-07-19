@@ -1,67 +1,102 @@
+// Package incusrunner renders a hardened Incus configuration for ephemeral
+// GitHub Actions runner virtual machines.
 package incusrunner
 
 import "net"
 
-#Name: (string & =~"^[a-z][a-z0-9-]{0,62}$") |
-		error("name must be a lowercase Incus identifier of at most 63 characters")
-#DedicatedName: (#Name & !="default") |
+_#Name: (string & =~"^[a-z][a-z0-9-]{0,62}$") |
+			error("name must be a lowercase Incus identifier of at most 63 characters")
+_#DedicatedName: (_#Name & !="default") |
 		error("dedicated Incus resource name must not be default")
-#PositiveInt: (int & >=1) | error("value must be a positive integer")
-#ProxyPort:   (int & >=1 & <=65535 & !=53) |
-		error("proxy port must be between 1 and 65535 and must not be the DNS port")
-#IPv4:          (net.IP & !~":") | error("value must be an IPv4 address")
-#IPv4CIDR:      (net.IPCIDR & !~":") | error("value must be an IPv4 CIDR")
-#StorageSource: (string & =~"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,254}$") |
+_#PositiveInt: (int & >=1) | error("value must be a positive integer")
+_#ProxyPort:   (int & >=1 & <=65535 & !=53) |
+			error("proxy port must be between 1 and 65535 and must not be the DNS port")
+_#IPv4:          (net.IP & !~":") | error("value must be an IPv4 address")
+_#IPv4CIDR:      (net.IPCIDR & !~":") | error("value must be an IPv4 CIDR")
+_#StorageSource: (string & =~"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,254}$") |
 	error("storage source contains unsupported characters")
 
 // #Inputs is the complete operator-controlled configuration surface. Fields
 // absent from this definition are deliberately not configurable.
 #Inputs: {
+	// names groups the dedicated Incus resource names used by the deployment.
 	names: {
-		project:     #DedicatedName & (*"github-runners" | string)
-		network:     #DedicatedName & (*"runner-network" | string)
-		networkACL:  #DedicatedName & (*"runner-egress" | string)
-		profile:     #DedicatedName & (*"github-runner" | string)
-		storagePool: #DedicatedName & (*"runner-storage" | string)
+		// project names the restricted project that owns runner VMs and profiles.
+		project: _#DedicatedName & (*"github-runners" | string)
+		// network names the host-owned managed bridge available to the project.
+		network: _#DedicatedName & (*"runner-network" | string)
+		// networkACL names the host-owned default-deny network ACL.
+		networkACL: _#DedicatedName & (*"runner-egress" | string)
+		// profile names the sole profile applied to each runner VM.
+		profile: _#DedicatedName & (*"github-runner" | string)
+		// storagePool names the dedicated ZFS storage pool available to the project.
+		storagePool: _#DedicatedName & (*"runner-storage" | string)
 	}
 
+	// host declares usable physical capacity and mandatory non-runner headroom.
 	host: {
-		cpu!:        #PositiveInt
-		memoryGiB!:  #PositiveInt
-		storageGiB!: #PositiveInt
+		// cpu is the number of logical host CPUs available to Incus and the host.
+		cpu!: _#PositiveInt
+		// memoryGiB is the usable host memory in GiB.
+		memoryGiB!: _#PositiveInt
+		// storageGiB is the usable storage capacity in GiB.
+		storageGiB!: _#PositiveInt
+		// reserve keeps capacity available for Incus, the controller, and the host.
 		reserve: {
-			cpu:        #PositiveInt & (*4 | int)
-			memoryGiB:  #PositiveInt & (*8 | int)
-			storageGiB: #PositiveInt & (*40 | int)
+			// cpu is the number of host CPUs excluded from runner allocation.
+			cpu: _#PositiveInt & (*4 | int)
+			// memoryGiB is the host memory in GiB excluded from runner allocation.
+			memoryGiB: _#PositiveInt & (*8 | int)
+			// storageGiB is the host storage in GiB excluded from runner allocation.
+			storageGiB: _#PositiveInt & (*40 | int)
 		}
 	}
 
+	// runners controls concurrency, per-VM limits, and shared image capacity.
 	runners: {
-		maximum:       (int & >=1 & <=100) & (*10 | int)
-		cpu:           (int & >=1 & <=64) & (*2 | int)
-		memoryGiB:     (int & >=1 & <=1024) & (*4 | int)
-		rootDiskGiB:   (int & >=1 & <=16384) & (*20 | int)
-		networkMbit:   (int & >=1 & <=100000) & (*100 | int)
-		diskIOMiB:     (int & >=1 & <=100000) & (*100 | int)
+		// maximum is the maximum concurrent runner count and project VM ceiling.
+		maximum: (int & >=1 & <=100) & (*10 | int)
+		// cpu is the logical CPU limit applied to each runner VM.
+		cpu: (int & >=1 & <=64) & (*2 | int)
+		// memoryGiB is the memory limit in GiB applied to each runner VM.
+		memoryGiB: (int & >=1 & <=1024) & (*4 | int)
+		// rootDiskGiB is the root disk size in GiB allocated to each runner VM.
+		rootDiskGiB: (int & >=1 & <=16384) & (*20 | int)
+		// networkMbit is the maximum network throughput in Mbit per runner VM.
+		networkMbit: (int & >=1 & <=100000) & (*100 | int)
+		// diskIOMiB is the requested maximum disk throughput in MiB per runner VM.
+		diskIOMiB: (int & >=1 & <=100000) & (*100 | int)
+		// imageCacheGiB reserves storage in GiB for project image caching.
 		imageCacheGiB: (int & >=1 & <=16384) & (*20 | int)
 	}
 
+	// network configures the isolated IPv4 bridge and controlled egress endpoints.
 	network: {
-		ipv4Address!: #IPv4CIDR
-		dnsAddress!:  #IPv4
+		// ipv4Address is the managed bridge address and prefix in IPv4 CIDR form.
+		ipv4Address!: _#IPv4CIDR
+		// dnsAddress is the dedicated IPv4 resolver runners may contact.
+		dnsAddress!: _#IPv4
+		// proxy configures the HTTP CONNECT proxy runners may contact.
 		proxy: {
-			address!: #IPv4
-			port:     #ProxyPort & (*3128 | int)
+			// address is the dedicated proxy IPv4 address.
+			address!: _#IPv4
+			// port is the proxy TCP port and must not overlap DNS port 53.
+			port: _#ProxyPort & (*3128 | int)
 		}
 	}
 
-	storage: source!: #StorageSource
+	// storage configures the dedicated ZFS backing store.
+	storage: {
+		// source is the existing zpool or dataset placed under Incus control.
+		source!: _#StorageSource
+	}
 }
 
 // #Deployment derives one concrete, fail-closed Incus baseline and the
 // controller fields that must agree with it from #Inputs. Security-sensitive
 // values are exact constraints rather than defaults.
 #Deployment: {
+	// inputs supplies the complete operator-controlled deployment configuration.
 	inputs!: #Inputs
 
 	_runnerCPU:       inputs.runners.maximum * inputs.runners.cpu
@@ -79,29 +114,51 @@ import "net"
 	// the deployment configuration so the controller cannot request more VMs or
 	// select a different project/profile than the Incus baseline permits.
 	controller: {
+		// incus contains the controller fields coupled to the rendered baseline.
 		incus: {
+			// project selects the restricted project that owns runner VMs.
 			project: inputs.names.project
+			// profiles is the exact, sole profile list applied to runner VMs.
 			profiles: [inputs.names.profile]
 		}
-		capacity: max_runners: inputs.runners.maximum
+		// capacity contains controller capacity coupled to Incus project limits.
+		capacity: {
+			// max_runners is the maximum concurrent runner count.
+			max_runners: inputs.runners.maximum
+		}
 	}
 
+	// output is the complete desired-state baseline consumed by the drift validator.
 	output: {
+		// schema_version identifies the baseline manifest schema.
 		schema_version: 1
+		// authority documents the supported Incus control-plane trust boundary.
 		authority: {
-			mode:                                   "dedicated-host-unix-socket"
+			// mode identifies the controller's Incus connection and authority model.
+			mode: "dedicated-host-unix-socket"
+			// dedicated_single_purpose_host_required requires workload isolation at the host boundary.
 			dedicated_single_purpose_host_required: true
-			unix_socket_is_root_equivalent:         true
+			// unix_socket_is_root_equivalent records the authority granted by the Incus Unix socket.
+			unix_socket_is_root_equivalent: true
 		}
+		// names records the exact Incus resources selected by this baseline.
 		names: {
-			project:      inputs.names.project
-			network:      inputs.names.network
-			network_acl:  inputs.names.networkACL
-			profile:      inputs.names.profile
+			// project names the restricted project that owns runner VMs and profiles.
+			project: inputs.names.project
+			// network names the host-owned managed bridge available to the project.
+			network: inputs.names.network
+			// network_acl names the host-owned default-deny network ACL.
+			network_acl: inputs.names.networkACL
+			// profile names the sole profile applied to each runner VM.
+			profile: inputs.names.profile
+			// storage_pool names the dedicated ZFS storage pool available to the project.
 			storage_pool: inputs.names.storagePool
 		}
+		// server constrains the Incus daemon features and exposure model.
 		server: {
+			// minimum_version is the oldest supported Incus server release.
 			minimum_version: "7.0"
+			// required_api_extensions lists every API capability required by the baseline.
 			required_api_extensions: [
 				"container_nic_ipfilter",
 				"instance_nic_bridged_port_isolation",
@@ -114,150 +171,279 @@ import "net"
 				"projects_restricted_storage_pool_access",
 				"projects_restrictions",
 			]
-			firewall_driver:       "nftables"
-			standalone:            true
-			core_https_address:    ""
+			// firewall_driver is the required host firewall implementation.
+			firewall_driver: "nftables"
+			// standalone requires a non-clustered Incus server.
+			standalone: true
+			// core_https_address requires the public Incus HTTPS listener to be disabled.
+			core_https_address: ""
+			// cluster_https_address requires the Incus cluster listener to be disabled.
 			cluster_https_address: ""
 		}
-		residual_controls: project_vm_nesting_restriction: {
-			status:                     "unsupported-by-incus-7.0-through-7.2"
-			future_api_extension:       "projects_restricted_virtual_machines_nesting"
-			compensating_profile_key:   "security.nesting"
-			compensating_profile_value: "false"
-		}
-		project: {
-			description: "Restricted project for ephemeral GitHub runner VMs"
-			config: {
-				"features.images":                                "true"
-				"features.networks":                              "false"
-				"features.profiles":                              "true"
-				"features.storage.buckets":                       "true"
-				"features.storage.volumes":                       "true"
-				"images.auto_update_cached":                      "false"
-				"images.auto_update_interval":                    "0"
-				"limits.containers":                              "0"
-				"limits.cpu":                                     "\(_runnerCPU)"
-				"limits.disk":                                    "\(_runnerDiskGiB)GiB"
-				("limits.disk.pool." + inputs.names.storagePool): "\(_runnerDiskGiB)GiB"
-				"limits.instances":                               "\(inputs.runners.maximum)"
-				"limits.memory":                                  "\(_runnerMemoryGiB)GiB"
-				"limits.networks":                                "0"
-				"limits.virtual-machines":                        "\(inputs.runners.maximum)"
-				"restricted":                                     "true"
-				"restricted.backups":                             "block"
-				"restricted.cluster.target":                      "block"
-				"restricted.containers.interception":             "block"
-				"restricted.containers.lowlevel":                 "block"
-				"restricted.containers.nesting":                  "block"
-				"restricted.containers.privilege":                "unprivileged"
-				"restricted.devices.disk":                        "block"
-				"restricted.devices.gpu":                         "block"
-				"restricted.devices.infiniband":                  "block"
-				"restricted.devices.nic":                         "managed"
-				"restricted.devices.pci":                         "block"
-				"restricted.devices.proxy":                       "block"
-				"restricted.devices.unix-block":                  "block"
-				"restricted.devices.unix-char":                   "block"
-				"restricted.devices.unix-hotplug":                "block"
-				"restricted.devices.usb":                         "block"
-				"restricted.networks.access":                     inputs.names.network
-				"restricted.snapshots":                           "block"
-				"restricted.storage-pools.access":                inputs.names.storagePool
-				"restricted.virtual-machines.lowlevel":           "block"
+		// residual_controls documents controls that require compatibility handling.
+		residual_controls: {
+			// project_vm_nesting_restriction records the current VM nesting residual.
+			project_vm_nesting_restriction: {
+				// status describes why the project-level control is not emitted.
+				status: "unsupported-by-incus-7.0-through-7.2"
+				// future_api_extension names the extension that will make the control available.
+				future_api_extension: "projects_restricted_virtual_machines_nesting"
+				// compensating_profile_key names the profile setting used in the interim.
+				compensating_profile_key: "security.nesting"
+				// compensating_profile_value is the required interim setting value.
+				compensating_profile_value: "false"
 			}
 		}
-		network: {
-			description: "Managed bridge for isolated ephemeral runner VMs"
-			type:        "bridge"
-			managed:     true
+		// project is the desired restricted Incus project configuration.
+		project: {
+			// description explains the project's dedicated runner purpose.
+			description: "Restricted project for ephemeral GitHub runner VMs"
+			// config contains the exact project features, limits, and restrictions.
 			config: {
-				"bridge.driver":                        "native"
-				"dns.mode":                             "none"
-				"dns.nameservers":                      inputs.network.dnsAddress
-				"ipv4.address":                         inputs.network.ipv4Address
-				"ipv4.dhcp":                            "true"
-				"ipv4.firewall":                        "true"
-				"ipv4.nat":                             "true"
-				"ipv4.routing":                         "true"
-				"ipv6.address":                         "none"
-				"raw.dnsmasq":                          "port=0"
-				"security.acls":                        inputs.names.networkACL
-				"security.acls.default.egress.action":  "reject"
-				"security.acls.default.egress.logged":  "true"
+				// `features.images` enables project-scoped cached images.
+				"features.images": "true"
+				// `features.networks` prevents the project from owning managed networks.
+				"features.networks": "false"
+				// `features.profiles` enables the project-local runner profile.
+				"features.profiles": "true"
+				// `features.storage.buckets` enables project scoping for storage buckets.
+				"features.storage.buckets": "true"
+				// `features.storage.volumes` enables project scoping for custom volumes.
+				"features.storage.volumes": "true"
+				// `images.auto_update_cached` disables automatic cached-image updates.
+				"images.auto_update_cached": "false"
+				// `images.auto_update_interval` disables periodic image refreshes.
+				"images.auto_update_interval": "0"
+				// `limits.containers` prevents container creation in the VM-only project.
+				"limits.containers": "0"
+				// `limits.cpu` is the aggregate logical CPU ceiling for runner VMs.
+				"limits.cpu": "\(_runnerCPU)"
+				// `limits.disk` is the aggregate disk ceiling for runner VMs and images.
+				"limits.disk": "\(_runnerDiskGiB)GiB"
+				// `limits.disk.pool.<storage-pool>` applies the disk ceiling to the dedicated pool.
+				("limits.disk.pool." + inputs.names.storagePool): "\(_runnerDiskGiB)GiB"
+				// `limits.instances` is the aggregate runner instance ceiling.
+				"limits.instances": "\(inputs.runners.maximum)"
+				// `limits.memory` is the aggregate memory ceiling for runner VMs.
+				"limits.memory": "\(_runnerMemoryGiB)GiB"
+				// `limits.networks` prevents project-owned network creation.
+				"limits.networks": "0"
+				// `limits.virtual-machines` is the aggregate runner VM ceiling.
+				"limits.virtual-machines": "\(inputs.runners.maximum)"
+				// `restricted` enables Incus project restrictions.
+				"restricted": "true"
+				// `restricted.backups` blocks project backup operations.
+				"restricted.backups": "block"
+				// `restricted.cluster.target` blocks explicit cluster placement.
+				"restricted.cluster.target": "block"
+				// `restricted.containers.interception` blocks syscall interception controls.
+				"restricted.containers.interception": "block"
+				// `restricted.containers.lowlevel` blocks low-level container configuration.
+				"restricted.containers.lowlevel": "block"
+				// `restricted.containers.nesting` blocks nested container workloads.
+				"restricted.containers.nesting": "block"
+				// `restricted.containers.privilege` permits only unprivileged containers.
+				"restricted.containers.privilege": "unprivileged"
+				// `restricted.devices.disk` blocks unrestricted disk devices.
+				"restricted.devices.disk": "block"
+				// `restricted.devices.gpu` blocks GPU passthrough devices.
+				"restricted.devices.gpu": "block"
+				// `restricted.devices.infiniband` blocks InfiniBand passthrough devices.
+				"restricted.devices.infiniband": "block"
+				// `restricted.devices.nic` permits only managed network interfaces.
+				"restricted.devices.nic": "managed"
+				// `restricted.devices.pci` blocks PCI passthrough devices.
+				"restricted.devices.pci": "block"
+				// `restricted.devices.proxy` blocks Incus proxy devices.
+				"restricted.devices.proxy": "block"
+				// `restricted.devices.unix-block` blocks Unix block devices.
+				"restricted.devices.unix-block": "block"
+				// `restricted.devices.unix-char` blocks Unix character devices.
+				"restricted.devices.unix-char": "block"
+				// `restricted.devices.unix-hotplug` blocks Unix hotplug devices.
+				"restricted.devices.unix-hotplug": "block"
+				// `restricted.devices.usb` blocks USB passthrough devices.
+				"restricted.devices.usb": "block"
+				// `restricted.networks.access` allowlists the host-owned runner bridge.
+				"restricted.networks.access": inputs.names.network
+				// `restricted.snapshots` blocks project snapshot operations.
+				"restricted.snapshots": "block"
+				// `restricted.storage-pools.access` allowlists the dedicated runner pool.
+				"restricted.storage-pools.access": inputs.names.storagePool
+				// `restricted.virtual-machines.lowlevel` blocks low-level VM configuration.
+				"restricted.virtual-machines.lowlevel": "block"
+			}
+		}
+		// network is the desired host-owned managed bridge configuration.
+		network: {
+			// description explains the bridge's isolated runner purpose.
+			description: "Managed bridge for isolated ephemeral runner VMs"
+			// type selects an Incus bridge network.
+			type: "bridge"
+			// managed requires Incus to manage the bridge configuration.
+			managed: true
+			// config contains the exact bridge, DNS, routing, and ACL settings.
+			config: {
+				// `bridge.driver` selects the native Linux bridge driver.
+				"bridge.driver": "native"
+				// `dns.mode` disables Incus DNS records for runner instances.
+				"dns.mode": "none"
+				// `dns.nameservers` advertises only the controlled resolver.
+				"dns.nameservers": inputs.network.dnsAddress
+				// `ipv4.address` assigns the configured IPv4 bridge subnet.
+				"ipv4.address": inputs.network.ipv4Address
+				// `ipv4.dhcp` enables address assignment on the isolated bridge.
+				"ipv4.dhcp": "true"
+				// `ipv4.firewall` enables Incus firewall rules for the bridge.
+				"ipv4.firewall": "true"
+				// `ipv4.nat` enables IPv4 source NAT after ACL enforcement.
+				"ipv4.nat": "true"
+				// `ipv4.routing` enables IPv4 forwarding for controlled egress.
+				"ipv4.routing": "true"
+				// `ipv6.address` disables IPv6 address assignment and routing.
+				"ipv6.address": "none"
+				// `raw.dnsmasq` disables the bridge host's DNS forwarding service.
+				"raw.dnsmasq": "port=0"
+				// `security.acls` attaches the default-deny runner ACL to the bridge.
+				"security.acls": inputs.names.networkACL
+				// `security.acls.default.egress.action` rejects unmatched egress.
+				"security.acls.default.egress.action": "reject"
+				// `security.acls.default.egress.logged` logs rejected unmatched egress.
+				"security.acls.default.egress.logged": "true"
+				// `security.acls.default.ingress.action` rejects unmatched ingress.
 				"security.acls.default.ingress.action": "reject"
+				// `security.acls.default.ingress.logged` logs rejected unmatched ingress.
 				"security.acls.default.ingress.logged": "true"
 			}
 		}
+		// network_acl is the desired controlled-egress ACL configuration.
 		network_acl: {
+			// description explains the ACL's default-deny egress boundary.
 			description: "Default-deny runner egress through controlled DNS and HTTPS proxy"
+			// config contains ACL-level settings; none are permitted by this baseline.
 			config: {}
+			// ingress contains explicit ingress permits; none are permitted.
 			ingress: []
+			// egress contains the only DNS and proxy destinations runners may contact.
 			egress: [
 				{
-					action:           "allow"
-					state:            "enabled"
-					description:      "Controlled DNS over UDP"
-					destination:      "\(inputs.network.dnsAddress)/32"
-					protocol:         "udp"
+					// action permits traffic matching this rule.
+					action: "allow"
+					// state enables this rule.
+					state: "enabled"
+					// description identifies the controlled DNS-over-UDP permit.
+					description: "Controlled DNS over UDP"
+					// destination restricts the rule to the controlled DNS host.
+					destination: "\(inputs.network.dnsAddress)/32"
+					// protocol restricts the rule to UDP.
+					protocol: "udp"
+					// destination_port restricts the rule to DNS port 53.
 					destination_port: "53"
 				},
 				{
-					action:           "allow"
-					state:            "enabled"
-					description:      "Controlled DNS over TCP"
-					destination:      "\(inputs.network.dnsAddress)/32"
-					protocol:         "tcp"
+					// action permits traffic matching this rule.
+					action: "allow"
+					// state enables this rule.
+					state: "enabled"
+					// description identifies the controlled DNS-over-TCP permit.
+					description: "Controlled DNS over TCP"
+					// destination restricts the rule to the controlled DNS host.
+					destination: "\(inputs.network.dnsAddress)/32"
+					// protocol restricts the rule to TCP.
+					protocol: "tcp"
+					// destination_port restricts the rule to DNS port 53.
 					destination_port: "53"
 				},
 				{
-					action:           "allow"
-					state:            "enabled"
-					description:      "Controlled HTTP CONNECT proxy"
-					destination:      "\(inputs.network.proxy.address)/32"
-					protocol:         "tcp"
+					// action permits traffic matching this rule.
+					action: "allow"
+					// state enables this rule.
+					state: "enabled"
+					// description identifies the controlled HTTP CONNECT proxy permit.
+					description: "Controlled HTTP CONNECT proxy"
+					// destination restricts the rule to the controlled proxy host.
+					destination: "\(inputs.network.proxy.address)/32"
+					// protocol restricts the rule to TCP.
+					protocol: "tcp"
+					// destination_port restricts the rule to the configured proxy port.
 					destination_port: "\(inputs.network.proxy.port)"
 				},
 			]
 		}
+		// profile is the desired sole runner VM profile configuration.
 		profile: {
+			// description explains the profile's exclusive runner purpose.
 			description: "Only profile applied to ephemeral GitHub runner VMs"
+			// config contains the exact VM boot, resource, and security settings.
 			config: {
-				"boot.autostart":      "false"
-				"limits.cpu":          "\(inputs.runners.cpu)"
-				"limits.memory":       "\(inputs.runners.memoryGiB)GiB"
-				"security.guestapi":   "false"
-				"security.nesting":    "false"
+				// `boot.autostart` prevents runner VMs from starting with the host.
+				"boot.autostart": "false"
+				// `limits.cpu` applies the configured per-runner logical CPU ceiling.
+				"limits.cpu": "\(inputs.runners.cpu)"
+				// `limits.memory` applies the configured per-runner memory ceiling.
+				"limits.memory": "\(inputs.runners.memoryGiB)GiB"
+				// `security.guestapi` prevents guest access to the Incus guest API.
+				"security.guestapi": "false"
+				// `security.nesting` prevents nested workloads inside runner VMs.
+				"security.nesting": "false"
+				// `security.secureboot` requires UEFI Secure Boot for runner VMs.
 				"security.secureboot": "true"
 			}
+			// devices contains the only NIC and root disk applied to runner VMs.
 			devices: {
+				// eth0 is the isolated managed network interface.
 				eth0: {
-					type:                                   "nic"
-					network:                                inputs.names.network
-					"limits.max":                           "\(inputs.runners.networkMbit)Mbit"
-					"security.acls":                        inputs.names.networkACL
-					"security.acls.default.egress.action":  "reject"
-					"security.acls.default.egress.logged":  "true"
+					// type selects an Incus network interface device.
+					type: "nic"
+					// network attaches the interface to the host-owned runner bridge.
+					network: inputs.names.network
+					// `limits.max` applies the configured per-runner network ceiling.
+					"limits.max": "\(inputs.runners.networkMbit)Mbit"
+					// `security.acls` attaches the default-deny runner ACL to the interface.
+					"security.acls": inputs.names.networkACL
+					// `security.acls.default.egress.action` rejects unmatched NIC egress.
+					"security.acls.default.egress.action": "reject"
+					// `security.acls.default.egress.logged` logs rejected NIC egress.
+					"security.acls.default.egress.logged": "true"
+					// `security.acls.default.ingress.action` rejects unmatched NIC ingress.
 					"security.acls.default.ingress.action": "reject"
+					// `security.acls.default.ingress.logged` logs rejected NIC ingress.
 					"security.acls.default.ingress.logged": "true"
-					"security.ipv4_filtering":              "true"
-					"security.ipv6_filtering":              "true"
-					"security.mac_filtering":               "true"
-					"security.port_isolation":              "true"
+					// `security.ipv4_filtering` blocks IPv4 address spoofing.
+					"security.ipv4_filtering": "true"
+					// `security.ipv6_filtering` blocks IPv6 address spoofing.
+					"security.ipv6_filtering": "true"
+					// `security.mac_filtering` blocks MAC address spoofing.
+					"security.mac_filtering": "true"
+					// `security.port_isolation` blocks peer traffic between runner ports.
+					"security.port_isolation": "true"
 				}
+				// root is the runner VM root disk.
 				root: {
-					type:         "disk"
-					path:         "/"
-					pool:         inputs.names.storagePool
-					size:         "\(inputs.runners.rootDiskGiB)GiB"
+					// type selects an Incus disk device.
+					type: "disk"
+					// path mounts this disk as the guest root filesystem.
+					path: "/"
+					// pool stores the root disk on the dedicated runner pool.
+					pool: inputs.names.storagePool
+					// size applies the configured per-runner root disk allocation.
+					size: "\(inputs.runners.rootDiskGiB)GiB"
+					// `limits.max` requests the configured per-runner disk throughput ceiling.
 					"limits.max": "\(inputs.runners.diskIOMiB)MiB"
 				}
 			}
 		}
+		// storage_pool is the desired dedicated runner storage pool configuration.
 		storage_pool: {
+			// description explains the pool's runner image and root disk purpose.
 			description: "Dedicated ZFS pool for ephemeral runner images and VM roots"
-			driver:      "zfs"
+			// driver selects the Incus ZFS storage driver.
+			driver: "zfs"
+			// config binds Incus to the operator-selected ZFS source.
 			config: {
-				source:          inputs.storage.source
+				// source names the existing zpool or dataset placed under Incus control.
+				source: inputs.storage.source
+				// `zfs.pool_name` pins the effective ZFS pool name to the same source.
 				"zfs.pool_name": inputs.storage.source
 			}
 		}

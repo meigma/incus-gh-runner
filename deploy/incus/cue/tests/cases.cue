@@ -2,7 +2,7 @@ package tests
 
 import runner "github.com/meigma/incus-gh-runner/config@v0:incusrunner"
 
-#FixtureInputs: {
+_#FixtureInputs: {
 	host: {
 		cpu:        *24 | int
 		memoryGiB:  *48 | int
@@ -35,9 +35,9 @@ import runner "github.com/meigma/incus-gh-runner/config@v0:incusrunner"
 	...
 }
 
-cases: {
-	valid: inputs: #FixtureInputs
-	customSizing: inputs: #FixtureInputs & {
+_cases: {
+	valid: inputs: _#FixtureInputs
+	customSizing: inputs: _#FixtureInputs & {
 		host: {
 			cpu:        16
 			memoryGiB:  32
@@ -54,39 +54,39 @@ cases: {
 		}
 		network: proxy: port: 8080
 	}
-	unknownInput: inputs: #FixtureInputs & {
+	unknownInput: inputs: _#FixtureInputs & {
 		unsafeRawIncusConfig: true
 	}
-	unknownNetworkInput: inputs: #FixtureInputs & {
+	unknownNetworkInput: inputs: _#FixtureInputs & {
 		network: rawIncusConfig: "ipv4.nat=false"
 	}
-	defaultProject: inputs: #FixtureInputs & {
+	defaultProject: inputs: _#FixtureInputs & {
 		names: project: "default"
 	}
-	invalidDNS: inputs: #FixtureInputs & {
+	invalidDNS: inputs: _#FixtureInputs & {
 		network: dnsAddress: "999.0.2.53"
 	}
-	proxyOnDNSPort: inputs: #FixtureInputs & {
+	proxyOnDNSPort: inputs: _#FixtureInputs & {
 		network: proxy: port: 53
 	}
-	insufficientCPUHeadroom: inputs: #FixtureInputs & {
+	insufficientCPUHeadroom: inputs: _#FixtureInputs & {
 		host: cpu: 23
 	}
-	insufficientMemoryHeadroom: inputs: #FixtureInputs & {
+	insufficientMemoryHeadroom: inputs: _#FixtureInputs & {
 		host: memoryGiB: 47
 	}
-	insufficientStorageHeadroom: inputs: #FixtureInputs & {
+	insufficientStorageHeadroom: inputs: _#FixtureInputs & {
 		host: storageGiB: 259
 	}
 	weakenSecureBoot: {
-		inputs: #FixtureInputs
+		inputs: _#FixtureInputs
 		output: profile: config: "security.secureboot": "false"
 	}
 	weakenDefaultEgress: {
-		inputs: #FixtureInputs
+		inputs: _#FixtureInputs
 		output: network: config: "security.acls.default.egress.action": "allow"
 	}
 }
 
 _case:   string @tag(case)
-_result: runner.#Deployment & cases[_case]
+_result: runner.#Deployment & _cases[_case]

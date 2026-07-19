@@ -2,7 +2,7 @@ package defaultconfig
 
 import runner "github.com/meigma/incus-gh-runner/config@v0:incusrunner"
 
-deployment: runner.#Deployment & {
+_deployment: runner.#Deployment & {
 	inputs: {
 		host: {
 			cpu:        24
@@ -18,5 +18,7 @@ deployment: runner.#Deployment & {
 	}
 }
 
-baseline:   deployment.output
-controller: deployment.controller
+// baseline is the rendered default Incus desired-state manifest.
+baseline: _deployment.output
+// controller is the rendered controller configuration fragment aligned with baseline.
+controller: _deployment.controller
