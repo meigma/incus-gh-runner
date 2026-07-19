@@ -46,6 +46,17 @@ func TestLoadDoesNotDecodeGitHubTokenFromConfiguration(t *testing.T) {
 	assert.Empty(t, cfg.GitHub.Token)
 }
 
+func TestLoadBindsPersonalAccessTokenFile(t *testing.T) {
+	t.Setenv(config.EnvGitHubTokenFile, " /run/credentials/incus-gh-runner/github-token ")
+	vp := viper.New()
+	require.NoError(t, config.ConfigureViper(vp))
+
+	cfg, err := config.Load(vp)
+
+	require.NoError(t, err)
+	assert.Equal(t, "/run/credentials/incus-gh-runner/github-token", cfg.GitHub.TokenFile)
+}
+
 func TestValidateRejectsInvalidConfiguration(t *testing.T) {
 	t.Parallel()
 
@@ -188,11 +199,18 @@ func TestValidateRuntimeRequiresCompleteAdapterConfiguration(t *testing.T) {
 			want: "github credentials are required",
 		},
 		{
+			name: "mixed PAT sources",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.TokenFile = "/run/credentials/github-token"
+			},
+			want: "configure either github.token_file or INCUS_GH_RUNNER_GITHUB_TOKEN, not both",
+		},
+		{
 			name: "mixed credential types",
 			mutate: func(cfg *config.Config) {
 				cfg.GitHub.App = config.GitHubApp{ClientID: "1", InstallationID: 2, PrivateKeyFile: "/key.pem"}
 			},
-			want: "configure either github.app or INCUS_GH_RUNNER_GITHUB_TOKEN, not both",
+			want: "configure either github.app or a personal access token, not both",
 		},
 		{
 			name: "incomplete GitHub App",
@@ -229,4 +247,8 @@ func TestValidateRuntimeRequiresCompleteAdapterConfiguration(t *testing.T) {
 	}
 
 	assert.NoError(t, valid.ValidateRuntime())
+	fileCredentials := valid
+	fileCredentials.GitHub.Token = ""
+	fileCredentials.GitHub.TokenFile = "/run/credentials/github-token"
+	assert.NoError(t, fileCredentials.ValidateRuntime())
 }

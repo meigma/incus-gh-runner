@@ -2,9 +2,7 @@ github:
   config_url: https://github.com/example
   scale_set: incus-linux-x64
   runner_group: default
-  app:
-    client_id: Iv1.example
-    installation_id: 12345678
+# GitHub credentials are supplied by one systemd credential drop-in.
 incus:
   project: github-runners
   image: incus-gh-runner:v0.1.0

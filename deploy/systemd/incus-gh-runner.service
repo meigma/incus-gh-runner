@@ -15,8 +15,6 @@ ConfigurationDirectory=incus-gh-runner
 ConfigurationDirectoryMode=0755
 LogsDirectory=incus-gh-runner
 LogsDirectoryMode=0700
-LoadCredential=github-app-private-key:/etc/incus-gh-runner/github-app-private-key.pem
-Environment=INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE=%d/github-app-private-key
 UMask=0077
 
 Restart=on-failure
