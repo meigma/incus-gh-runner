@@ -69,6 +69,15 @@ and the exact-head reference-image fingerprint
 Hosted CI, CodeQL, Pages, Kusari Inspector, and the image build were green on
 that head.
 
+After this one-time proof, the acceptance helper and its supporting framework
+were deliberately removed from PR #29 at
+`8454247d61f4f3db01ccede80a80306fe915504d`. The evidence below remains bound
+to the exact pre-trim head and has not been rewritten as evidence for the final
+head. The final branch retains byte-identical CUE policy, rendered baseline,
+and image-recipe blobs, plus the generic shell-harness corrections discovered
+during the live run. The helper binary, manifests, metrics, and checksums remain
+only in this immutable historical bundle; no second paid-host run was made.
+
 The disposable c3.small.x86 bare-metal host ran Ubuntu 24.04, Incus 7.0.1,
 nftables, a file-backed disposable ZFS pool, and the rendered two-runner CUE
 baseline. The passing run proved:

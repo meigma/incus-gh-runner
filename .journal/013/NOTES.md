@@ -259,6 +259,36 @@ implementation as `3a5ca0bfd294d189790dc4773ed8d5b259f22a46`. Draft PR #29 is op
 https://github.com/meigma/incus-gh-runner/pull/29 while its exact-head hosted
 checks and rebuilt reference image run.
 
+## 2026-07-19 14:39 — Retained findings, removed the one-off framework
+
+After reviewing the permanent maintenance cost, the user chose to treat the
+5,339-line Go runtime-acceptance framework as a disposable proof spike. Removed
+the source-only command, `internal/liveacceptance` packages, shell integration,
+helper-specific contracts, and operator instructions in commit
+`8454247d61f4f3db01ccede80a80306fe915504d`. The resulting PR changes only 13
+existing files, with 198 additions and 37 deletions relative to `master`; it
+adds no binary, package, recurring pressure framework, or dependency.
+
+Retained the durable outcomes: exact CUE constraints for NIC-level IPv6 denial
+and managed bridge names; matching CUE and embedded-policy negative tests;
+reference-image partition/filesystem growth; the `br_netfilter` prerequisite;
+and the live-discovered launch EOF, inetd socket handoff, noexec-safe listener,
+and agent-responsive concurrency fixes. The CUE policy, rendered baseline, and
+image recipe blobs are byte-identical to those exercised at paid-host head
+`3d787dc1a0aac7a59e34b68e4ebc4f318ee7854f`.
+
+Local `moon run root:check`, full Go race tests, focused CUE, image and shell
+contracts, documentation build, and whitespace checks passed. Two independent
+final reviews found no security or correctness regression after exact
+bridge-name grammar and one stale proof reference were corrected. Retitled PR
+#29 to `fix(security): harden Incus runner isolation` and rewrote its body to
+separate retained implementation from historical one-time evidence. The PR
+remains draft and its new exact-head hosted checks are pending.
+
+The checksummed runtime bundle remains unchanged. It is historical evidence
+for pre-trim head `3d787dc`, not a claim that final head `8454247` contains or
+can rerun the discarded framework. No paid host was reprovisioned.
+
 The hostile harness can now invoke a source-only Go helper that binds evidence
 to an explicitly injected clean revision, the exact helper SHA-256, rendered
 baseline digest, and immutable image fingerprint. On a disposable two-runner
