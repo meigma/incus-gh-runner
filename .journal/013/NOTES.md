@@ -180,3 +180,25 @@ GitHub Pages, Kusari Inspector, and the reference-image build (8m14s); five
 event-inapplicable jobs skipped normally. The PR remains draft and the existing
 Slice 2 KVM, IPv6 spoofing, resource-exhaustion, and least-authority gates remain
 open. No live Incus host or registry was mutated.
+
+## 2026-07-19 08:45 — CUE public API documentation completed
+
+Addressed the user's IntelliSense review feedback on the existing CUE proof.
+CUE exports every package identifier that does not start with `_`, including
+nested definition fields, so the seven validation helpers are now hidden
+`_#...` definitions and the intended main-package API is exactly `#Inputs` and
+`#Deployment`. Added identifier-led documentation to every field in both
+definitions, including the complete input surface, derived controller fragment,
+rendered Incus manifest, quoted Incus keys, computed per-pool disk limit, and
+all three anonymous ACL rule elements. The example exposes only documented
+`baseline` and `controller` fields; all test fixtures and cases are hidden.
+
+The consolidated `cue def` view preserves the comments. Golden rendering,
+negative cases, the Incus validator and hostile-harness contracts, full local
+Moon CI, `go test -race ./...`, whitespace checks, and an independent CUE API
+review all passed without rendered baseline drift. Committed as
+`110530d5f8f5a800f8d7ca23942775efa8ac01f2`, pushed the branch, and updated
+draft PR #28. Exact-head CI, both CodeQL analyses, GitHub Pages, Kusari, and the
+reference-image build (8m43s) are green; five event-inapplicable jobs skipped
+normally. The four broader Slice 2 acceptance gates remain open and the PR
+remains draft.
