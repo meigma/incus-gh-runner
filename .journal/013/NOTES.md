@@ -249,3 +249,39 @@ Pages jobs skipped normally. The Go replacement was not exercised against a
 newly provisioned live Incus host, and no paid host or registry was mutated.
 The existing KVM, IPv6 spoofing, resource-exhaustion, and least-authority Slice
 2 gates remain open, so the PR remains draft.
+
+## 2026-07-19 12:10 — Combined KVM runtime gate opened as draft PR #29
+
+Merged the reviewed baseline/CUE/Go-validator increment through PR #28; master
+advanced to `10f4be261419f0c36761a0e99b6e5c84ebf1dbad`. Started the user-approved
+follow-up on `feat/security-runtime-acceptance` and committed the locally proven
+implementation as `3a5ca0bfd294d189790dc4773ed8d5b259f22a46`. Draft PR #29 is open at
+https://github.com/meigma/incus-gh-runner/pull/29 while its exact-head hosted
+checks and rebuilt reference image run.
+
+The hostile harness can now invoke a source-only Go helper that binds evidence
+to an explicitly injected clean revision, the exact helper SHA-256, rendered
+baseline digest, and immutable image fingerprint. On a disposable two-runner
+host it requires the exact Incus-reported QEMU PID to hold `/dev/kvm`, reported
+Secure Boot and an agent canary round trip, exact project-limit rejection of a
+third VM, controlled self-assigned/spoofed/link-local IPv6 denial with positive
+controls, and ten minutes of materially bound CPU/memory/synchronous-disk
+pressure while independent API, peer, egress, host-memory, daemon, kernel, and
+ZFS watchdogs remain healthy. Cleanup is marker-bound, run-scoped, and
+fail-closed across ambiguous starts and cancellations; command output and
+retained evidence are bounded.
+
+The CUE baseline now fixes NIC `ipv6.address=none`. The reference image now
+grows its 8 GiB root partition and ext4 filesystem to the configured Incus root
+device so the default 20 GiB CUE input is effective inside the guest. The
+acceptance artifact and documentation retain the root-equivalent local Incus
+socket, unsigned-EFI negative-test, aggregate runtime throttling, and NIC/ZFS
+throughput limitations rather than overstating closure.
+
+Local `moon run root:check`, full and focused race tests, clean-cache lint,
+CUE/policy/image/hostile-harness contracts, documentation, explicit-provenance
+Linux cross-build, whitespace checks, and an independent false-pass/paid-host
+review passed. The remaining action for this PR is one exact-commit,
+exact-image paid KVM window, checksummed evidence retention, and verified host
+destruction. Least-privilege Incus authorization deliberately remains a later
+slice rather than being folded into this runtime proof.
