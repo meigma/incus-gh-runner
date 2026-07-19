@@ -487,3 +487,46 @@ to reset that limit.
 
 PR #30's body now records the live acceptance result and remains draft for
 human review. Slice 3A's local, hosted, and live gates are complete.
+
+## 2026-07-19 16:38 — Slice 3A merged; Slice 3B spike and local proof complete
+
+The user approved Slice 3A. Reverified exact PR #30 head
+`fa729feb8661de8ad85f008bfaae4954e2a022f0`, its clean worktree, mergeable
+state, and every applicable hosted check, then marked it ready and squash
+merged it as `92cd3ce29b6286489969e34f1c7353d1691ab4f0`. GitHub's combined merge and
+local cleanup command reported that `master` was already open in its own
+Worktrunk worktree, but the remote merge had succeeded. Fast-forwarded the
+clean default checkout, proved feature/master tree equality, removed the
+integrated worktree and local branch, and deleted the remote feature branch.
+
+Started Slice 3B from exact merged `master` on `feat/security-slice-3b`. The
+required short protocol spike opened a throwaway raw scale-set message session
+and dispatched workflow run 29707862145. GitHub emitted `JobAssigned` with no
+runner identity and zero `runnerAssignTime`; cancellation before runner
+assignment emitted `JobCompleted` with `runnerId: 0` and an empty runner name,
+while `TotalAssignedJobs` fell from one to zero. This proves queue cancellation
+is capacity authority only and cannot authorize deletion of a particular VM.
+No probe source enters the repository.
+
+The smallest safe production contract uses exact `JobStarted` callbacks as
+current-session busy authority and the scale-set client's exact
+`GetRunnerByName`/`RemoveRunner` operations as the registration fence. Guest
+`running` now means ready with unknown occupancy. Only a ready runner created
+under the current GitHub message-session generation and not marked busy may be
+fenced for excess-capacity scale-down. Controller restart, message-session
+reconnect, or reconnect during an in-flight create invalidates process-local
+idle authority. After successful registration removal and absence
+confirmation, the controller excludes fenced capacity but keeps its VM alive
+until the guest becomes terminal; normal ownership-checked Incus deletion then
+applies. Uncertain initial Incus inventory now retries fail-closed with capped
+backoff instead of exhausting systemd's start limit.
+
+Behavior tests cover exact registration identity, absent/idempotent fences,
+failure and confirmation paths, authoritative busy snapshots, session
+generations, queue cancellation, active-runner preservation, restart ambiguity,
+reconnect during create, and startup inventory recovery. Focused race tests
+passed, the new controller cases passed 50 repetitions, and the full
+`moon run root:check` gate passed. Committed as
+`40506ca` (`fix(controller): fence idle runners before scale-down`), pushed the
+branch, and opened draft PR #31. Hosted and exact-head live fence/restart gates
+remain pending; no live fence result is claimed by this checkpoint.
