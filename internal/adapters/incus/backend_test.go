@@ -28,6 +28,8 @@ type fakeClient struct {
 	profiles           map[string]bool
 	instances          map[string]api.Instance
 	statusFiles        map[string][]byte
+	statusErrors       map[string]error
+	statusRead         func(context.Context, string, string) ([]byte, error)
 	consoleLogs        map[string][]byte
 	createRequest      api.InstancesPost
 	started            []string
@@ -50,6 +52,7 @@ func newFakeClient() *fakeClient {
 		profiles:     make(map[string]bool),
 		instances:    make(map[string]api.Instance),
 		statusFiles:  make(map[string][]byte),
+		statusErrors: make(map[string]error),
 		consoleLogs:  make(map[string][]byte),
 		fileWrites:   make([]fileWrite, 0),
 		started:      make([]string, 0),
@@ -157,10 +160,16 @@ func (f *fakeClient) CreateInstanceFile(
 }
 
 // GetInstanceFile returns a configured guest status file.
-func (f *fakeClient) GetInstanceFile(_ context.Context, name string, _ string) ([]byte, error) {
+func (f *fakeClient) GetInstanceFile(ctx context.Context, name string, path string) ([]byte, error) {
+	if f.statusRead != nil {
+		return f.statusRead(ctx, name, path)
+	}
+	if err := f.statusErrors[name]; err != nil {
+		return nil, err
+	}
 	status, ok := f.statusFiles[name]
 	if !ok {
-		return nil, errNotFound
+		return nil, errInstanceFileNotFound
 	}
 	return append([]byte(nil), status...), nil
 }
@@ -214,10 +223,13 @@ func TestBackendListOwnedMapsLifecycleAndFiltersOwnership(t *testing.T) {
 				Config: api.ConfigMap{ownershipKey: "someone-else"},
 			},
 		},
-		"stopped": ownedInstance("stopped", "Stopped", now),
-		"working": ownedInstance("working", "Running", now),
-		"expired": ownedInstance("expired", "Running", now.Add(-2*time.Minute)),
+		"stopped":  ownedInstance("stopped", "Stopped", now),
+		"starting": ownedInstance("starting", "Running", now),
+		"missing":  ownedInstance("missing", "Running", now),
+		"working":  ownedInstance("working", "Running", now),
+		"expired":  ownedInstance("expired", "Running", now.Add(-2*time.Minute)),
 	}
+	client.statusFiles["starting"] = []byte("{\"version\":1,\"state\":\"starting\"}")
 	client.statusFiles["working"] = []byte("{\"version\":1,\"state\":\"running\"}")
 	backend := newTestBackend(t, client, Options{
 		Now:              func() time.Time { return now },
@@ -229,9 +241,112 @@ func TestBackendListOwnedMapsLifecycleAndFiltersOwnership(t *testing.T) {
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []controller.Runner{
 		{ID: "stopped", State: controller.RunnerTerminal},
+		{ID: "starting", State: controller.RunnerProvisioning},
+		{ID: "missing", State: controller.RunnerProvisioning},
 		{ID: "working", State: controller.RunnerBusy},
 		{ID: "expired", State: controller.RunnerTerminal},
 	}, runners)
+}
+
+func TestBackendListOwnedFailsClosedOnGuestStatusUncertainty(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		status    []byte
+		statusErr error
+		wantError string
+	}{
+		{
+			name:      "instance disappeared",
+			statusErr: errNotFound,
+			wantError: "incus resource not found",
+		},
+		{
+			name:      "timeout",
+			statusErr: context.DeadlineExceeded,
+			wantError: "context deadline exceeded",
+		},
+		{
+			name:      "transport failure",
+			statusErr: errors.New("connection reset"),
+			wantError: "connection reset",
+		},
+		{
+			name:      "permission failure",
+			statusErr: errors.New("permission denied"),
+			wantError: "permission denied",
+		},
+		{
+			name:      "malformed JSON",
+			status:    []byte(`{"version":`),
+			wantError: "decode guest status",
+		},
+		{
+			name:      "unsupported version",
+			status:    []byte(`{"version":2,"state":"running"}`),
+			wantError: "unsupported guest status version 2",
+		},
+		{
+			name:      "unknown state",
+			status:    []byte(`{"version":1,"state":"mystery"}`),
+			wantError: `unknown guest status state "mystery"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			now := time.Date(2026, 7, 17, 20, 0, 0, 0, time.UTC)
+			client := newFakeClient()
+			client.instances["runner"] = ownedInstance("runner", "Running", now)
+			client.statusFiles["runner"] = tt.status
+			client.statusErrors["runner"] = tt.statusErr
+			backend := newTestBackend(t, client, Options{Now: func() time.Time { return now }})
+
+			runners, err := backend.ListOwned(context.Background())
+
+			require.ErrorContains(t, err, tt.wantError)
+			assert.Nil(t, runners, "uncertain inventory must not expose a partial snapshot")
+		})
+	}
+}
+
+func TestBackendListOwnedBudgetsEachGuestStatusRead(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 17, 20, 0, 0, 0, time.UTC)
+	client := newFakeClient()
+	client.instances["a-slow"] = ownedInstance("a-slow", "Running", now.Add(-2*time.Minute))
+	client.instances["b-active"] = ownedInstance("b-active", "Running", now.Add(-2*time.Minute))
+	activeRead := make(chan struct{}, 1)
+	client.statusRead = func(ctx context.Context, name string, _ string) ([]byte, error) {
+		if name == "a-slow" {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		activeRead <- struct{}{}
+		return []byte(`{"version":1,"state":"running"}`), nil
+	}
+	backend := newTestBackend(t, client, Options{
+		Now:               func() time.Time { return now },
+		BootstrapTimeout:  time.Minute,
+		StatusReadTimeout: 20 * time.Millisecond,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	runners, err := backend.ListOwned(ctx)
+
+	require.ErrorContains(t, err, "a-slow")
+	assert.Nil(t, runners, "one uncertain runner must invalidate the complete snapshot")
+	require.NoError(t, ctx.Err(), "the slow runner must not consume the parent inventory deadline")
+	select {
+	case <-activeRead:
+	default:
+		t.Fatal("expected the later active runner to receive its own status-read budget")
+	}
 }
 
 func TestBackendCreateOwnsStartsAndCommitsPayload(t *testing.T) {
@@ -341,6 +456,9 @@ func newTestBackend(t *testing.T, client client, overrides Options) *Backend {
 	}
 	if overrides.AgentPollInterval != 0 {
 		options.AgentPollInterval = overrides.AgentPollInterval
+	}
+	if overrides.StatusReadTimeout != 0 {
+		options.StatusReadTimeout = overrides.StatusReadTimeout
 	}
 
 	backend, err := newBackend(client, options)

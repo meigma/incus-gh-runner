@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,9 +20,11 @@ import (
 const (
 	defaultNamePrefix      = "incus-gh-runner-"
 	defaultAgentPoll       = 250 * time.Millisecond
+	defaultStatusRead      = 5 * time.Second
 	payloadPath            = "/run/incus-gh-runner/payload.json"
 	readyPath              = "/run/incus-gh-runner/payload.ready"
 	statusPath             = "/run/incus-gh-runner/status.json"
+	guestStatusStarting    = "starting"
 	guestStatusStopped     = "stopped"
 	ownershipKey           = "user.incus-gh-runner.owner"
 	correlationKey         = "user.incus-gh-runner.correlation-id"
@@ -99,6 +102,8 @@ type Options struct {
 	NewID func() string
 	// AgentPollInterval controls retries while waiting for Incus agent file transfer.
 	AgentPollInterval time.Duration
+	// StatusReadTimeout caps each individual guest-status observation.
+	StatusReadTimeout time.Duration
 }
 
 // Backend implements the controller runner lifecycle through Incus.
@@ -162,6 +167,9 @@ func (o Options) withDefaults() Options {
 	if o.AgentPollInterval <= 0 {
 		o.AgentPollInterval = defaultAgentPoll
 	}
+	if o.StatusReadTimeout <= 0 {
+		o.StatusReadTimeout = defaultStatusRead
+	}
 
 	return o
 }
@@ -190,20 +198,46 @@ func (b *Backend) ListOwned(ctx context.Context) ([]controller.Runner, error) {
 		return nil, fmt.Errorf("list Incus instances: %w", err)
 	}
 
-	runners := make([]controller.Runner, 0, len(instances))
+	owned := make([]api.Instance, 0, len(instances))
 	for _, instance := range instances {
 		if instance.Config[ownershipKey] != b.options.Owner {
 			continue
 		}
+		owned = append(owned, instance)
+	}
+	sort.Slice(owned, func(i, j int) bool { return owned[i].Name < owned[j].Name })
 
-		state, err := b.runnerState(ctx, instance)
+	runners := make([]controller.Runner, 0, len(owned))
+	inspectionErrors := make([]error, 0)
+	for index, instance := range owned {
+		statusContext, cancel := b.statusReadContext(ctx, len(owned)-index)
+		state, err := b.runnerState(statusContext, instance)
+		cancel()
 		if err != nil {
-			return nil, fmt.Errorf("inspect owned instance %q: %w", instance.Name, err)
+			inspectionErrors = append(
+				inspectionErrors,
+				fmt.Errorf("inspect owned instance %q: %w", instance.Name, err),
+			)
+			continue
 		}
 		runners = append(runners, controller.Runner{ID: instance.Name, State: state})
 	}
+	if len(inspectionErrors) != 0 {
+		return nil, errors.Join(inspectionErrors...)
+	}
 
 	return runners, nil
+}
+
+// statusReadContext gives one runner a bounded, fair share of the inventory deadline.
+func (b *Backend) statusReadContext(ctx context.Context, remaining int) (context.Context, context.CancelFunc) {
+	budget := b.options.StatusReadTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		fairShare := time.Until(deadline) / time.Duration(remaining)
+		budget = min(budget, fairShare)
+	}
+
+	return context.WithTimeout(ctx, budget)
 }
 
 // Create creates, starts, and injects one owned runner VM.
@@ -322,16 +356,28 @@ func (b *Backend) runnerState(ctx context.Context, instance api.Instance) (contr
 		return controller.RunnerTerminal, nil
 	case "running":
 		status, err := b.client.GetInstanceFile(ctx, instance.Name, statusPath)
+		if err != nil && !errors.Is(err, errInstanceFileNotFound) {
+			return "", fmt.Errorf("read guest status: %w", err)
+		}
 		if err == nil {
-			var observed map[string]any
+			var observed struct {
+				Version int    `json:"version"`
+				State   string `json:"state"`
+			}
 			if err := json.Unmarshal(status, &observed); err != nil {
 				return "", fmt.Errorf("decode guest status: %w", err)
 			}
-			switch observed["state"] {
+			if observed.Version != 1 {
+				return "", fmt.Errorf("unsupported guest status version %d", observed.Version)
+			}
+			switch observed.State {
+			case guestStatusStarting:
 			case "running":
 				return controller.RunnerBusy, nil
 			case "exited", "failed":
 				return controller.RunnerTerminal, nil
+			default:
+				return "", fmt.Errorf("unknown guest status state %q", observed.State)
 			}
 		}
 	}

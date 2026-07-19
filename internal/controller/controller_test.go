@@ -146,6 +146,53 @@ func TestControllerPausesMutationsAfterInventoryFailure(t *testing.T) {
 	require.NoError(t, receiveError(t, errCh))
 }
 
+func TestControllerPreservesActiveRunnersDuringUncertainInventory(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend(controller.Runner{ID: "active", State: controller.RunnerBusy})
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{
+		MaxRunners:        2,
+		Workers:           1,
+		ReconcileInterval: 20 * time.Millisecond,
+		RetryInitial:      80 * time.Millisecond,
+		RetryMaximum:      80 * time.Millisecond,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	mailbox.Publish(controller.Demand{AssignedJobs: 2})
+	require.Eventually(t, func() bool {
+		return backend.createAttempts() == 1 && backend.hasRunner("runner-1")
+	}, time.Second, time.Millisecond, "expected two active runners before the outage")
+
+	gate := make(chan struct{})
+	backend.setListFailures(1)
+	backend.setListGate(gate)
+	listAttempts := backend.listAttempts()
+	require.Eventually(t, func() bool {
+		return backend.listAttempts() > listAttempts
+	}, time.Second, time.Millisecond, "expected the failing inventory to be in flight")
+
+	mailbox.Publish(controller.Demand{})
+	close(gate)
+	backend.setListGate(nil)
+	assert.Never(t, func() bool {
+		return backend.totalDeleteAttempts() != 0
+	}, 40*time.Millisecond, 2*time.Millisecond, "uncertain inventory must preserve both runners")
+
+	backend.setRunnerState("runner-1", controller.RunnerBusy)
+	require.Eventually(t, func() bool {
+		return backend.listAttempts() >= listAttempts+2
+	}, time.Second, time.Millisecond, "expected inventory to recover after the outage")
+	assert.True(t, backend.hasRunner("active"))
+	assert.True(t, backend.hasRunner("runner-1"))
+	assert.Zero(t, backend.totalDeleteAttempts())
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
 func TestControllerAppliesMinimumAndMaximumCapacity(t *testing.T) {
 	t.Parallel()
 
@@ -359,6 +406,9 @@ func newController(
 	if overrides.Workers != 0 {
 		options.Workers = overrides.Workers
 	}
+	if overrides.ReconcileInterval != 0 {
+		options.ReconcileInterval = overrides.ReconcileInterval
+	}
 	if overrides.MaxRunners != 0 {
 		options.MinRunners = overrides.MinRunners
 		options.MaxRunners = overrides.MaxRunners
@@ -405,6 +455,7 @@ type fakeBackend struct {
 	mu                    sync.Mutex
 	runners               map[string]controller.Runner
 	createGate            <-chan struct{}
+	listGate              <-chan struct{}
 	createState           controller.RunnerState
 	failLists             int
 	failCreates           int
@@ -432,18 +483,30 @@ func newFakeBackend(runners ...controller.Runner) *fakeBackend {
 }
 
 // ListOwned returns a snapshot of the fake backend's runners.
-func (f *fakeBackend) ListOwned(context.Context) ([]controller.Runner, error) {
+func (f *fakeBackend) ListOwned(ctx context.Context) ([]controller.Runner, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.listAttemptCount++
+	gate := f.listGate
+	failed := f.failLists > 0
 	if f.failLists > 0 {
 		f.failLists--
-		return nil, errors.New("injected list failure")
 	}
 
 	runners := make([]controller.Runner, 0, len(f.runners))
 	for _, runner := range f.runners {
 		runners = append(runners, runner)
+	}
+	f.mu.Unlock()
+
+	if gate != nil {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-gate:
+		}
+	}
+	if failed {
+		return nil, errors.New("injected list failure")
 	}
 	return runners, nil
 }
@@ -453,6 +516,13 @@ func (f *fakeBackend) setListFailures(count int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failLists = count
+}
+
+// setListGate blocks upcoming inventory calls until gate is closed.
+func (f *fakeBackend) setListGate(gate <-chan struct{}) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listGate = gate
 }
 
 // setRunnerState changes the observed lifecycle state for a fake runner.
@@ -527,6 +597,18 @@ func (f *fakeBackend) deleteAttempts(id string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.deleteAttemptCounts[id]
+}
+
+// totalDeleteAttempts returns the number of delete calls across all runners.
+func (f *fakeBackend) totalDeleteAttempts() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	total := 0
+	for _, attempts := range f.deleteAttemptCounts {
+		total += attempts
+	}
+	return total
 }
 
 // runnerCount returns the current fake inventory size.
