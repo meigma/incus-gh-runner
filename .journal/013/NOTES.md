@@ -423,3 +423,20 @@ build, Go tests, docs, image contract, Incus isolation contract, release config,
 and the platform-applicable systemd check. The live agent-outage acceptance
 evidence remains to be run against the exact review commit; no live result is
 claimed by this checkpoint.
+
+## 2026-07-19 16:31 — Slice 3A draft PR and exact-head checks green
+
+Committed the Slice 3A implementation as
+`fa729feb8661de8ad85f008bfaae4954e2a022f0`, pushed
+`feat/security-slice-3a`, and opened draft PR #30 with title
+`fix(controller): fail closed on inventory uncertainty`. GitHub reports that
+exact head as merge-clean. CI, both CodeQL workflows, GitHub Pages, Kusari
+Inspector, and GitHub's CodeQL check are green; release dry-run and Pages
+deployment jobs skipped normally for this pull-request shape.
+
+The draft remains correctly explicit that the live two-active-runner agent
+outage has not run. No reusable source-only acceptance framework was added.
+The previous disposable Latitude host was verified destroyed, and this local
+environment has neither a live Incus/KVM target nor a Latitude credential, so
+the paid-host acceptance gate requires a fresh operator-authorized hardware
+window before Slice 3A can be called complete.
