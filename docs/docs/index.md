@@ -6,14 +6,14 @@ incus-gh-runner is a controller that runs one-job GitHub Actions runners in ephe
 
 - Incus 7.0 or newer.
 - A dedicated Linux host. The controller's identity needs `incus-admin` group membership, which is root-equivalent on that host.
-- A GitHub App for production use. A personal access token is supported for local testing only.
+- A GitHub App or personal access token authorized for the configured repository or organization.
 
 See [Deploy to production](how-to/deploy.md) for the full host and GitHub prerequisites.
 
 ## Where to go
 
 **Deploy it**
-[Deploy to production](how-to/deploy.md) walks through the end-to-end production deployment: host prerequisites, GitHub App setup, configuration, and installing the systemd unit.
+[Deploy to production](how-to/deploy.md) walks through the end-to-end production deployment: host prerequisites, GitHub App or PAT setup, configuration, and installing the systemd unit.
 
 **Operate it**
 [Operate and troubleshoot](how-to/operate.md) covers day-2 operations — checking runner state, reading logs, restarting the service, and troubleshooting.

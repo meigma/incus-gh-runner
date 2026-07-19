@@ -1,6 +1,6 @@
 # How to deploy incus-gh-runner to production
 
-Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect it to a live GitHub scale set.
+Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect it to a live GitHub scale set using either a GitHub App or a personal access token (PAT).
 
 ## Prerequisites
 
@@ -11,8 +11,8 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
         `SupplementaryGroups=incus-admin` in the unit file gives the controller the same host access as a user in `incus-admin`. Run the controller on a host dedicated to this workload, not one shared with unrelated services.
 
 - A systemd version supporting `LoadCredential=` and the `%d` credentials-directory specifier the unit relies on, along with `DynamicUser=` and the unit's other sandboxing directives. Ubuntu 24.04 is the validated reference host.
-- Administrative access to a GitHub organization or repository, to create a GitHub App and its installation.
-- The `incus-gh-runner` binary for your platform, and a checked-out or downloaded copy of `deploy/systemd/incus-gh-runner.service` from the repository.
+- Administrative access to the target GitHub organization or repository.
+- The `incus-gh-runner` binary for your platform, and a checked-out or downloaded copy of `deploy/systemd/` from the repository.
 
 ## 1. Prepare Incus
 
@@ -31,57 +31,52 @@ Import a runner image into the project. See [Obtain, build, and validate runner 
 
 The controller does not create projects, networks, storage, or profiles itself — everything in this step must exist before the controller starts.
 
-## 2. Create the GitHub App
+## 2. Choose the GitHub scope and credential
 
-The controller authenticates to GitHub as a GitHub App in production. Create an App with permissions sufficient to manage self-hosted runners and runner scale sets for the organization or repository at your intended `github.config_url`, then install it on that org or repository.
+Set `github.config_url` to the exact destination for the scale set:
 
-1. In the target organization or repository's settings, create a new GitHub App.
-2. Grant it the permissions GitHub requires to manage self-hosted runner scale sets for that org or repository. The exact permission names are not fixed by this project — consult GitHub's current Actions Runner Controller / runner scale set documentation for the required scopes.
-3. Install the App on the organization or repository referenced by `github.config_url`.
-4. Record the App's **Client ID**.
-5. Record the **Installation ID** of the installation you created in step 3.
-6. Generate and download a **private key** (PEM file) for the App.
+- One repository: `https://github.com/OWNER/REPOSITORY`
+- An organization: `https://github.com/ORGANIZATION`
 
-You need all three values — client ID, installation ID, and the PEM file — for the install step below.
+A repository URL restricts the scale set to that repository. The time-limited token shown on GitHub's **New self-hosted runner** page cannot operate this controller: it registers one runner once, while `incus-gh-runner` must continuously create fresh JIT configurations for replacement VMs.
+
+Choose one of the following renewable credential methods. GitHub Apps are preferred for independent lifecycle and rotation; a repository-scoped fine-grained PAT is the simpler option when installing an App is undesirable. GitHub maintains the current permission requirements in [Authenticating Actions Runner Controller to the GitHub API](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api).
+
+### Option A: GitHub App
+
+1. Create a GitHub App owned by the target organization.
+2. Grant repository **Administration: read and write**, repository **Metadata: read-only**, and organization **Self-hosted runners: read and write** permissions. Repository Administration is required for repository-scoped runners.
+3. Install the App for the target organization or selected repository.
+4. Record the App's client ID and installation ID.
+5. Generate and download a private key PEM file.
+
+### Option B: personal access token
+
+For a single repository, create a fine-grained PAT that can access only that repository and grant repository **Administration: read and write**. For an organization-scoped scale set, follow GitHub's current organization permission guidance at the link above.
+
+A classic PAT also works, but requires the broader `repo` scope for repository runners or `admin:org` for organization runners. Prefer a fine-grained PAT when GitHub makes it available for the target.
 
 ## 3. Install the controller
 
-Install the binary:
+Install the binary and base unit:
 
 ```sh
 sudo install -m 0755 incus-gh-runner /usr/bin/incus-gh-runner
-```
-
-Install the unit file:
-
-```sh
 sudo install -m 0644 deploy/systemd/incus-gh-runner.service /etc/systemd/system/incus-gh-runner.service
-```
-
-Create the configuration directory and place the config and App private key:
-
-```sh
-sudo mkdir -p /etc/incus-gh-runner
+sudo install -d -m 0755 /etc/incus-gh-runner
 sudo install -m 0644 config.yaml /etc/incus-gh-runner/config.yaml
-sudo install -m 0600 github-app-private-key.pem /etc/incus-gh-runner/github-app-private-key.pem
 ```
 
-The unit runs under `DynamicUser=yes`, so `config.yaml` must remain readable by the dynamically allocated service user (mode `0644` as shown). The private key does not need to be — the unit loads it through `LoadCredential=`, which systemd reads as root before the service starts, independent of the runtime user.
-
-!!! warning "Do not set `private_key_file` in YAML"
-    The unit's `LoadCredential=github-app-private-key:/etc/incus-gh-runner/github-app-private-key.pem` line injects the key's runtime location into the service as `INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE`. Leave `github.app.private_key_file` unset in `config.yaml` — setting it there points the controller at a path outside the credential mechanism and defeats the unit's key handling.
+The unit runs under `DynamicUser=yes`, so `config.yaml` must remain readable by the dynamically allocated service user. Credential files remain root-only and are exposed to the service through systemd's protected credential directory.
 
 ## 4. Write the configuration
 
-Write `/etc/incus-gh-runner/config.yaml`. This minimal example covers the required keys plus a capacity range; see [Configuration reference](../reference/configuration.md) for every key, its default, its environment variable, and the full credential precedence rules:
+Write `/etc/incus-gh-runner/config.yaml`. This common configuration works with either credential method:
 
 ```yaml
 github:
-  config_url: https://github.com/your-org
+  config_url: https://github.com/OWNER/REPOSITORY
   scale_set: incus-gh-runner-prod
-  app:
-    client_id: Iv1.xxxxxxxxxxxxxxxx
-    installation_id: 12345678
 incus:
   project: github-runners
   image: incus-gh-runner:v0.1.0
@@ -92,22 +87,58 @@ capacity:
   max_runners: 4
 ```
 
-- `github.config_url` is the org or repo URL the App is installed on.
+When using a GitHub App, add its non-secret identifiers:
+
+```yaml
+github:
+  app:
+    client_id: Iv1.xxxxxxxxxxxxxxxx
+    installation_id: 12345678
+```
+
+When using a PAT, do not add the `app` block. The selected systemd drop-in supplies the remaining credential path.
+
 - `github.scale_set` names the runner scale set; the controller creates it automatically on first start if it does not already exist.
 - `incus.image` is the alias or fingerprint of the image you imported in step 1.
-- `incus.owner` is an arbitrary ownership marker exclusive to this deployment — do not reuse it across independent controller instances pointed at the same Incus project. See [How incus-gh-runner works](../explanation/how-it-works.md) for how this marker gates instance deletion.
+- `incus.owner` is an arbitrary ownership marker exclusive to this deployment — do not reuse it across independent controller instances pointed at the same Incus project.
 
-## 5. Validate the unit (optional)
+See [Configuration reference](../reference/configuration.md) for every key, default, environment variable, and credential validation rule.
 
-From a checkout of the repository, run the bundled sandboxed check before deploying to catch unit syntax errors and hardening regressions:
+## 5. Install one credential drop-in
+
+Install exactly one credential file and its matching drop-in as `credentials.conf`.
+
+For a GitHub App:
+
+```sh
+sudo install -m 0600 github-app-private-key.pem /etc/incus-gh-runner/github-app-private-key.pem
+sudo install -d -m 0755 /etc/systemd/system/incus-gh-runner.service.d
+sudo install -m 0644 deploy/systemd/credentials-github-app.conf \
+  /etc/systemd/system/incus-gh-runner.service.d/credentials.conf
+```
+
+For a PAT stored in a local file named `github-token`:
+
+```sh
+sudo install -m 0600 github-token /etc/incus-gh-runner/github-token
+sudo install -d -m 0755 /etc/systemd/system/incus-gh-runner.service.d
+sudo install -m 0644 deploy/systemd/credentials-personal-access-token.conf \
+  /etc/systemd/system/incus-gh-runner.service.d/credentials.conf
+```
+
+Do not place the App private key or PAT value in `config.yaml`. The drop-ins load the root-owned source file and point the controller at the protected runtime copy. To change methods, replace `credentials.conf`, add or remove the `github.app` identifiers in `config.yaml`, then reload and restart the service.
+
+## 6. Validate the unit (optional)
+
+From a checkout of the repository, run the bundled sandboxed check before deploying:
 
 ```sh
 deploy/systemd/verify.sh
 ```
 
-This requires Linux and `systemd-analyze`; it verifies the unit definition and checks its systemd security exposure score against a fixed threshold, without touching your live system.
+This requires Linux and `systemd-analyze`; it verifies the base unit and both credential variants, then checks the systemd security exposure score against a fixed threshold without touching your live system.
 
-## 6. Start and enable the service
+## 7. Start and enable the service
 
 ```sh
 sudo systemctl daemon-reload
@@ -124,7 +155,7 @@ sudo journalctl -u incus-gh-runner -n 50 --no-pager
 
 Look for a JSON log line with `msg="incus-gh-runner started"`, carrying `scale_set`, `scale_set_id`, and `incus_project` fields. Its absence, or a repeating restart loop, means startup failed — check the preceding log lines for the specific error before continuing.
 
-Validate the deployment end to end by running a real workflow job against the scale set. In a workflow in the repository or an organization repository covered by `github.config_url`, target the scale set by name:
+Validate the deployment end to end by running a real workflow job in the configured repository or organization:
 
 ```yaml
 jobs:
@@ -140,5 +171,5 @@ Dispatch the job and confirm a VM is created, the job completes, and the VM is d
 
 - [Operate and troubleshoot incus-gh-runner](./operate.md) — running the deployed controller, log fields, and recovering from failures.
 - [Obtain, build, and validate runner images](./runner-images.md) — image acquisition, verification, and validation.
-- [Configuration reference](../reference/configuration.md) — every config key, environment variable, CLI flag, and the credential precedence rules.
+- [Configuration reference](../reference/configuration.md) — every config key, environment variable, CLI flag, and credential rule.
 - [How incus-gh-runner works](../explanation/how-it-works.md) — capacity model, runner lifecycle, and the security model behind the credential and ownership rules used above.

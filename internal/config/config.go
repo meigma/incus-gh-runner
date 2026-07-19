@@ -51,6 +51,8 @@ const (
 	KeyGitHubAppInstallationID = "github.app.installation_id"
 	// KeyGitHubAppPrivateKeyFile identifies the protected GitHub App private-key path.
 	KeyGitHubAppPrivateKeyFile = "github.app.private_key_file"
+	// KeyGitHubTokenFile identifies the protected personal access token path.
+	KeyGitHubTokenFile = "github.token_file" //nolint:gosec // This is a configuration key, not a credential.
 	// KeyIncusSocket identifies an optional Incus Unix socket path.
 	KeyIncusSocket = "incus.socket"
 	// KeyIncusProject identifies the preconfigured Incus project.
@@ -64,8 +66,10 @@ const (
 	// KeyIncusDiagnosticsDir identifies the directory for terminal runner evidence.
 	KeyIncusDiagnosticsDir = "incus.diagnostics_dir"
 
-	// EnvGitHubToken is the environment-only development PAT credential.
+	// EnvGitHubToken is the environment-only PAT credential.
 	EnvGitHubToken = "INCUS_GH_RUNNER_GITHUB_TOKEN" //nolint:gosec // This is an environment variable name, not a credential.
+	// EnvGitHubTokenFile identifies the protected PAT path supplied through the environment.
+	EnvGitHubTokenFile = "INCUS_GH_RUNNER_GITHUB_TOKEN_FILE" //nolint:gosec // This is an environment variable name, not a credential.
 )
 
 // Config contains immutable controller settings.
@@ -96,8 +100,10 @@ type GitHub struct {
 	RunnerGroup string `mapstructure:"runner_group"`
 	// App contains preferred GitHub App credentials.
 	App GitHubApp `mapstructure:"app"`
-	// Token contains the environment-only development PAT and is never decoded from a file.
+	// Token contains the environment-only PAT and is never decoded from YAML.
 	Token string `mapstructure:"-"`
+	// TokenFile is a protected PAT path read once during runtime startup.
+	TokenFile string `mapstructure:"token_file"`
 }
 
 // GitHubApp identifies a GitHub App installation and protected private key.
@@ -192,6 +198,7 @@ func ConfigureViper(vp *viper.Viper) error {
 		KeyGitHubAppClientID:       "INCUS_GH_RUNNER_GITHUB_APP_CLIENT_ID",
 		KeyGitHubAppInstallationID: "INCUS_GH_RUNNER_GITHUB_APP_INSTALLATION_ID",
 		KeyGitHubAppPrivateKeyFile: "INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE",
+		KeyGitHubTokenFile:         EnvGitHubTokenFile,
 		KeyIncusSocket:             "INCUS_GH_RUNNER_INCUS_SOCKET",
 		KeyIncusProject:            "INCUS_GH_RUNNER_INCUS_PROJECT",
 		KeyIncusImage:              "INCUS_GH_RUNNER_INCUS_IMAGE",
@@ -237,6 +244,7 @@ func Load(vp *viper.Viper) (Config, error) {
 		return Config{}, fmt.Errorf("decode configuration: %w", err)
 	}
 	cfg.GitHub.Token = strings.TrimSpace(os.Getenv(EnvGitHubToken))
+	cfg.GitHub.TokenFile = strings.TrimSpace(cfg.GitHub.TokenFile)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -270,9 +278,14 @@ func validateGitHub(settings GitHub) error {
 	appConfigured := settings.App.ClientID != "" ||
 		settings.App.InstallationID != 0 ||
 		settings.App.PrivateKeyFile != ""
-	tokenConfigured := settings.Token != ""
+	tokenValueConfigured := settings.Token != ""
+	tokenFileConfigured := strings.TrimSpace(settings.TokenFile) != ""
+	if tokenValueConfigured && tokenFileConfigured {
+		return errors.New("configure either github.token_file or INCUS_GH_RUNNER_GITHUB_TOKEN, not both")
+	}
+	tokenConfigured := tokenValueConfigured || tokenFileConfigured
 	if appConfigured && tokenConfigured {
-		return errors.New("configure either github.app or INCUS_GH_RUNNER_GITHUB_TOKEN, not both")
+		return errors.New("configure either github.app or a personal access token, not both")
 	}
 	if !appConfigured && !tokenConfigured {
 		return errors.New("github credentials are required")

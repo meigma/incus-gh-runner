@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/actions/scaleset"
@@ -205,11 +206,15 @@ func systemInfo(build BuildInfo) scaleset.SystemInfo {
 // newGitHubClient constructs the configured upstream scale-set client without logging credentials.
 func newGitHubClient(settings config.GitHub, build BuildInfo) (*scaleset.Client, error) {
 	systemInfo := systemInfo(build)
-	if settings.Token != "" {
+	if settings.Token != "" || settings.TokenFile != "" {
+		token, tokenErr := resolvePersonalAccessToken(settings)
+		if tokenErr != nil {
+			return nil, tokenErr
+		}
 		client, err := githubadapter.NewClientWithPersonalAccessToken(
 			scaleset.NewClientWithPersonalAccessTokenConfig{
 				GitHubConfigURL:     settings.ConfigURL,
-				PersonalAccessToken: settings.Token,
+				PersonalAccessToken: token,
 				SystemInfo:          systemInfo,
 			},
 		)
@@ -237,6 +242,24 @@ func newGitHubClient(settings config.GitHub, build BuildInfo) (*scaleset.Client,
 	}
 
 	return client, nil
+}
+
+// resolvePersonalAccessToken returns the configured PAT value without logging it.
+func resolvePersonalAccessToken(settings config.GitHub) (string, error) {
+	if settings.Token != "" {
+		return settings.Token, nil
+	}
+
+	tokenBytes, err := os.ReadFile(settings.TokenFile)
+	if err != nil {
+		return "", fmt.Errorf("read GitHub personal access token: %w", err)
+	}
+	token := strings.TrimSpace(string(tokenBytes))
+	if token == "" {
+		return "", errors.New("GitHub personal access token file is empty")
+	}
+
+	return token, nil
 }
 
 // closePreparedDemandSource releases an unused startup session within a bounded fresh context.

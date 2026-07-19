@@ -26,6 +26,7 @@ Duration values use Go duration syntax (for example `30s`, `5m`).
 | `github.config_url` | string | — | Required. Absolute `http` or `https` URL (organization or repository). |
 | `github.scale_set` | string | — | Required. Non-empty. Also used as the default runner label. |
 | `github.runner_group` | string | `default` | Non-empty. |
+| `github.token_file` | string | — | PAT file read once at startup. Mutually exclusive with `github.app` and `INCUS_GH_RUNNER_GITHUB_TOKEN`. |
 | `github.app.client_id` | string | — | Required if GitHub App credentials are configured. |
 | `github.app.installation_id` | int64 | — | Required if GitHub App credentials are configured. Must be greater than `0`. |
 | `github.app.private_key_file` | string | — | Required if GitHub App credentials are configured. Path to a PEM file, read once at startup. |
@@ -90,29 +91,37 @@ Examples:
 | `incus.project` | `INCUS_GH_RUNNER_INCUS_PROJECT` |
 | `capacity.min_runners` | `INCUS_GH_RUNNER_CAPACITY_MIN_RUNNERS` |
 | `timeouts.shutdown` | `INCUS_GH_RUNNER_TIMEOUTS_SHUTDOWN` |
+| `github.token_file` | `INCUS_GH_RUNNER_GITHUB_TOKEN_FILE` |
 | `github.app.private_key_file` | `INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE` |
 
 ### `INCUS_GH_RUNNER_GITHUB_TOKEN`
 
-Environment-only GitHub personal access token, used for local testing. This variable:
+Environment-only GitHub personal access token. This variable:
 
 - Is never read from the YAML file (there is no `github.token` YAML key).
 - Has no corresponding CLI flag.
 - Is trimmed of surrounding whitespace before use.
 
+For production systemd deployments, prefer `github.token_file` through the packaged PAT credential drop-in. A raw environment value is useful for local or externally supervised execution where the environment is already the credential boundary.
+
+### `github.token_file`
+
+Path to a file containing a GitHub personal access token. The controller reads and trims the file once during startup; a missing, unreadable, or empty file fails startup. The packaged PAT drop-in sets `INCUS_GH_RUNNER_GITHUB_TOKEN_FILE` to systemd's protected runtime credential copy, so the path should be absent from `config.yaml` in that deployment.
+
 ## Credential rule
 
-Exactly one credential type must be configured:
+Exactly one credential source must be configured:
 
 - **GitHub App** — all three of `github.app.client_id`, `github.app.installation_id`, and `github.app.private_key_file` must be set.
-- **Personal access token** — `INCUS_GH_RUNNER_GITHUB_TOKEN` must be set.
+- **Personal access token file** — `github.token_file` or `INCUS_GH_RUNNER_GITHUB_TOKEN_FILE` must identify the protected token file.
+- **Personal access token value** — `INCUS_GH_RUNNER_GITHUB_TOKEN` must be set.
 
-Configuring any GitHub App field together with the token environment variable is an error. Configuring neither is an error.
+Configuring more than one method is an error, including setting both PAT sources. Configuring no credential is also an error.
 
 !!! warning "Root-equivalent socket access"
     The controller's Incus client uses the account's `incus-admin` group membership, which grants root-equivalent control over the host. This applies regardless of which credential type is configured.
 
-In the packaged systemd unit, `github.app.private_key_file` is supplied through a systemd credential rather than the YAML file, and must be absent from `config.yaml` in that deployment. See [systemd unit facts](#systemd-unit-facts).
+The packaged systemd deployment supplies either `github.app.private_key_file` or `github.token_file` through one selected credential drop-in. Secret values do not belong in `config.yaml`. See [systemd unit facts](#systemd-unit-facts).
 
 ## CLI
 
@@ -155,13 +164,15 @@ The process exits `0` on clean shutdown. It exits `1` on configuration load fail
 
 ## systemd unit facts
 
-The packaged unit is `deploy/systemd/incus-gh-runner.service`.
+The packaged base unit is `deploy/systemd/incus-gh-runner.service`. It deliberately selects no GitHub credential method. Install exactly one packaged credential drop-in as `/etc/systemd/system/incus-gh-runner.service.d/credentials.conf`:
+
+- `credentials-github-app.conf` loads `/etc/incus-gh-runner/github-app-private-key.pem` and sets `INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE`.
+- `credentials-personal-access-token.conf` loads `/etc/incus-gh-runner/github-token` and sets `INCUS_GH_RUNNER_GITHUB_TOKEN_FILE`.
 
 | Directive | Value |
 |---|---|
 | `ExecStart` | `/usr/bin/incus-gh-runner --config /etc/incus-gh-runner/config.yaml` |
-| `LoadCredential` | `github-app-private-key:/etc/incus-gh-runner/github-app-private-key.pem` |
-| `Environment` | `INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE=%d/github-app-private-key` (points at the loaded credential) |
+| GitHub credential | Selected by one systemd drop-in; absent from the base unit |
 | `ConfigurationDirectory` | `incus-gh-runner` (mode `0755`), resolves to `/etc/incus-gh-runner` |
 | `LogsDirectory` | `incus-gh-runner` (mode `0700`), resolves to `/var/log/incus-gh-runner` |
 | `DynamicUser` | `yes` |

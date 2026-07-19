@@ -25,8 +25,8 @@ deletes the VM when its one job finishes.
   supported.
 - Membership in the `incus-admin` group for the controller process. This is
   root-equivalent on the host, so a dedicated runner host is recommended.
-- A GitHub App for production authentication. A personal access token is
-  accepted for local testing.
+- A GitHub App or personal access token authorized to manage runner scale sets
+  at the configured repository or organization.
 
 ## Installation
 
@@ -77,6 +77,10 @@ incus:
   owner: incus-gh-runner-example
 ```
 
+For a PAT, omit the `app` block and set `github.token_file` to a protected token
+file instead. A repository URL such as `https://github.com/OWNER/REPOSITORY`
+pairs the resulting scale set with only that repository.
+
 The referenced Incus project, image, and profiles must already exist; the
 controller creates the GitHub scale set automatically if it is absent. Jobs
 target the scale set by its name:
@@ -88,14 +92,15 @@ jobs:
 ```
 
 For production, run the controller under the hardened systemd unit in
-[`deploy/systemd/`](deploy/systemd/), which supplies the GitHub App key
-through a systemd credential. Follow the
+[`deploy/systemd/`](deploy/systemd/), selecting the GitHub App or PAT credential
+drop-in. Follow the
 [deployment guide](docs/docs/how-to/deploy.md) for the end-to-end path.
 
 ## Documentation
 
 - [Deploy to production](docs/docs/how-to/deploy.md) — host preparation,
-  GitHub App setup, and the systemd installation.
+  repository or organization scope, GitHub App or PAT setup, and the systemd
+  installation.
 - [Operate and troubleshoot](docs/docs/how-to/operate.md) — logs, VM
   diagnostics, safe configuration changes, and upgrades.
 - [Runner images](docs/docs/how-to/runner-images.md) — obtaining, verifying,
