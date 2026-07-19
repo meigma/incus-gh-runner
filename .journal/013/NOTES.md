@@ -289,6 +289,15 @@ The checksummed runtime bundle remains unchanged. It is historical evidence
 for pre-trim head `3d787dc`, not a claim that final head `8454247` contains or
 can rerun the discarded framework. No paid host was reprovisioned.
 
+## 2026-07-19 14:47 — Trimmed exact-head checks green
+
+All hosted checks completed successfully on final PR #29 head
+`8454247d61f4f3db01ccede80a80306fe915504d`: CI, both CodeQL analyses,
+GitHub Pages, Kusari Inspector, and the rebuilt reference image. The image job
+completed in 7m29s; five event-inapplicable release and Pages jobs skipped
+normally, with no failed or pending checks. The PR remains draft for human
+review.
+
 The hostile harness can now invoke a source-only Go helper that binds evidence
 to an explicitly injected clean revision, the exact helper SHA-256, rendered
 baseline digest, and immutable image fingerprint. On a disposable two-runner
