@@ -123,7 +123,7 @@ Exactly one credential source must be configured:
 Configuring more than one method is an error, including setting both PAT sources. Configuring no credential is also an error.
 
 !!! warning "Root-equivalent socket access"
-    The controller's Incus client uses the account's `incus-admin` group membership, which grants root-equivalent control over the host. This applies regardless of which credential type is configured.
+    The controller's Incus client uses the account's `incus-admin` group membership, which grants root-equivalent control over the host. This applies regardless of which GitHub credential type is configured. The `incus.owner` value limits the controller's intended cleanup scope but is forgeable by another project writer; it is not authorization. Run the current production deployment only on a dedicated, single-purpose Incus host.
 
 The packaged systemd deployment supplies either `github.app.private_key_file` or `github.token_file` through one selected credential drop-in. Secret values do not belong in `config.yaml`. See [systemd unit facts](#systemd-unit-facts).
 

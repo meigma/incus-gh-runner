@@ -11,9 +11,10 @@ deletes the VM when its one job finishes.
   afterward, so no state leaks between jobs.
 - Hot standby pool: a configurable minimum of connected idle runners absorbs
   bursts, bounded by a configurable maximum.
-- Ownership-scoped reconciliation: the controller only counts, creates, and
-  deletes VMs carrying its exact ownership marker, and keeps no database of its
-  own.
+- Ownership-scoped reconciliation: the controller only counts and deletes VMs
+  carrying its exact cleanup marker, and keeps no database of its own. The
+  marker prevents accidental cross-controller cleanup; it is not an Incus
+  authorization boundary.
 - Unattended operation: GitHub session recovery with capped backoff, bounded
   shutdown escalation, and a hardened systemd unit with credential isolation.
 - Reference VM image: a reproducible, offline-built Ubuntu 24.04 image with a
@@ -21,10 +22,11 @@ deletes the VM when its one job finishes.
 
 ## Requirements
 
-- A Linux host running Incus 7.0 or newer with QEMU VM support. Incus 6 is not
-  supported.
+- A dedicated, single-purpose Linux host running Incus 7.0 or newer with QEMU
+  VM support. Incus 6 is not supported.
 - Membership in the `incus-admin` group for the controller process. This is
-  root-equivalent on the host, so a dedicated runner host is recommended.
+  root-equivalent on the host. Do not deploy the current controller on an Incus
+  host shared with unrelated trusted workloads.
 - A GitHub App or personal access token authorized to manage runner scale sets
   at the configured repository or organization.
 
