@@ -135,3 +135,12 @@ GitHub reports the draft as mergeable at the exact expected head. Hosted CI,
 CodeQL, GitHub Pages, Kusari Inspector, and the reference-image build started
 and remain pending at this checkpoint. The PR body carries the four open Slice
 2 gates explicitly; no completion or readiness claim has been made.
+
+## 2026-07-18 22:56 — Slice 2 increment exact-head checks green
+
+All hosted checks completed successfully on PR #28 head
+`0e6d70cd0205517ae2272e552610624f94e560c9`: CI, both CodeQL analyses,
+GitHub Pages, Kusari Inspector, and the full reference-image build. The image
+job completed in 8m18s. Release-dry-run and Pages-deployment jobs were skipped
+by their normal event conditions, with no failed or pending checks. The PR
+remains a draft because the four Slice 2 acceptance gates above are still open.
