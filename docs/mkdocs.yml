@@ -35,8 +35,15 @@ theme:
 
 nav:
   - Home: index.md
-  - systemd deployment: deployment.md
-  - Reference runner image: reference-image.md
+  - How-to guides:
+      - Deploy to production: how-to/deploy.md
+      - Operate and troubleshoot: how-to/operate.md
+      - Runner images: how-to/runner-images.md
+  - Reference:
+      - Configuration: reference/configuration.md
+      - Guest contract: reference/guest-contract.md
+  - Explanation:
+      - How it works: explanation/how-it-works.md
 
 plugins:
   - search

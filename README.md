@@ -109,7 +109,7 @@ restart it instead of leaving a wedged service indefinitely.
 
 The checked-in hardened unit, example configuration, credential boundary, and
 installation procedure are documented in the
-[systemd deployment guide](docs/docs/deployment.md).
+[deployment guide](docs/docs/how-to/deploy.md).
 
 CI runs the same aggregate gate with `moon ci --summary minimal`.
 
@@ -121,7 +121,7 @@ workflow proves that distrobuilder can assemble the unified VM artifact without
 starting a VM or requiring KVM acceleration. Real boot validation remains a
 separate Incus-capable functional gate.
 
-See the [reference image and guest contract](docs/docs/reference-image.md)
+See the [guest contract reference](docs/docs/reference/guest-contract.md)
 for the payload, readiness, diagnostic, cleanup, and poweroff behavior.
 
 The integration seams pin
@@ -225,7 +225,7 @@ summary has been reviewed.
 
 Release PRs rehearse the controller binary, OCI image, and reference VM build
 paths without uploading GitHub release assets. See the
-[reference-image release instructions](docs/docs/reference-image.md#release-artifact)
+[runner image guide](docs/docs/how-to/runner-images.md)
 for download, checksum, provenance, and Incus boot verification commands. The
 first public v1 release remains pending until the complete phase 7 acceptance
 scenario succeeds.

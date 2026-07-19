@@ -1,6 +1,6 @@
 [Unit]
 Description=Incus-backed GitHub Actions runner controller
-Documentation=https://meigma.github.io/incus-gh-runner/deployment/
+Documentation=https://meigma.github.io/incus-gh-runner/how-to/deploy/
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=60s

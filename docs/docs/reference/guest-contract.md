@@ -1,0 +1,120 @@
+# Guest Contract Reference
+
+The controller pushes a runtime payload into a booted VM over the Incus agent; the guest runs exactly one GitHub Actions job, reports its status through a well-known file and the serial console, and powers itself off. This page documents that interface — the filesystem, JSON schemas, console output, and instance metadata that anything auditing the reference image, or replacing it with a custom one, must reproduce.
+
+## Filesystem contract
+
+`/run/incus-gh-runner/` is a directory on the guest's `/run` tmpfs, created by `systemd-tmpfiles` with mode `0700`, owner `root:root`.
+
+The controller writes two files into this directory through the Incus agent, in order:
+
+| Order | File | Mode | Content |
+|---|---|---|---|
+| 1 | `payload.json` | `0600` | The [payload](#payload-schema-payloadjson), JSON-encoded |
+| 2 | `payload.ready` | `0600` | Empty; its presence is the only signal that matters |
+
+A `path` unit watches for `payload.ready` and starts the one-shot guest service once it exists. The guest service requires both files to be present, parses and validates `payload.json`, and deletes both files before the Actions Runner process starts. If either file is missing when the service starts, the guest treats this as a fatal startup error, writes an error line to the serial console, and exits.
+
+## Payload schema (`payload.json`)
+
+```json
+{
+  "version": 1,
+  "jit_config": "<opaque string>"
+}
+```
+
+| Field | Type | Constraint |
+|---|---|---|
+| `version` | integer | Must equal `1` |
+| `jit_config` | string | Non-empty; the opaque GitHub Actions just-in-time runner registration configuration |
+
+The object must contain exactly these two keys — no more, no fewer. Any other shape, a `version` other than `1`, or an empty or missing `jit_config` fails guest-side validation.
+
+## Status schema (`status.json`)
+
+```json
+{
+  "version": 1,
+  "state": "exited",
+  "exit_code": 0
+}
+```
+
+| Field | Type | Constraint |
+|---|---|---|
+| `version` | integer | Always `1` |
+| `state` | string | One of `starting`, `running`, `exited`, `failed` |
+| `exit_code` | integer | Present once the runner process has exited; the process's exit status |
+
+The reference guest writes this file to a temporary path in the same directory and renames it into place, with mode `0600`, so a reader never observes a partially written file. It progresses through `starting` → `running` → `exited` over the lifetime of one job. It never emits `state: failed`; a non-zero `exit_code` on the `exited` state is how a failed job is represented. `failed` is a valid, controller-recognized value for a custom guest that distinguishes runner-process failure from a clean exit.
+
+## Controller state mapping
+
+The controller derives each runner's lifecycle state from the Incus instance status and, while the instance is running, from `status.json`:
+
+| Signal | Runner state |
+|---|---|
+| Incus instance status is `stopped` or `error` | `terminal` |
+| Incus instance status is `running` and `status.json` state is `running` | `busy` |
+| Incus instance status is `running` and `status.json` state is `exited` or `failed` | `terminal` |
+| Any other combination — instance not yet `running`, `status.json` absent, unreadable, or reporting `starting` or another value | `provisioning`, until the instance's age exceeds `incus.bootstrap_timeout`, then `terminal` |
+
+Instance age is measured from the `user.incus-gh-runner.created-at` metadata value (falling back to the Incus-reported creation time if that key is absent). See [Configuration Reference](configuration.md) for `incus.bootstrap_timeout`, and [How incus-gh-runner works](../explanation/how-it-works.md) for the lifecycle states themselves.
+
+## Serial console contract
+
+The guest's serial console is `ttyS0`. It carries secret-free lifecycle lines only:
+
+| Line | Emitted when |
+|---|---|
+| `incus-gh-runner-guest state=<state>` | Each `status.json` transition (`starting`, `running`, `exited`) |
+| `incus-gh-runner-guest error=missing-ready-marker` | `payload.ready` is absent at guest service start |
+| `incus-gh-runner-guest error=missing-payload` | `payload.json` is absent at guest service start |
+| `incus-gh-runner-guest action=poweroff exit_code=<exit_code> grace_seconds=30` | Immediately before shutdown, on every code path |
+
+After the `action=poweroff` line, the guest sleeps 30 seconds — a fixed diagnostic grace period — before calling `systemctl poweroff`. This grace period runs on every exit path, including startup validation failures.
+
+!!! warning "JIT configuration never reaches the console or guest journal"
+    `jit_config` is passed to the Actions Runner process only as a command-line argument. The guest never writes it to `/dev/ttyS0` or to its own systemd journal, on any code path, including error paths.
+
+## Instance metadata
+
+The controller sets these keys on every instance it creates:
+
+| Key | Value | Purpose |
+|---|---|---|
+| `user.incus-gh-runner.owner` | The configured `incus.owner` value | Exact-match ownership marker; instances without a matching value are excluded from listing and refused on delete |
+| `user.incus-gh-runner.correlation-id` | Generated UUID | Unique per-instance identifier, also used to derive the instance name |
+| `user.incus-gh-runner.created-at` | RFC3339Nano timestamp, UTC | Anchor for the `incus.bootstrap_timeout` calculation |
+| `user.incus-gh-runner.image` | The configured `incus.image` value | Records which image alias or fingerprint the instance was created from |
+
+## Diagnostics capture
+
+When `incus.diagnostics_dir` is configured, the controller captures the instance's serial console log during deletion, before the instance is stopped and removed, and writes it to `<diagnostics_dir>/<runnerID>.console.log`, mode `0600`, inside a directory created with mode `0700`. When `incus.diagnostics_dir` is empty, no diagnostics file is written; captured console output is discarded rather than persisted.
+
+!!! warning "Console diagnostics may contain sensitive output"
+    Captured console content may include sensitive workload output. Diagnostics files must be handled with the same care as other job-adjacent artifacts.
+
+## Reference image
+
+| Property | Value |
+|---|---|
+| Base distribution | Ubuntu 24.04 LTS (`noble`), built with debootstrap |
+| Architecture | x86_64 |
+| Image format | Incus unified VM tarball |
+| Virtual disk | 8 GiB (8589934592 bytes), ext4 |
+| Actions Runner version | 2.335.1, SHA-256 pinned at build time |
+| Actions Runner install path | `/opt/actions-runner` |
+| Runner OS user | `actions-runner`, system account, `nologin` shell |
+| `/etc/machine-id` | Set to the literal string `uninitialized` at build time |
+| Kernel console | GRUB configures `console=tty1 console=ttyS0` |
+| Guest bootstrap trigger | `incus-gh-runner-guest.path`, enabled at build time, watching for `payload.ready` |
+
+For obtaining, verifying, importing, or building this image, see [Runner images](../how-to/runner-images.md).
+
+## See also
+
+- [Configuration Reference](configuration.md) — `incus.owner`, `incus.image`, `incus.bootstrap_timeout`, `incus.diagnostics_dir`
+- [Runner images](../how-to/runner-images.md) — obtaining, verifying, building, and validating images against this contract
+- [How incus-gh-runner works](../explanation/how-it-works.md) — runner lifecycle states and the ownership boundary

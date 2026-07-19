@@ -1,35 +1,30 @@
----
-title: incus-gh-runner documentation
-slug: /
-description: Incus-backed ephemeral GitHub Actions runners.
----
-
 # incus-gh-runner
 
-`incus-gh-runner` is an early-stage controller for running one-job GitHub
-Actions runners in Incus virtual machines.
+incus-gh-runner is a controller that runs one-job GitHub Actions runners in ephemeral Incus virtual machines. It presents them to GitHub as a runner scale set, provisioning and tearing down a fresh VM for each job, and it deploys as a systemd service on a Linux host.
 
-Phase 1 provides the typed configuration, signal-aware application supervisor,
-coalesced demand reconciliation, and bounded runner-operation core. Phase 2
-adds the reference VM and one-shot guest contract. Phase 3 adds ownership-scoped
-Incus inventory and the real create, start, guest-payload, observation,
-diagnostic, and delete lifecycle. Phase 4 connects a persistent GitHub runner
-scale set, current demand statistics, and fresh one-runner JIT configuration to
-that existing Incus lifecycle.
+## Requirements
 
-The current repository foundation provides the renamed CLI, locked development
-toolchain, CI gates, and isolated GitHub and Incus client adapters. Controller,
-guest-image, deployment, and troubleshooting documentation will grow from
-working lifecycle slices. The phase 4 hardware gate completed one genuine job
-through registration, poweroff, diagnostics, and deletion on Incus 7.2. Phase
-5 adds deterministic hot-pool recovery coverage and a repeatable live proof for
-preconnected standby dispatch and replacement. Phase 6 hardening now recreates
-failed GitHub message sessions with capped reconnect backoff while preserving
-fail-fast startup preflight. Application supervision also bounds cancellation
-across both controller shutdown windows and fails the process when a component
-remains wedged. The checked-in systemd deployment loads the GitHub App key as a
-service credential, creates protected diagnostics storage, and applies a
-validated dynamic-user sandbox around the required Incus socket access.
+- Incus 7.0 or newer.
+- A dedicated Linux host. The controller's identity needs `incus-admin` group membership, which is root-equivalent on that host.
+- A GitHub App for production use. A personal access token is supported for local testing only.
 
-See the repository [README](https://github.com/meigma/incus-gh-runner#readme)
-for current scope and development instructions.
+See [Deploy to production](how-to/deploy.md) for the full host and GitHub prerequisites.
+
+## Where to go
+
+**Deploy it**
+[Deploy to production](how-to/deploy.md) walks through the end-to-end production deployment: host prerequisites, GitHub App setup, configuration, and installing the systemd unit.
+
+**Operate it**
+[Operate and troubleshoot](how-to/operate.md) covers day-2 operations — checking runner state, reading logs, restarting the service, and troubleshooting.
+
+**Runner images**
+[Runner images](how-to/runner-images.md) covers obtaining, verifying, and importing a released reference image, plus building and validating one locally.
+
+**Understand it**
+[How incus-gh-runner works](explanation/how-it-works.md) explains the capacity model, runner lifecycle, the controller's ownership boundary over Incus resources, its failure-handling philosophy, and its security model.
+
+**Look up facts**
+
+- [Configuration reference](reference/configuration.md) — every config key, environment variable, CLI flag, and how they take precedence over each other.
+- [Guest contract reference](reference/guest-contract.md) — the controller-guest interface: payload and status file schemas, serial console lines, and instance metadata keys.
