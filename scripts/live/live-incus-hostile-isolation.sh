@@ -16,6 +16,7 @@ usage: $0 --project <project> --profile <profile> --image <local-image> \\
 Without --execute, the harness only validates inputs and exports effective Incus
 configuration. Live mutation additionally requires:
 
+  * the host br_netfilter kernel module loaded;
   * a non-default project with ${disposable_key}=true; and
   * INCUS_GH_RUNNER_LIVE_MUTATION=${mutation_opt_in}
 
