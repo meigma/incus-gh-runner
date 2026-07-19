@@ -13,7 +13,10 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 )
 
-var errNotFound = errors.New("incus resource not found")
+var (
+	errNotFound             = errors.New("incus resource not found")
+	errInstanceFileNotFound = errors.New("incus instance file not found")
+)
 
 // ConnectUnix constructs a client for a project on a local Incus Unix socket.
 func ConnectUnix(ctx context.Context, socketPath string, project string) (incusclient.InstanceServer, error) {
@@ -152,9 +155,13 @@ func (c *serverClient) CreateInstanceFile(
 
 // GetInstanceFile reads a guest file through the Incus agent.
 func (c *serverClient) GetInstanceFile(ctx context.Context, name string, path string) ([]byte, error) {
-	content, _, err := c.contextual(ctx).GetInstanceFile(name, path)
+	server := c.contextual(ctx)
+	content, _, err := server.GetInstanceFile(name, path)
 	if err != nil {
-		return nil, classifyError(err)
+		return nil, classifyInstanceFileError(err, func() error {
+			_, _, lookupErr := server.GetInstance(name)
+			return lookupErr
+		})
 	}
 	defer content.Close()
 
@@ -164,6 +171,18 @@ func (c *serverClient) GetInstanceFile(ctx context.Context, name string, path st
 	}
 
 	return data, nil
+}
+
+// classifyInstanceFileError distinguishes an absent guest file from an absent instance.
+func classifyInstanceFileError(err error, confirmInstance func() error) error {
+	if !api.StatusErrorCheck(err, http.StatusNotFound) {
+		return classifyError(err)
+	}
+	if confirmErr := confirmInstance(); confirmErr != nil {
+		return fmt.Errorf("confirm instance after guest file lookup: %w", classifyError(confirmErr))
+	}
+
+	return errInstanceFileNotFound
 }
 
 // GetInstanceConsoleLog returns the buffered serial console log.

@@ -58,9 +58,18 @@ The controller derives each runner's lifecycle state from the Incus instance sta
 | Incus instance status is `stopped` or `error` | `terminal` |
 | Incus instance status is `running` and `status.json` state is `running` | `busy` |
 | Incus instance status is `running` and `status.json` state is `exited` or `failed` | `terminal` |
-| Any other combination — instance not yet `running`, `status.json` absent, unreadable, or reporting `starting` or another value | `provisioning`, until the instance's age exceeds `incus.bootstrap_timeout`, then `terminal` |
+| Instance not yet `running`, or a running instance with an absent `status.json` or state `starting` | `provisioning`, until the instance's age exceeds `incus.bootstrap_timeout`, then `terminal` |
 
 Instance age is measured from the `user.incus-gh-runner.created-at` metadata value (falling back to the Incus-reported creation time if that key is absent). See [Configuration Reference](configuration.md) for `incus.bootstrap_timeout`, and [How incus-gh-runner works](../explanation/how-it-works.md) for the lifecycle states themselves.
+
+Only a guest-file not-found response while the instance still exists means
+`status.json` has not appeared yet. A disappeared instance, timeout, transport
+or permission failure, malformed document, unsupported version, or unknown
+state invalidates the complete inventory refresh. The controller then retains
+its last observation and schedules no create or delete mutation until a fresh
+inventory succeeds. Each runner status read receives an independent bounded
+share of the overall Incus operation deadline, so one slow guest agent cannot
+consume the observation budget for later runners.
 
 ## Serial console contract
 
