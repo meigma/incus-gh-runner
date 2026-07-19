@@ -610,7 +610,8 @@ chmod 0700 /run/incus-gh-runner-isolation-response
 nohup systemd-socket-activate \
   --listen="0.0.0.0:${port}" \
   --accept \
-  -- /run/incus-gh-runner-isolation-response \
+  --inetd \
+  -- /bin/sh /run/incus-gh-runner-isolation-response \
   >/run/incus-gh-runner-isolation-listener.log 2>&1 </dev/null &
 printf '%s\n' "$!" >/run/incus-gh-runner-isolation-listener.pid
 GUEST_LISTENER

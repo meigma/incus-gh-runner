@@ -31,6 +31,13 @@ grep -Fq '[[ -d /sys/module/br_netfilter ]]' "$harness"
 grep -Fq 'host br_netfilter kernel module is not loaded' "$harness"
 grep -Fq "record_result bridge-netfilter passed 'host br_netfilter kernel module is loaded'" "$harness"
 
+listener_function="$(
+  sed -n '/^start_probe_listener()/,/^}/p' "$harness"
+)"
+grep -Fq -- '--inetd' <<<"$listener_function"
+grep -Fq -- '-- /bin/sh /run/incus-gh-runner-isolation-response' \
+  <<<"$listener_function"
+
 launch_vm_function="$(
   sed -n '/^launch_vm()/,/^}/p' "$harness"
 )"
