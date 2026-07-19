@@ -85,6 +85,19 @@ sha256sum --check incus-gh-runner-ubuntu-24.04-x86_64.tar.xz.sha256
 
 Import the resulting archive the same way as a released image (see above), or validate it first.
 
+### Root disk growth
+
+The reference archive starts with an 8 GiB virtual disk. On first boot,
+`cloud-initramfs-growroot` expands its root partition to the Incus root-device
+size, and the `x-systemd.growfs` mount option expands the ext4 filesystem. This
+makes the CUE module's `inputs.runners.rootDiskGiB` setting effective inside
+the guest instead of exposing only a larger virtual block device.
+
+Custom images must provide an equivalent, fail-closed partition and filesystem
+growth path when their baked disk is smaller than the configured Incus root
+device. The combined runtime gate in the deployment how-to verifies the
+resulting guest root size against the rendered baseline.
+
 ## Validate any image
 
 Run the guest-contract probe against any unified image archive — a released image, a locally built one, or a custom image — before putting it into production.

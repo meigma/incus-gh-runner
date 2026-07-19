@@ -401,6 +401,8 @@ _#Baseline: {
 				network: names.network
 				// `limits.max` applies the configured per-runner network ceiling.
 				"limits.max": _#PositiveMbitString
+				// `ipv6.address` rejects all guest IPv6 traffic when IPv6 filtering is enabled.
+				"ipv6.address"!: "none"
 				// `security.acls` attaches the default-deny runner ACL to the interface.
 				"security.acls": names.network_acl
 				// `security.acls.default.egress.action` rejects unmatched NIC egress.
@@ -520,7 +522,10 @@ _#Baseline: {
 				"limits.memory": "\(inputs.runners.memoryGiB)GiB"
 			}
 			devices: {
-				eth0: "limits.max": "\(inputs.runners.networkMbit)Mbit"
+				eth0: {
+					"limits.max":   "\(inputs.runners.networkMbit)Mbit"
+					"ipv6.address": "none"
+				}
 				root: {
 					size:         "\(inputs.runners.rootDiskGiB)GiB"
 					"limits.max": "\(inputs.runners.diskIOMiB)MiB"

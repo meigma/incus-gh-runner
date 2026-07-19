@@ -100,6 +100,7 @@ packages:
       packages:
         - acpid
         - ca-certificates
+        - cloud-initramfs-growroot
         - curl
         - git
         - grub-efi-amd64-signed
@@ -150,6 +151,9 @@ actions:
     action: |-
       #!/bin/sh
       set -eux
+
+      sed -i '/^LABEL=rootfs[[:space:]]/ s/[[:space:]]defaults[[:space:]]/ defaults,x-systemd.growfs /' /etc/fstab
+      grep -Eq '^LABEL=rootfs[[:space:]]+/[[:space:]]+ext4[[:space:]]+defaults,x-systemd.growfs[[:space:]]+0[[:space:]]+0$' /etc/fstab
 
       update-grub
       grub-install \

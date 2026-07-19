@@ -14,7 +14,8 @@ The example establishes:
   one dedicated ZFS pool;
 - per-VM CPU, memory, root-disk, network-bandwidth, and requested disk-I/O
   limits;
-- MAC, IPv4, and IPv6 anti-spoofing plus bridge-port isolation;
+- MAC and IPv4 anti-spoofing, explicit NIC-level IPv6 address denial, IPv6
+  filtering, and bridge-port isolation;
 - a network ACL attached to both the host-owned bridge and the profile NIC,
   with rejected and logged unmatched ingress and egress; and
 - egress only to an explicit DNS resolver and HTTP CONNECT proxy.
@@ -75,6 +76,12 @@ The example documentation addresses are deliberately non-routable, so an
 unchanged example fails closed by having no useful external connectivity.
 The bridge keeps DHCP but sets `raw.dnsmasq=port=0` so runners cannot bypass the
 declared resolver through the bridge host's DNS forwarding service.
+
+The aggregate project CPU and memory values are admission budgets: Incus uses
+the declared per-instance limits when deciding whether another VM fits. They
+are not runtime aggregate throttles that dynamically divide CPU or memory
+among already-running VMs. Keep explicit physical host headroom even when the
+project's derived totals are correct.
 
 Use only the named `github-runner` profile in the controller configuration.
 Do not add a second controller profile: an additional profile can add devices
@@ -151,14 +158,56 @@ isolation controls before this validator can report success for it.
 ## Proof status
 
 This validator proves API configuration shape, not runtime enforcement. The
-available Incus 7.0.1 validation host confirmed the required API surface and
-the ZFS response shape, and rejected a project-local bridge. It did not expose
-nested KVM. End-to-end VM proofs for the combined host-network and direct-NIC
-ACL attachments, egress, intra-runner isolation, anti-spoofing, Secure Boot,
-bandwidth, and guest-agent behavior therefore remain acceptance work on a
-KVM-capable host. The root disk `limits.max` value is desired configuration
-only; effective disk-I/O throttling, especially with ZFS, has not been
-demonstrated and must not be treated as a proven security control.
+available Incus 7.0.1 configuration-validation host confirmed the required API
+surface and ZFS response shape and rejected a project-local bridge. It did not
+expose nested KVM.
+
+The hostile-runner harness has an optional, source-only Go runtime probe for a
+separate disposable KVM host. It is deliberately not a second shipped binary:
+GoReleaser, native packages, and the controller image continue to contain only
+`incus-gh-runner`. The deployment guide documents how to build the temporary
+helper from `cmd/incus-gh-runner-acceptance` and bind it to the shell harness
+with the exact rendered baseline. That build injects the exact clean source
+revision explicitly, avoiding incorrect automatic VCS discovery in nested
+worktrees; the harness also checks the helper's SHA-256 digest.
+
+The combined gate requires a two-runner baseline. With both exact-profile VMs
+live, it requires a third initialization to fail for an identifiable project
+limit. For each live VM it requires `/dev/kvm` on the host, the Incus
+API-reported runtime PID to be the exact named QEMU process with an open
+`/dev/kvm` file descriptor, KVM reported by the guest, the expanded Secure Boot
+setting, a set Secure Boot guest EFI variable, and a successful synthetic-file
+push/pull through the Incus agent. It also requires the guest-facing Incus API
+device to remain absent.
+
+The network portion attempts self-assigned, alternate-source, and link-local
+IPv6 communication between the two runners and then checks approved IPv4
+egress recovery. A passing result establishes no IPv6 bypass under the
+deployed combination of NIC address denial, filtering, ACLs, bridge settings,
+and port isolation. Because those controls overlap, it does not establish
+which single control caused the denial.
+
+During bounded CPU, memory, and synchronous disk pressure in one VM, the gate
+watches the Incus API, the unaffected VM, approved egress, host
+`MemAvailable`, the Incus daemon identity and restart count, ZFS health, and
+kernel resource-failure reports. The defaults apply pressure for ten minutes
+and sample once per second. A pass allows no API or peer failures, caps API
+latency at one second at the 95th percentile and five seconds for any sample,
+caps the peer-heartbeat gap at five seconds, and keeps `MemAvailable` at or
+above the greater of 2 GiB and ten percent of host memory. It supports a
+host-survival and control-plane-availability claim for that bounded workload;
+it does not turn the project CPU or memory admission budgets into proven
+aggregate runtime throttles.
+
+Two enforcement claims remain outside the combined gate. Secure Boot is
+reported active by Incus and the guest, but rejection of a valid unsigned or
+otherwise untrusted EFI payload is not exercised. The configured NIC
+bandwidth and ZFS disk-I/O throughput ceilings are not benchmarked. In
+particular, the root disk `limits.max` value remains desired configuration and
+must not be treated as demonstrated I/O throttling.
+
+See [How to deploy incus-gh-runner to production](../../docs/docs/how-to/deploy.md)
+for the preflight, build, mutation gate, and evidence invocation.
 
 The Go test suite exercises policy validation and the read-only Incus adapter
 without replacing command-line executables.

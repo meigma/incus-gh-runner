@@ -94,6 +94,18 @@ func TestValidateBaselineRejectsWeakening(t *testing.T) {
 			},
 		},
 		{
+			name: "missing explicit IPv6 denial",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				delete(policyObject(t, baseline, "profile", "devices", "eth0"), "ipv6.address")
+			},
+		},
+		{
+			name: "weakened explicit IPv6 denial",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyObject(t, baseline, "profile", "devices", "eth0")["ipv6.address"] = "auto"
+			},
+		},
+		{
 			name: "weakened project restriction",
 			mutate: func(t *testing.T, baseline map[string]any) {
 				policyObject(t, baseline, "project", "config")["restricted.devices.unix-char"] = "allow"

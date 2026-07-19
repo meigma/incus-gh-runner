@@ -9,7 +9,9 @@ usage() {
 usage: $0 --project <project> --profile <profile> --image <local-image> \\
   --allowed-url <url> [--allowed-url <url> ...] \\
   --forbidden-url <url> [--forbidden-url <url> ...] \\
-  [--egress-proxy <url>] [--evidence-directory <directory>] [--execute]
+  [--egress-proxy <url>] \\
+  [--runtime-probe <executable> --baseline <rendered-baseline>] \\
+  [--evidence-directory <directory>] [--execute]
 
 Without --execute, the harness only validates inputs and exports effective Incus
 configuration. Live mutation additionally requires:
@@ -23,9 +25,11 @@ information, query, or fragment so they are safe to retain in the evidence
 bundle. Every allowed URL is checked from both VMs; the first is reused for
 spoof and recovery probes. Every forbidden URL is tested with direct proxy
 bypass; when a proxy is configured, its denial policy is tested separately.
-This bounded scenario does not exhaust resource ceilings or exercise IPv6
-spoofing; retain the effective resource and IPv6 configuration as evidence and
-prove those behaviors separately when required.
+During live execution, the optional runtime-probe and baseline pair extends the
+scenario with KVM, reported Secure Boot, Incus agent, IPv6 no-bypass, admission,
+and bounded resource-pressure gates. Preflight never executes the runtime probe.
+Without that pair, retain the effective resource and IPv6 configuration as
+evidence and prove those behaviors separately when required.
 EOF
 }
 
@@ -33,6 +37,8 @@ project=''
 profile=''
 image=''
 egress_proxy=''
+runtime_probe=''
+baseline=''
 evidence_directory='incus-hostile-isolation-evidence'
 execute=false
 declare -a allowed_urls=()
@@ -40,7 +46,7 @@ declare -a forbidden_urls=()
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
-    --project|--profile|--image|--allowed-url|--forbidden-url|--egress-proxy|--evidence-directory)
+    --project|--profile|--image|--allowed-url|--forbidden-url|--egress-proxy|--runtime-probe|--baseline|--evidence-directory)
       [[ "$#" -ge 2 ]] || {
         printf 'missing value for %s\n' "$1" >&2
         usage
@@ -53,6 +59,8 @@ while [[ "$#" -gt 0 ]]; do
         --allowed-url) allowed_urls+=("$2") ;;
         --forbidden-url) forbidden_urls+=("$2") ;;
         --egress-proxy) egress_proxy="$2" ;;
+        --runtime-probe) runtime_probe="$2" ;;
+        --baseline) baseline="$2" ;;
         --evidence-directory) evidence_directory="$2" ;;
       esac
       shift 2
@@ -92,6 +100,11 @@ done
   printf 'evidence directory must not be a symbolic link: %s\n' "$evidence_directory" >&2
   exit 2
 }
+if [[ -n "$runtime_probe" && -z "$baseline" ]] ||
+  [[ -z "$runtime_probe" && -n "$baseline" ]]; then
+  printf 'runtime probe and baseline must be provided together\n' >&2
+  exit 2
+fi
 
 validate_local_name() {
   local label="$1"
@@ -155,6 +168,25 @@ for command_name in incus jq sha256sum; do
   }
 done
 
+if [[ -n "$runtime_probe" ]]; then
+  [[ ! -L "$runtime_probe" && -f "$runtime_probe" && -x "$runtime_probe" ]] || {
+    printf 'runtime probe must be a non-symlink regular executable: %s\n' \
+      "$runtime_probe" >&2
+    exit 2
+  }
+  [[ ! -L "$baseline" && -f "$baseline" && -r "$baseline" ]] || {
+    printf 'baseline must be a non-symlink readable regular file: %s\n' \
+      "$baseline" >&2
+    exit 2
+  }
+  jq --exit-status 'type == "object"' "$baseline" >/dev/null 2>&1 || {
+    printf 'baseline must contain one JSON object: %s\n' "$baseline" >&2
+    exit 2
+  }
+  runtime_probe="$(cd -- "$(dirname -- "$runtime_probe")" && pwd -P)/$(basename -- "$runtime_probe")"
+  baseline="$(cd -- "$(dirname -- "$baseline")" && pwd -P)/$(basename -- "$baseline")"
+fi
+
 umask 077
 mkdir -p "$evidence_directory"
 if [[ -n "$(find "$evidence_directory" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
@@ -172,6 +204,7 @@ readonly vm_a="incus-gh-runner-${run_id}-a"
 readonly vm_b="incus-gh-runner-${run_id}-b"
 readonly results_file="${evidence_directory}/results.jsonl"
 : >"$results_file"
+runtime_probe_json='null'
 
 vm_a_expected=false
 vm_b_expected=false
@@ -333,6 +366,7 @@ finish() {
     --arg started_at "$started_at" \
     --arg finished_at "$finished_at" \
     --arg outcome "$final_outcome" \
+    --argjson runtime_probe "$runtime_probe_json" \
     --argjson allowed_urls "$(printf '%s\n' "${allowed_urls[@]}" | jq -R . | jq -s .)" \
     --argjson forbidden_urls "$(printf '%s\n' "${forbidden_urls[@]}" | jq -R . | jq -s .)" \
     --slurpfile results "$results_file" \
@@ -350,10 +384,17 @@ finish() {
       finished_at: $finished_at,
       outcome: $outcome,
       results: $results,
-      limitations: [
-        "IPv6 spoof behavior is not exercised by this bounded harness.",
-        "Resource-ceiling exhaustion is not exercised by this bounded harness."
-      ]
+      runtime_probe: $runtime_probe,
+      limitations: (
+        if $runtime_probe == null then
+          [
+            "IPv6 spoof behavior is not exercised by this bounded harness.",
+            "Resource-ceiling exhaustion is not exercised by this bounded harness."
+          ]
+        else
+          $runtime_probe.limitations
+        end
+      )
     }' >"${evidence_directory}/manifest.json"; then
     printf 'failed to finalize evidence manifest\n' >&2
     exit_code=1
@@ -410,7 +451,6 @@ vm_a_expected=true
 launch_vm "$vm_a" >"${evidence_directory}/launch-a.log" 2>&1
 vm_b_expected=true
 launch_vm "$vm_b" >"${evidence_directory}/launch-b.log" 2>&1
-record_result concurrent-vms passed 'two generated hostile VMs launched and remained live together'
 
 wait_for_agent() {
   local instance="$1"
@@ -429,6 +469,92 @@ wait_for_agent "$vm_a"
 wait_for_agent "$vm_b"
 incus_cmd config show "$vm_a" --expanded >"${evidence_directory}/instance-a-expanded.yaml"
 incus_cmd config show "$vm_b" --expanded >"${evidence_directory}/instance-b-expanded.yaml"
+record_result concurrent-vms passed 'two generated hostile VMs launched and became agent-responsive together'
+
+run_runtime_probe() {
+  local image_info="${evidence_directory}/image-runtime-probe.txt"
+  local image_fingerprint
+  local probe_sha256
+  local probe_evidence="${evidence_directory}/runtime-probe"
+  local probe_result="${probe_evidence}/result.json"
+  local probe_log="${evidence_directory}/runtime-probe.log"
+  local probe_exit=0
+  local parsed_result=''
+  local -a probe_args
+
+  incus_cmd image info "$image" >"$image_info"
+  image_fingerprint="$(awk '$1 == "Fingerprint:" {print $2}' "$image_info")"
+  [[ "$image_fingerprint" =~ ^[a-f0-9]{64}$ ]] || {
+    record_result runtime-probe failed 'could not resolve one immutable image fingerprint'
+    printf 'could not resolve one immutable image fingerprint for %s\n' "$image" >&2
+    return 1
+  }
+  probe_sha256="$(sha256sum "$runtime_probe" | awk '{print $1}')"
+  [[ "$probe_sha256" =~ ^[a-f0-9]{64}$ ]] || {
+    record_result runtime-probe failed 'could not digest the runtime probe executable'
+    return 1
+  }
+
+  probe_args=(
+    probe
+    --baseline "$baseline"
+    --project "$project"
+    --profile "$profile"
+    --image-fingerprint "$image_fingerprint"
+    --vm-a "$vm_a"
+    --vm-b "$vm_b"
+    --run-id "$run_id"
+    --allowed-url "$spoof_probe_url"
+    --evidence-directory "$probe_evidence"
+  )
+  if [[ -n "$egress_proxy" ]]; then
+    probe_args+=(--egress-proxy "$egress_proxy")
+  fi
+
+  "$runtime_probe" "${probe_args[@]}" >"$probe_log" 2>&1 || probe_exit="$?"
+  if [[ ! -L "$probe_result" && -f "$probe_result" ]]; then
+    parsed_result="$(
+      jq --compact-output \
+        --arg run_id "$run_id" \
+        --arg image_fingerprint "$image_fingerprint" \
+        --arg acceptance_sha256 "$probe_sha256" \
+        'select(
+          .version == 1 and
+          .run_id == $run_id and
+          .image_fingerprint == $image_fingerprint and
+          .acceptance_sha256 == $acceptance_sha256 and
+          (.source_revision | type) == "string" and
+          (.source_revision | test("^[a-f0-9]{40}([a-f0-9]{24})?$")) and
+          .source_modified == false and
+          .stress_duration == "10m0s" and
+          .poll_interval == "1s" and
+          (.limitations | type) == "array" and
+          ([.limitations[] | type] | all(. == "string"))
+        )' "$probe_result" 2>/dev/null
+    )" || true
+    if [[ -n "$parsed_result" ]]; then
+      runtime_probe_json="$parsed_result"
+    fi
+  fi
+
+  if [[ "$probe_exit" -ne 0 ]]; then
+    record_result runtime-probe failed "runtime probe exited with status ${probe_exit}"
+    printf 'runtime probe failed; inspect %s\n' "$probe_log" >&2
+    return 1
+  fi
+  if [[ "$runtime_probe_json" == null ]] ||
+    ! jq --exit-status '.outcome == "passed"' <<<"$runtime_probe_json" >/dev/null; then
+    record_result runtime-probe failed 'runtime probe did not emit a matching passing result'
+    printf 'runtime probe did not emit a matching passing result; inspect %s\n' \
+      "$probe_log" >&2
+    return 1
+  fi
+  record_result runtime-probe passed 'KVM, reported Secure Boot, agent, IPv6 no-bypass, admission, and pressure-survival gates passed'
+}
+
+if [[ -n "$runtime_probe" ]]; then
+  run_runtime_probe
+fi
 
 guest_network_state() {
   local instance="$1"
@@ -796,5 +922,9 @@ fi
 
 snapshot_effective_configuration after
 completed=true
-record_result hostile-isolation-acceptance passed 'cross-runner, destination, MAC spoof, IPv4 spoof, and approved-egress checks passed'
+acceptance_detail='cross-runner, destination, MAC spoof, IPv4 spoof, and approved-egress checks passed'
+if [[ "$runtime_probe_json" != null ]]; then
+  acceptance_detail='network isolation, KVM-device use, reported Secure Boot, agent round-trip, IPv6 no-bypass, admission ceiling, and pressure-survival checks passed'
+fi
+record_result hostile-isolation-acceptance passed "$acceptance_detail"
 printf 'hostile VM isolation acceptance passed; evidence written to %s\n' "$evidence_directory"

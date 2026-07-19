@@ -148,6 +148,7 @@
         "type": "nic",
         "network": "runner-network",
         "limits.max": "100Mbit",
+        "ipv6.address": "none",
         "security.acls": "runner-egress",
         "security.acls.default.egress.action": "reject",
         "security.acls.default.egress.logged": "true",

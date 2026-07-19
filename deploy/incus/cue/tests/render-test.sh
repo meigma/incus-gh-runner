@@ -69,6 +69,10 @@ run_cue vet -c "${tmp_dir}/baseline-schema.cue" "${tmp_dir}/custom.json"
 
 jq '.profile.config["security.secureboot"] = "false"' \
   "${tmp_dir}/rendered.json" >"${tmp_dir}/schema-weakened-policy.json"
+jq 'del(.profile.devices.eth0["ipv6.address"])' \
+  "${tmp_dir}/rendered.json" >"${tmp_dir}/schema-missing-ipv6-denial.json"
+jq '.profile.devices.eth0["ipv6.address"] = "auto"' \
+  "${tmp_dir}/rendered.json" >"${tmp_dir}/schema-weakened-ipv6-denial.json"
 jq '.project.config["limits.cpu"] = "21"' \
   "${tmp_dir}/rendered.json" >"${tmp_dir}/schema-inconsistent-capacity.json"
 jq '.unexpected = true' \
@@ -76,6 +80,8 @@ jq '.unexpected = true' \
 
 schema_invalid_cases=(
   schema-weakened-policy
+  schema-missing-ipv6-denial
+  schema-weakened-ipv6-denial
   schema-inconsistent-capacity
   schema-unknown-field
 )

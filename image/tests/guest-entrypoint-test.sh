@@ -12,6 +12,8 @@ grep -Fq 'command -v distrobuilder' "${repo_root}/image/build.sh"
 grep -Fq 'grub-install \' "${repo_root}/image/image.yaml"
 ! grep -Fq -- '--removable' "${repo_root}/image/image.yaml"
 grep -Fq 'DISTROBUILDER_ROOT_UUID' "${repo_root}/image/image.yaml"
+grep -Fq -- '- cloud-initramfs-growroot' "${repo_root}/image/image.yaml"
+grep -Fq 'defaults,x-systemd.growfs' "${repo_root}/image/image.yaml"
 ! grep -Fq 'image info "$alias" --format' "${repo_root}/image/validate-incus.sh"
 grep -Fq 'minimum_server_version=7.0' "${repo_root}/image/validate-incus.sh"
 

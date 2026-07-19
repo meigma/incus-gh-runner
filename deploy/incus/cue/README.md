@@ -20,9 +20,10 @@ Security-sensitive Incus values are exact constraints, not CUE defaults. An
 operator cannot use the module to enable the Incus HTTPS listener, use the
 `default` project, relax project restrictions, disable Secure Boot, add raw
 Incus configuration, change default-deny ACL actions, or remove NIC filtering
-and port isolation. The module intentionally does not expose arbitrary direct
-egress rules; v0 keeps the controlled DNS and proxy boundary established by the
-live Incus proof.
+and port isolation. It also cannot enable NIC-level IPv6 assignment: the
+profile fixes `ipv6.address=none` alongside IPv6 filtering. The module
+intentionally does not expose arbitrary direct egress rules; v0 keeps the
+controlled DNS and proxy boundary established by the live Incus proof.
 
 ## Render the example
 
@@ -46,7 +47,9 @@ baseline contains the resulting Incus ceilings, not those physical-host
 measurements. `incus-gh-runner validate` embeds this CUE policy and checks both
 the rendered baseline and live Incus state in process, but it cannot re-prove
 physical-host headroom at runtime. Re-render after host capacity or reservation
-changes.
+changes. The derived project CPU and memory ceilings are admission budgets
+based on the declared per-runner limits; they are not aggregate runtime
+throttles for already-running VMs.
 
 ## Validate the module
 
@@ -59,6 +62,20 @@ mise exec -- bash deploy/incus/cue/tests/render-test.sh
 The test runs formatting, module tidiness, concrete vetting, the golden export,
 a non-default sizing/port example, and negative weakening cases. The CUE binary
 is checksum-pinned for all supported development platforms through `mise`.
+
+## Runtime acceptance contract
+
+The combined hostile-runner gate consumes the rendered baseline rather than
+the original CUE inputs. Its disposable-host deployment must set
+`inputs.runners.maximum: 2`, apply that exact output to Incus, and pass the same
+JSON to the runtime probe. Two live, exact-profile VMs then consume the complete
+admission budget, allowing the gate to require rejection of a third VM.
+
+The runtime helper under `cmd/incus-gh-runner-acceptance` is source-only test
+infrastructure. It does not alter the module's published interface and is not
+part of the released controller, packages, or image. Its KVM, Secure Boot,
+guest-agent, IPv6 no-bypass, and resource-pressure claims and residuals are
+defined in the [deployment how-to](../../../docs/docs/how-to/deploy.md).
 
 ## Deferred publication boundary
 
