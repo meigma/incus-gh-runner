@@ -51,3 +51,13 @@ disposable unauthorized repository/workflow fixture was available. No runner
 group settings, repository settings, or workflow dispatches were changed. Do not
 claim SEC-09 or the Slice 1 acceptance gate complete until that test is run and
 retained. Next: wait for exact-head PR CI and human review; do not merge.
+
+## 2026-07-18 21:46 — Exact-head hosted checks green
+
+All hosted checks completed successfully on PR #27 head
+`ce976af2c21b025691c7ccfdb081603ba2f43eda`: CI, CodeQL, GitHub Pages, Kusari
+Inspector, and the full reference-image build. The reference-image job completed
+in 9m51s. Release-dry-run and Pages-deployment jobs were skipped by their normal
+event conditions, with no failed or pending checks. The draft PR is merge-clean
+and remains paused for human review; the live negative scheduling acceptance
+gate documented above is still open.
