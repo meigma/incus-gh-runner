@@ -1,0 +1,55 @@
+architecture: x86_64
+config:
+  boot.autostart: "false"
+  image.architecture: amd64
+  image.description: Incus GitHub Actions runner on Ubuntu 24.04
+  image.name: incus-gh-runner-ubuntu-24.04-x86_64
+  image.os: ubuntu
+  image.release: noble
+  image.serial: "20260719_2022"
+  image.variant: default
+  limits.cpu: "2"
+  limits.memory: 4GiB
+  security.guestapi: "false"
+  security.nesting: "false"
+  security.secureboot: "true"
+  user.incus-gh-runner.acceptance-disposable: "true"
+  user.incus-gh-runner.acceptance-id: hostile-20260719203752-424722
+  volatile.base_image: ae1e2b082d50b4f6daf6bdf35561f12b170fd20cacfc09ffcf2a4149c330db1a
+  volatile.cloud-init.instance-id: ca2da3f5-98b5-428d-bcdf-1481092d586f
+  volatile.eth0.host_name: tap18a2731c
+  volatile.eth0.hwaddr: 10:66:6a:c7:57:37
+  volatile.last_state.agent: STARTED
+  volatile.last_state.power: RUNNING
+  volatile.uuid: 641d4f52-237b-4604-a918-b89a912734be
+  volatile.uuid.generation: 641d4f52-237b-4604-a918-b89a912734be
+  volatile.vm.needs_reset: "true"
+  volatile.vm.rtc_adjustment: "0"
+  volatile.vm.rtc_offset: "-1"
+  volatile.vsock_id: "3663665556"
+devices:
+  eth0:
+    ipv6.address: none
+    limits.max: 100Mbit
+    network: runner-accept
+    security.acls: runtime-acceptance-egress
+    security.acls.default.egress.action: reject
+    security.acls.default.egress.logged: "true"
+    security.acls.default.ingress.action: reject
+    security.acls.default.ingress.logged: "true"
+    security.ipv4_filtering: "true"
+    security.ipv6_filtering: "true"
+    security.mac_filtering: "true"
+    security.port_isolation: "true"
+    type: nic
+  root:
+    limits.max: 100MiB
+    path: /
+    pool: runtime-acceptance-storage
+    size: 20GiB
+    type: disk
+ephemeral: false
+profiles:
+  - runtime-acceptance-runner
+stateful: false
+description: ""

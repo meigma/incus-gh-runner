@@ -1,0 +1,28 @@
+config:
+  bridge.driver: native
+  dns.mode: none
+  dns.nameservers: 10.248.0.1
+  ipv4.address: 10.248.0.1/24
+  ipv4.dhcp: "true"
+  ipv4.firewall: "true"
+  ipv4.nat: "true"
+  ipv4.routing: "true"
+  ipv6.address: none
+  raw.dnsmasq: port=0
+  security.acls: runtime-acceptance-egress
+  security.acls.default.egress.action: reject
+  security.acls.default.egress.logged: "true"
+  security.acls.default.ingress.action: reject
+  security.acls.default.ingress.logged: "true"
+description: Managed bridge for isolated ephemeral runner VMs
+name: runner-accept
+type: bridge
+used_by:
+  - /1.0/instances/incus-gh-runner-hostile-20260719203752-424722-a?project=runtime-acceptance
+  - /1.0/instances/incus-gh-runner-hostile-20260719203752-424722-b?project=runtime-acceptance
+  - /1.0/profiles/runtime-acceptance-runner?project=runtime-acceptance
+managed: true
+status: Created
+locations:
+  - none
+project: default

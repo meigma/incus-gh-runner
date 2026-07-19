@@ -1,0 +1,22 @@
+{"timestamp":"2026-07-19T20:37:52Z","name":"effective-configuration","outcome":"passed","detail":"exported project, profile, image, network, ACL, storage, and available identity configuration"}
+{"timestamp":"2026-07-19T20:37:52Z","name":"mutation-gate","outcome":"passed","detail":"non-default disposable project and exact operator opt-in verified"}
+{"timestamp":"2026-07-19T20:37:52Z","name":"bridge-netfilter","outcome":"passed","detail":"host br_netfilter kernel module is loaded"}
+{"timestamp":"2026-07-19T20:38:24Z","name":"concurrent-vms","outcome":"passed","detail":"two generated hostile VMs launched and became agent-responsive together"}
+{"timestamp":"2026-07-19T20:48:39Z","name":"runtime-probe","outcome":"passed","detail":"KVM, reported Secure Boot, agent, IPv6 no-bypass, admission, and pressure-survival gates passed"}
+{"timestamp":"2026-07-19T20:48:42Z","name":"cross-runner-a-to-b","outcome":"passed","detail":"cross-runner TCP connection was blocked"}
+{"timestamp":"2026-07-19T20:48:45Z","name":"cross-runner-b-to-a","outcome":"passed","detail":"cross-runner TCP connection was blocked"}
+{"timestamp":"2026-07-19T20:48:45Z","name":"cross-runner-l2-a-to-b","outcome":"passed","detail":"destination did not resolve to a link-layer neighbor after the connection probe"}
+{"timestamp":"2026-07-19T20:48:45Z","name":"cross-runner-l2-b-to-a","outcome":"passed","detail":"destination did not resolve to a link-layer neighbor after the connection probe"}
+{"timestamp":"2026-07-19T20:48:46Z","name":"allowed-egress-a-0","outcome":"passed","detail":"approved HTTP(S) egress destination 0 succeeded"}
+{"timestamp":"2026-07-19T20:48:47Z","name":"allowed-egress-b-0","outcome":"passed","detail":"approved HTTP(S) egress destination 0 succeeded"}
+{"timestamp":"2026-07-19T20:48:50Z","name":"forbidden-direct-a-0","outcome":"passed","detail":"direct forbidden destination access failed while bypassing the proxy"}
+{"timestamp":"2026-07-19T20:48:53Z","name":"forbidden-direct-b-0","outcome":"passed","detail":"direct forbidden destination access failed while bypassing the proxy"}
+{"timestamp":"2026-07-19T20:48:53Z","name":"forbidden-proxy-a-0","outcome":"passed","detail":"configured proxy denied the forbidden destination"}
+{"timestamp":"2026-07-19T20:48:53Z","name":"forbidden-proxy-b-0","outcome":"passed","detail":"configured proxy denied the forbidden destination"}
+{"timestamp":"2026-07-19T20:48:56Z","name":"forbidden-direct-a-1","outcome":"passed","detail":"direct forbidden destination access failed while bypassing the proxy"}
+{"timestamp":"2026-07-19T20:48:59Z","name":"forbidden-direct-b-1","outcome":"passed","detail":"direct forbidden destination access failed while bypassing the proxy"}
+{"timestamp":"2026-07-19T20:48:59Z","name":"forbidden-proxy-a-1","outcome":"passed","detail":"configured proxy denied the forbidden destination"}
+{"timestamp":"2026-07-19T20:48:59Z","name":"forbidden-proxy-b-1","outcome":"passed","detail":"configured proxy denied the forbidden destination"}
+{"timestamp":"2026-07-19T20:49:03Z","name":"mac-spoof-a","outcome":"passed","detail":"approved egress failed under a spoofed MAC and recovered after restoration"}
+{"timestamp":"2026-07-19T20:49:09Z","name":"ipv4-spoof-a","outcome":"passed","detail":"approved egress failed from spoofed source 10.248.0.254 and recovered"}
+{"timestamp":"2026-07-19T20:49:09Z","name":"hostile-isolation-acceptance","outcome":"passed","detail":"network isolation, KVM-device use, reported Secure Boot, agent round-trip, IPv6 no-bypass, admission ceiling, and pressure-survival checks passed"}

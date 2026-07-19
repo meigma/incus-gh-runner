@@ -1,0 +1,2 @@
+curl_exit=28
+curl: (28) Failed to connect to fe80::1266:6aff:fec7:5737 port 18081 after 3002 ms: Timeout was reached

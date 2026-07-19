@@ -1,0 +1,9 @@
+  pool: incus-gh-runners
+ state: ONLINE
+config:
+
+	NAME                                           STATE     READ WRITE CKSUM
+	incus-gh-runners                               ONLINE       0     0     0
+	  /var/lib/incus-gh-runner-acceptance/zfs.img  ONLINE       0     0     0
+
+errors: No known data errors

@@ -1,0 +1,15 @@
+config:
+  source: incus-gh-runners
+  zfs.pool_name: incus-gh-runners
+description: Dedicated ZFS pool for ephemeral runner images and VM roots
+name: runtime-acceptance-storage
+driver: zfs
+used_by:
+  - /1.0/images/ae1e2b082d50b4f6daf6bdf35561f12b170fd20cacfc09ffcf2a4149c330db1a?project=runtime-acceptance
+  - /1.0/images/b1693662f82a16360fe1261ed64843f5394d5a08410c59c10b11b512df7f9b27?project=runtime-acceptance
+  - /1.0/instances/incus-gh-runner-hostile-20260719203752-424722-a?project=runtime-acceptance
+  - /1.0/instances/incus-gh-runner-hostile-20260719203752-424722-b?project=runtime-acceptance
+  - /1.0/profiles/runtime-acceptance-runner?project=runtime-acceptance
+status: Created
+locations:
+  - none

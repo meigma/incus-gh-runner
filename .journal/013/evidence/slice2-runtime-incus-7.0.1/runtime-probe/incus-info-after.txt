@@ -1,0 +1,46 @@
+config: {}
+api_extensions_count: 529
+api_status: stable
+api_version: "1.0"
+auth: trusted
+public: false
+auth_methods:
+  - tls
+auth_user_name: root
+auth_user_method: unix
+environment:
+  addresses: []
+  architectures:
+    - x86_64
+    - i686
+  certificate: ""
+  certificate_fingerprint: 33f2d2261f40008bd91d2a095cefe4ebcfaffe303245a786c961ed6cf2083c77
+  driver: qemu | lxc
+  driver_version: 11.0.2 | 7.0.0
+  firewall: nftables
+  kernel: Linux
+  kernel_architecture: x86_64
+  kernel_features: {}
+  kernel_version: 6.8.0-136-generic
+  lxc_features: {}
+  os_name: Ubuntu
+  os_version: "24.04"
+  project: default
+  server: incus
+  server_clustered: false
+  server_event_mode: full-mesh
+  server_name: incus-gh-rt-2bed880-0719
+  server_pid: 383370
+  server_version: 7.0.1
+  storage: zfs
+  storage_version: 2.2.2-0ubuntu9.4
+  storage_supported_drivers:
+    - name: truenas
+      version: 0.7.7
+      remote: true
+    - name: zfs
+      version: 2.2.2-0ubuntu9.4
+      remote: false
+    - name: dir
+      version: "1"
+      remote: false

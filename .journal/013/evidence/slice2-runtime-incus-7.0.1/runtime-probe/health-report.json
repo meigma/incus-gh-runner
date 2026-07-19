@@ -1,0 +1,27 @@
+{
+  "passed": true,
+  "thresholds": {
+    "api_max_failures": 0,
+    "api_p95_latency": 1000000000,
+    "api_max_latency": 5000000000,
+    "peer_max_failures": 0,
+    "peer_max_gap": 5000000000,
+    "min_mem_available_bytes": 3354159924
+  },
+  "api": {
+    "sample_count": 602,
+    "failure_count": 0,
+    "p95_latency": 21587160,
+    "max_latency": 34680132
+  },
+  "peer": {
+    "sample_count": 602,
+    "failure_count": 0,
+    "max_gap": 1131186135
+  },
+  "memory": {
+    "sample_count": 602,
+    "min_available_bytes": 24386736128
+  },
+  "violations": null
+}

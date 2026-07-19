@@ -1,0 +1,32 @@
+config:
+  boot.autostart: "false"
+  limits.cpu: "2"
+  limits.memory: 4GiB
+  security.guestapi: "false"
+  security.nesting: "false"
+  security.secureboot: "true"
+description: Only profile applied to ephemeral GitHub runner VMs
+devices:
+  eth0:
+    ipv6.address: none
+    limits.max: 100Mbit
+    network: runner-accept
+    security.acls: runtime-acceptance-egress
+    security.acls.default.egress.action: reject
+    security.acls.default.egress.logged: "true"
+    security.acls.default.ingress.action: reject
+    security.acls.default.ingress.logged: "true"
+    security.ipv4_filtering: "true"
+    security.ipv6_filtering: "true"
+    security.mac_filtering: "true"
+    security.port_isolation: "true"
+    type: nic
+  root:
+    limits.max: 100MiB
+    path: /
+    pool: runtime-acceptance-storage
+    size: 20GiB
+    type: disk
+name: runtime-acceptance-runner
+used_by: []
+project: runtime-acceptance

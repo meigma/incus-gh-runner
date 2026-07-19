@@ -1,0 +1,8 @@
+provider=Latitude.sh
+server_id=sv_ZozMazxYBN7kw
+hostname=incus-gh-rt-2bed880-0719
+created_at_utc=2026-07-19T19:28:43Z
+destroy_result=Server deleted successfully
+post_destroy_get=404 NotFound
+post_destroy_project_list=absent
+verified_at_utc=2026-07-19T20:53:03Z

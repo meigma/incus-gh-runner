@@ -1,0 +1,192 @@
+{
+	"architecture": "x86_64",
+	"backups": null,
+	"config": {
+		"image.architecture": "amd64",
+		"image.description": "Incus GitHub Actions runner on Ubuntu 24.04",
+		"image.name": "incus-gh-runner-ubuntu-24.04-x86_64",
+		"image.os": "ubuntu",
+		"image.release": "noble",
+		"image.serial": "20260719_2022",
+		"image.variant": "default",
+		"user.incus-gh-runner.acceptance-disposable": "true",
+		"user.incus-gh-runner.acceptance-id": "hostile-20260719203752-424722",
+		"volatile.base_image": "ae1e2b082d50b4f6daf6bdf35561f12b170fd20cacfc09ffcf2a4149c330db1a",
+		"volatile.cloud-init.instance-id": "ca2da3f5-98b5-428d-bcdf-1481092d586f",
+		"volatile.eth0.host_name": "tap18a2731c",
+		"volatile.eth0.hwaddr": "10:66:6a:c7:57:37",
+		"volatile.last_state.agent": "STARTED",
+		"volatile.last_state.power": "RUNNING",
+		"volatile.uuid": "641d4f52-237b-4604-a918-b89a912734be",
+		"volatile.uuid.generation": "641d4f52-237b-4604-a918-b89a912734be",
+		"volatile.vm.needs_reset": "true",
+		"volatile.vm.rtc_adjustment": "0",
+		"volatile.vm.rtc_offset": "-1",
+		"volatile.vsock_id": "3663665556"
+	},
+	"created_at": "2026-07-19T20:38:12.764209763Z",
+	"description": "",
+	"devices": {},
+	"ephemeral": false,
+	"expanded_config": {
+		"boot.autostart": "false",
+		"image.architecture": "amd64",
+		"image.description": "Incus GitHub Actions runner on Ubuntu 24.04",
+		"image.name": "incus-gh-runner-ubuntu-24.04-x86_64",
+		"image.os": "ubuntu",
+		"image.release": "noble",
+		"image.serial": "20260719_2022",
+		"image.variant": "default",
+		"limits.cpu": "2",
+		"limits.memory": "4GiB",
+		"security.guestapi": "false",
+		"security.nesting": "false",
+		"security.secureboot": "true",
+		"user.incus-gh-runner.acceptance-disposable": "true",
+		"user.incus-gh-runner.acceptance-id": "hostile-20260719203752-424722",
+		"volatile.base_image": "ae1e2b082d50b4f6daf6bdf35561f12b170fd20cacfc09ffcf2a4149c330db1a",
+		"volatile.cloud-init.instance-id": "ca2da3f5-98b5-428d-bcdf-1481092d586f",
+		"volatile.eth0.host_name": "tap18a2731c",
+		"volatile.eth0.hwaddr": "10:66:6a:c7:57:37",
+		"volatile.last_state.agent": "STARTED",
+		"volatile.last_state.power": "RUNNING",
+		"volatile.uuid": "641d4f52-237b-4604-a918-b89a912734be",
+		"volatile.uuid.generation": "641d4f52-237b-4604-a918-b89a912734be",
+		"volatile.vm.needs_reset": "true",
+		"volatile.vm.rtc_adjustment": "0",
+		"volatile.vm.rtc_offset": "-1",
+		"volatile.vsock_id": "3663665556"
+	},
+	"expanded_devices": {
+		"eth0": {
+			"ipv6.address": "none",
+			"limits.max": "100Mbit",
+			"network": "runner-accept",
+			"security.acls": "runtime-acceptance-egress",
+			"security.acls.default.egress.action": "reject",
+			"security.acls.default.egress.logged": "true",
+			"security.acls.default.ingress.action": "reject",
+			"security.acls.default.ingress.logged": "true",
+			"security.ipv4_filtering": "true",
+			"security.ipv6_filtering": "true",
+			"security.mac_filtering": "true",
+			"security.port_isolation": "true",
+			"type": "nic"
+		},
+		"root": {
+			"limits.max": "100MiB",
+			"path": "/",
+			"pool": "runtime-acceptance-storage",
+			"size": "20GiB",
+			"type": "disk"
+		}
+	},
+	"last_used_at": "2026-07-19T20:38:14.830408752Z",
+	"location": "none",
+	"name": "incus-gh-runner-hostile-20260719203752-424722-b",
+	"profiles": [
+		"runtime-acceptance-runner"
+	],
+	"project": "runtime-acceptance",
+	"snapshots": null,
+	"state": {
+		"cpu": {
+			"allocated_time": 0,
+			"usage": 2725631000
+		},
+		"disk": {
+			"root": {
+				"total": 21474836480,
+				"usage": 4345856
+			}
+		},
+		"memory": {
+			"swap_usage": 0,
+			"swap_usage_peak": 0,
+			"total": 4031746048,
+			"usage": 271134720,
+			"usage_peak": 0
+		},
+		"network": {
+			"enp5s0": {
+				"addresses": [
+					{
+						"address": "10.248.0.3",
+						"family": "inet",
+						"netmask": "24",
+						"scope": "global"
+					},
+					{
+						"address": "fe80::1266:6aff:fec7:5737",
+						"family": "inet6",
+						"netmask": "64",
+						"scope": "link"
+					}
+				],
+				"counters": {
+					"bytes_received": 351,
+					"bytes_sent": 776,
+					"errors_received": 0,
+					"errors_sent": 0,
+					"packets_dropped_inbound": 0,
+					"packets_dropped_outbound": 0,
+					"packets_received": 1,
+					"packets_sent": 6
+				},
+				"host_name": "tap18a2731c",
+				"hwaddr": "10:66:6a:c7:57:37",
+				"mtu": 1500,
+				"state": "up",
+				"type": "broadcast"
+			},
+			"lo": {
+				"addresses": [
+					{
+						"address": "127.0.0.1",
+						"family": "inet",
+						"netmask": "8",
+						"scope": "local"
+					},
+					{
+						"address": "::1",
+						"family": "inet6",
+						"netmask": "128",
+						"scope": "local"
+					}
+				],
+				"counters": {
+					"bytes_received": 5920,
+					"bytes_sent": 5920,
+					"errors_received": 0,
+					"errors_sent": 0,
+					"packets_dropped_inbound": 0,
+					"packets_dropped_outbound": 0,
+					"packets_received": 80,
+					"packets_sent": 80
+				},
+				"host_name": "",
+				"hwaddr": "",
+				"mtu": 65536,
+				"state": "up",
+				"type": "loopback"
+			}
+		},
+		"os_info": {
+			"fqdn": "localhost",
+			"hostname": "incus-gh-runner-hostile-20260719203752-424722-b",
+			"kernel_version": "6.8.0-136-generic",
+			"os": "Ubuntu",
+			"os_version": "24.04"
+		},
+		"pid": 425252,
+		"processes": 137,
+		"started_at": "2026-07-19T20:38:14.726717993Z",
+		"status": "Running",
+		"status_code": 103
+	},
+	"stateful": false,
+	"status": "Running",
+	"status_code": 103,
+	"type": "virtual-machine"
+}
+

@@ -285,3 +285,54 @@ review passed. The remaining action for this PR is one exact-commit,
 exact-image paid KVM window, checksummed evidence retention, and verified host
 destruction. Least-privilege Incus authorization deliberately remains a later
 slice rather than being folded into this runtime proof.
+
+## 2026-07-19 13:54 — Exact-head KVM runtime gate passed and host destroyed
+
+Completed the paid bare-metal acceptance window for draft PR #29. Live use
+materially improved the implementation before the final run: Incus rejected
+the original overlong bridge name, VM IPv6 filtering required the host
+`br_netfilter` module, Ubuntu mounts `/run` with `noexec`,
+`systemd-socket-activate` needed `--inetd` for the synthetic HTTP responders,
+and `incus launch` could wait for YAML when inheriting open non-TTY stdin. The
+tracked fixes now constrain bridge names to 2–15 lowercase identifier
+characters, require and document bridge netfilter, invoke `/run` scripts
+through `/bin/sh`, stage the pressure helper under root-owned `/root`, use
+inetd socket handoff, and close launch stdin. Local focused race tests, the
+Incus/image contracts, and the complete `root:check` gate stayed green after
+each correction; independent reviews found no remaining actionable issue.
+
+The final source is
+`3d787dc1a0aac7a59e34b68e4ebc4f318ee7854f`. The exact-head hosted reference
+image workflow run `29702324164` passed in 9m22s, and its downloaded archive
+verified as
+`ae1e2b082d50b4f6daf6bdf35561f12b170fd20cacfc09ffcf2a4149c330db1a`.
+That same fingerprint was imported and used by both final VMs. The
+provenance-bound helper digest was
+`93fa9da2ced9718f8a4f5fde171f3a091eaaea68cc14359e0aef1a9384930e60`,
+and the rendered baseline digest remained
+`c2aac4737d94483bf308fa356546c7c50499a0ec51c3aa261397a47126c438d2`.
+
+Run `hostile-20260719203752-424722` passed the full parent and helper gates:
+exact KVM QEMU PIDs and `/dev/kvm` FDs, reported Secure Boot, agent round trips,
+guest-API absence, expanded root filesystems, two-VM admission with exact third
+VM rejection, self-assigned/spoofed/link-local IPv6 denial with positive
+controls, cross-runner L2/L3 denial, forbidden direct and proxy paths, approved
+GitHub egress, and MAC/IPv4 spoof rejection with recovery. The ten-minute
+pressure window produced 602 API and peer samples with zero failures; API
+p95/max was 21.6/34.7 ms, peer max gap was 1.13 s, minimum host
+`MemAvailable` was 24,386,736,128 bytes, and the daemon, kernel, and ZFS checks
+remained healthy. Both checksum manifests passed, and marker-bound cleanup left
+zero instances.
+
+The final 3.9 MB non-image host archive and the 556 KB journal evidence subset
+were copied and independently reverified before teardown. Latitude.sh accepted
+destruction of exact server `sv_ZozMazxYBN7kw`; a later exact-ID lookup returned
+`404 NotFound`, and the server was absent from the project list. Runtime was
+about 1h23, approximately $0.72 at the quoted $0.52/hour before provider billing
+granularity.
+
+All exact-head hosted checks are green and PR #29 is merge-clean. It remains a
+draft for human review. The KVM, IPv6, and bounded resource-survival gates are
+now closed; least-privilege Incus authorization remains the sole open Slice 2
+exit boundary because the restricted project identity can still weaken
+project-local profile controls.

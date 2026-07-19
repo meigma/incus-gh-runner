@@ -1,0 +1,216 @@
+{
+  "version": 1,
+  "run_id": "hostile-20260719203752-424722",
+  "started_at": "2026-07-19T20:38:24.784891015Z",
+  "finished_at": "2026-07-19T20:48:39.14068376Z",
+  "outcome": "passed",
+  "baseline_sha256": "c2aac4737d94483bf308fa356546c7c50499a0ec51c3aa261397a47126c438d2",
+  "image_fingerprint": "ae1e2b082d50b4f6daf6bdf35561f12b170fd20cacfc09ffcf2a4149c330db1a",
+  "acceptance_sha256": "93fa9da2ced9718f8a4f5fde171f3a091eaaea68cc14359e0aef1a9384930e60",
+  "source_revision": "3d787dc1a0aac7a59e34b68e4ebc4f318ee7854f",
+  "source_modified": false,
+  "stress_duration": "10m0s",
+  "poll_interval": "1s",
+  "guests": [
+    {
+      "instance": "incus-gh-runner-hostile-20260719203752-424722-a",
+      "kvm": {
+        "pid": 425155,
+        "kvm_fds": [
+          "23"
+        ]
+      },
+      "virtualization": "kvm",
+      "secure_boot_enabled": true,
+      "agent_file_round_trip": true,
+      "guest_api_absent": true,
+      "cpu_count": 2,
+      "memory_bytes": 4031762432,
+      "root_filesystem_bytes": 20625686528,
+      "instance_state": {
+        "type": "virtual-machine",
+        "profiles": [
+          "runtime-acceptance-runner"
+        ],
+        "config": {
+          "image.architecture": "amd64",
+          "image.description": "Incus GitHub Actions runner on Ubuntu 24.04",
+          "image.name": "incus-gh-runner-ubuntu-24.04-x86_64",
+          "image.os": "ubuntu",
+          "image.release": "noble",
+          "image.serial": "20260719_2022",
+          "image.variant": "default",
+          "user.incus-gh-runner.acceptance-disposable": "true",
+          "user.incus-gh-runner.acceptance-id": "hostile-20260719203752-424722",
+          "volatile.base_image": "ae1e2b082d50b4f6daf6bdf35561f12b170fd20cacfc09ffcf2a4149c330db1a",
+          "volatile.cloud-init.instance-id": "2f0bc28a-8e0f-46cc-b102-d7fd9fe72e3f",
+          "volatile.eth0.host_name": "tap2f80a8fe",
+          "volatile.eth0.hwaddr": "10:66:6a:c5:4d:2d",
+          "volatile.last_state.agent": "STARTED",
+          "volatile.last_state.power": "RUNNING",
+          "volatile.uuid": "d14c2dd2-437a-494b-a292-1e8f9adc5373",
+          "volatile.uuid.generation": "d14c2dd2-437a-494b-a292-1e8f9adc5373",
+          "volatile.vm.needs_reset": "true",
+          "volatile.vm.rtc_adjustment": "0",
+          "volatile.vm.rtc_offset": "-1",
+          "volatile.vsock_id": "66266623"
+        },
+        "expanded_config": {
+          "boot.autostart": "false",
+          "image.architecture": "amd64",
+          "image.description": "Incus GitHub Actions runner on Ubuntu 24.04",
+          "image.name": "incus-gh-runner-ubuntu-24.04-x86_64",
+          "image.os": "ubuntu",
+          "image.release": "noble",
+          "image.serial": "20260719_2022",
+          "image.variant": "default",
+          "limits.cpu": "2",
+          "limits.memory": "4GiB",
+          "security.guestapi": "false",
+          "security.nesting": "false",
+          "security.secureboot": "true",
+          "user.incus-gh-runner.acceptance-disposable": "true",
+          "user.incus-gh-runner.acceptance-id": "hostile-20260719203752-424722",
+          "volatile.base_image": "ae1e2b082d50b4f6daf6bdf35561f12b170fd20cacfc09ffcf2a4149c330db1a",
+          "volatile.cloud-init.instance-id": "2f0bc28a-8e0f-46cc-b102-d7fd9fe72e3f",
+          "volatile.eth0.host_name": "tap2f80a8fe",
+          "volatile.eth0.hwaddr": "10:66:6a:c5:4d:2d",
+          "volatile.last_state.agent": "STARTED",
+          "volatile.last_state.power": "RUNNING",
+          "volatile.uuid": "d14c2dd2-437a-494b-a292-1e8f9adc5373",
+          "volatile.uuid.generation": "d14c2dd2-437a-494b-a292-1e8f9adc5373",
+          "volatile.vm.needs_reset": "true",
+          "volatile.vm.rtc_adjustment": "0",
+          "volatile.vm.rtc_offset": "-1",
+          "volatile.vsock_id": "66266623"
+        }
+      }
+    },
+    {
+      "instance": "incus-gh-runner-hostile-20260719203752-424722-b",
+      "kvm": {
+        "pid": 425252,
+        "kvm_fds": [
+          "23"
+        ]
+      },
+      "virtualization": "kvm",
+      "secure_boot_enabled": true,
+      "agent_file_round_trip": true,
+      "guest_api_absent": true,
+      "cpu_count": 2,
+      "memory_bytes": 4031746048,
+      "root_filesystem_bytes": 20625686528,
+      "instance_state": {
+        "type": "virtual-machine",
+        "profiles": [
+          "runtime-acceptance-runner"
+        ],
+        "config": {
+          "image.architecture": "amd64",
+          "image.description": "Incus GitHub Actions runner on Ubuntu 24.04",
+          "image.name": "incus-gh-runner-ubuntu-24.04-x86_64",
+          "image.os": "ubuntu",
+          "image.release": "noble",
+          "image.serial": "20260719_2022",
+          "image.variant": "default",
+          "user.incus-gh-runner.acceptance-disposable": "true",
+          "user.incus-gh-runner.acceptance-id": "hostile-20260719203752-424722",
+          "volatile.base_image": "ae1e2b082d50b4f6daf6bdf35561f12b170fd20cacfc09ffcf2a4149c330db1a",
+          "volatile.cloud-init.instance-id": "ca2da3f5-98b5-428d-bcdf-1481092d586f",
+          "volatile.eth0.host_name": "tap18a2731c",
+          "volatile.eth0.hwaddr": "10:66:6a:c7:57:37",
+          "volatile.last_state.agent": "STARTED",
+          "volatile.last_state.power": "RUNNING",
+          "volatile.uuid": "641d4f52-237b-4604-a918-b89a912734be",
+          "volatile.uuid.generation": "641d4f52-237b-4604-a918-b89a912734be",
+          "volatile.vm.needs_reset": "true",
+          "volatile.vm.rtc_adjustment": "0",
+          "volatile.vm.rtc_offset": "-1",
+          "volatile.vsock_id": "3663665556"
+        },
+        "expanded_config": {
+          "boot.autostart": "false",
+          "image.architecture": "amd64",
+          "image.description": "Incus GitHub Actions runner on Ubuntu 24.04",
+          "image.name": "incus-gh-runner-ubuntu-24.04-x86_64",
+          "image.os": "ubuntu",
+          "image.release": "noble",
+          "image.serial": "20260719_2022",
+          "image.variant": "default",
+          "limits.cpu": "2",
+          "limits.memory": "4GiB",
+          "security.guestapi": "false",
+          "security.nesting": "false",
+          "security.secureboot": "true",
+          "user.incus-gh-runner.acceptance-disposable": "true",
+          "user.incus-gh-runner.acceptance-id": "hostile-20260719203752-424722",
+          "volatile.base_image": "ae1e2b082d50b4f6daf6bdf35561f12b170fd20cacfc09ffcf2a4149c330db1a",
+          "volatile.cloud-init.instance-id": "ca2da3f5-98b5-428d-bcdf-1481092d586f",
+          "volatile.eth0.host_name": "tap18a2731c",
+          "volatile.eth0.hwaddr": "10:66:6a:c7:57:37",
+          "volatile.last_state.agent": "STARTED",
+          "volatile.last_state.power": "RUNNING",
+          "volatile.uuid": "641d4f52-237b-4604-a918-b89a912734be",
+          "volatile.uuid.generation": "641d4f52-237b-4604-a918-b89a912734be",
+          "volatile.vm.needs_reset": "true",
+          "volatile.vm.rtc_adjustment": "0",
+          "volatile.vm.rtc_offset": "-1",
+          "volatile.vsock_id": "3663665556"
+        }
+      }
+    }
+  ],
+  "admission": {
+    "probe_instance": "incus-gh-runner-hostile-20260719203752-424722-limit",
+    "rejected": true,
+    "reason": "Error: Reached maximum number of instances of type \"virtual-machine\" in project \"runtime-acceptance\""
+  },
+  "ipv6": {
+    "address_a": "2001:db8:2cb3::a",
+    "address_b": "2001:db8:2cb3::b",
+    "spoofed_source": "2001:db8:2cb3::dead",
+    "link_local_b": "fe80::1266:6aff:fec7:5737",
+    "self_url_control": true,
+    "source_bind_control": true,
+    "scoped_url_control": true,
+    "self_assigned_blocked": true,
+    "spoofed_source_blocked": true,
+    "link_local_blocked": true,
+    "approved_ipv4_recovered": true
+  },
+  "health": {
+    "passed": true,
+    "thresholds": {
+      "api_max_failures": 0,
+      "api_p95_latency": 1000000000,
+      "api_max_latency": 5000000000,
+      "peer_max_failures": 0,
+      "peer_max_gap": 5000000000,
+      "min_mem_available_bytes": 3354159924
+    },
+    "api": {
+      "sample_count": 602,
+      "failure_count": 0,
+      "p95_latency": 21587160,
+      "max_latency": 34680132
+    },
+    "peer": {
+      "sample_count": 602,
+      "failure_count": 0,
+      "max_gap": 1131186135
+    },
+    "memory": {
+      "sample_count": 602,
+      "min_available_bytes": 24386736128
+    },
+    "violations": null
+  },
+  "limitations": [
+    "IPv6 denial is a defense-in-depth result and does not attribute the drop to one overlapping control.",
+    "Secure Boot was reported active; rejection of a valid but untrusted EFI payload was not independently exercised.",
+    "Configured NIC and ZFS disk-I/O throughput ceilings were not independently benchmarked.",
+    "Pressure proves bounded host and control-plane survival, not aggregate project CPU or memory runtime throttling.",
+    "The local Incus Unix-socket identity remains root-equivalent; this gate requires a dedicated host and does not prove least-privilege Incus authorization."
+  ]
+}

@@ -1,0 +1,38 @@
+{
+    "children": [
+        {
+            "name": "file",
+            "info": {
+                "children": [
+                ],
+                "virtual-size": 727404544,
+                "filename": "build/reference-image-inspection/rootfs.img",
+                "format": "file",
+                "actual-size": 727404544,
+                "format-specific": {
+                    "type": "file",
+                    "data": {
+                    }
+                },
+                "dirty-flag": false
+            }
+        }
+    ],
+    "virtual-size": 8589934592,
+    "filename": "build/reference-image-inspection/rootfs.img",
+    "cluster-size": 65536,
+    "format": "qcow2",
+    "actual-size": 727404544,
+    "format-specific": {
+        "type": "qcow2",
+        "data": {
+            "compat": "1.1",
+            "compression-type": "zlib",
+            "lazy-refcounts": false,
+            "refcount-bits": 16,
+            "corrupt": false,
+            "extended-l2": false
+        }
+    },
+    "dirty-flag": false
+}

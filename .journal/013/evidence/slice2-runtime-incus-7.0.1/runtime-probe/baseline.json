@@ -1,0 +1,179 @@
+{
+    "schema_version": 1,
+    "authority": {
+        "mode": "dedicated-host-unix-socket",
+        "dedicated_single_purpose_host_required": true,
+        "unix_socket_is_root_equivalent": true
+    },
+    "names": {
+        "project": "runtime-acceptance",
+        "network": "runner-accept",
+        "network_acl": "runtime-acceptance-egress",
+        "profile": "runtime-acceptance-runner",
+        "storage_pool": "runtime-acceptance-storage"
+    },
+    "server": {
+        "minimum_version": "7.0",
+        "required_api_extensions": [
+            "container_nic_ipfilter",
+            "instance_nic_bridged_port_isolation",
+            "network_acl",
+            "network_bridge_acl",
+            "network_bridge_acl_devices",
+            "projects_limits_disk_pool",
+            "projects_networks",
+            "projects_networks_restricted_access",
+            "projects_restricted_storage_pool_access",
+            "projects_restrictions"
+        ],
+        "firewall_driver": "nftables",
+        "standalone": true,
+        "core_https_address": "",
+        "cluster_https_address": ""
+    },
+    "residual_controls": {
+        "project_vm_nesting_restriction": {
+            "status": "unsupported-by-incus-7.0-through-7.2",
+            "future_api_extension": "projects_restricted_virtual_machines_nesting",
+            "compensating_profile_key": "security.nesting",
+            "compensating_profile_value": "false"
+        }
+    },
+    "project": {
+        "description": "Restricted project for ephemeral GitHub runner VMs",
+        "config": {
+            "limits.cpu": "4",
+            "limits.disk": "60GiB",
+            "limits.instances": "2",
+            "limits.memory": "8GiB",
+            "features.images": "true",
+            "features.networks": "false",
+            "features.profiles": "true",
+            "features.storage.buckets": "true",
+            "features.storage.volumes": "true",
+            "images.auto_update_cached": "false",
+            "images.auto_update_interval": "0",
+            "limits.containers": "0",
+            "limits.disk.pool.runtime-acceptance-storage": "60GiB",
+            "limits.networks": "0",
+            "limits.virtual-machines": "2",
+            "restricted": "true",
+            "restricted.backups": "block",
+            "restricted.cluster.target": "block",
+            "restricted.containers.interception": "block",
+            "restricted.containers.lowlevel": "block",
+            "restricted.containers.nesting": "block",
+            "restricted.containers.privilege": "unprivileged",
+            "restricted.devices.disk": "block",
+            "restricted.devices.gpu": "block",
+            "restricted.devices.infiniband": "block",
+            "restricted.devices.nic": "managed",
+            "restricted.devices.pci": "block",
+            "restricted.devices.proxy": "block",
+            "restricted.devices.unix-block": "block",
+            "restricted.devices.unix-char": "block",
+            "restricted.devices.unix-hotplug": "block",
+            "restricted.devices.usb": "block",
+            "restricted.networks.access": "runner-accept",
+            "restricted.snapshots": "block",
+            "restricted.storage-pools.access": "runtime-acceptance-storage",
+            "restricted.virtual-machines.lowlevel": "block"
+        }
+    },
+    "network": {
+        "description": "Managed bridge for isolated ephemeral runner VMs",
+        "type": "bridge",
+        "managed": true,
+        "config": {
+            "bridge.driver": "native",
+            "dns.mode": "none",
+            "dns.nameservers": "10.248.0.1",
+            "ipv4.address": "10.248.0.1/24",
+            "ipv4.dhcp": "true",
+            "ipv4.firewall": "true",
+            "ipv4.nat": "true",
+            "ipv4.routing": "true",
+            "ipv6.address": "none",
+            "raw.dnsmasq": "port=0",
+            "security.acls": "runtime-acceptance-egress",
+            "security.acls.default.egress.action": "reject",
+            "security.acls.default.egress.logged": "true",
+            "security.acls.default.ingress.action": "reject",
+            "security.acls.default.ingress.logged": "true"
+        }
+    },
+    "network_acl": {
+        "description": "Default-deny runner egress through controlled DNS and HTTPS proxy",
+        "config": {},
+        "ingress": [],
+        "egress": [
+            {
+                "action": "allow",
+                "state": "enabled",
+                "description": "Controlled DNS over UDP",
+                "destination": "10.248.0.1/32",
+                "protocol": "udp",
+                "destination_port": "53"
+            },
+            {
+                "action": "allow",
+                "state": "enabled",
+                "description": "Controlled DNS over TCP",
+                "destination": "10.248.0.1/32",
+                "protocol": "tcp",
+                "destination_port": "53"
+            },
+            {
+                "action": "allow",
+                "state": "enabled",
+                "description": "Controlled HTTP CONNECT proxy",
+                "destination": "10.248.0.1/32",
+                "protocol": "tcp",
+                "destination_port": "3128"
+            }
+        ]
+    },
+    "profile": {
+        "description": "Only profile applied to ephemeral GitHub runner VMs",
+        "config": {
+            "boot.autostart": "false",
+            "limits.cpu": "2",
+            "limits.memory": "4GiB",
+            "security.guestapi": "false",
+            "security.nesting": "false",
+            "security.secureboot": "true"
+        },
+        "devices": {
+            "eth0": {
+                "type": "nic",
+                "network": "runner-accept",
+                "limits.max": "100Mbit",
+                "ipv6.address": "none",
+                "security.acls": "runtime-acceptance-egress",
+                "security.acls.default.egress.action": "reject",
+                "security.acls.default.egress.logged": "true",
+                "security.acls.default.ingress.action": "reject",
+                "security.acls.default.ingress.logged": "true",
+                "security.ipv4_filtering": "true",
+                "security.ipv6_filtering": "true",
+                "security.mac_filtering": "true",
+                "security.port_isolation": "true"
+            },
+            "root": {
+                "type": "disk",
+                "path": "/",
+                "pool": "runtime-acceptance-storage",
+                "size": "20GiB",
+                "limits.max": "100MiB"
+            }
+        }
+    },
+    "storage_pool": {
+        "description": "Dedicated ZFS pool for ephemeral runner images and VM roots",
+        "driver": "zfs",
+        "config": {
+            "source": "incus-gh-runners",
+            "zfs.pool_name": "incus-gh-runners"
+        }
+    }
+}

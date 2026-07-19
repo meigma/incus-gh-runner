@@ -1,0 +1,47 @@
+config:
+  features.images: "true"
+  features.networks: "false"
+  features.profiles: "true"
+  features.storage.buckets: "true"
+  features.storage.volumes: "true"
+  images.auto_update_cached: "false"
+  images.auto_update_interval: "0"
+  limits.containers: "0"
+  limits.cpu: "4"
+  limits.disk: 60GiB
+  limits.disk.pool.runtime-acceptance-storage: 60GiB
+  limits.instances: "2"
+  limits.memory: 8GiB
+  limits.networks: "0"
+  limits.virtual-machines: "2"
+  restricted: "true"
+  restricted.backups: block
+  restricted.cluster.target: block
+  restricted.containers.interception: block
+  restricted.containers.lowlevel: block
+  restricted.containers.nesting: block
+  restricted.containers.privilege: unprivileged
+  restricted.devices.disk: block
+  restricted.devices.gpu: block
+  restricted.devices.infiniband: block
+  restricted.devices.nic: managed
+  restricted.devices.pci: block
+  restricted.devices.proxy: block
+  restricted.devices.unix-block: block
+  restricted.devices.unix-char: block
+  restricted.devices.unix-hotplug: block
+  restricted.devices.usb: block
+  restricted.networks.access: runner-accept
+  restricted.snapshots: block
+  restricted.storage-pools.access: runtime-acceptance-storage
+  restricted.virtual-machines.lowlevel: block
+  user.incus-gh-runner.disposable: "true"
+description: Restricted project for ephemeral GitHub runner VMs
+name: runtime-acceptance
+used_by:
+  - /1.0/instances/incus-gh-runner-hostile-20260719203752-424722-a?project=runtime-acceptance
+  - /1.0/instances/incus-gh-runner-hostile-20260719203752-424722-b?project=runtime-acceptance
+  - /1.0/images/ae1e2b082d50b4f6daf6bdf35561f12b170fd20cacfc09ffcf2a4149c330db1a?project=runtime-acceptance
+  - /1.0/images/b1693662f82a16360fe1261ed64843f5394d5a08410c59c10b11b512df7f9b27?project=runtime-acceptance
+  - /1.0/profiles/default?project=runtime-acceptance
+  - /1.0/profiles/runtime-acceptance-runner?project=runtime-acceptance
