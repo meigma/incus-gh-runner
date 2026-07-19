@@ -52,3 +52,19 @@ process-language grep clean. README links and unit Documentation= URL updated
 to new paths. PR #23 opened; CI monitor running.
 Still pending from earlier: applying the 98-finding language sweep (separate
 task, user decision on agent-infra shipping still open).
+
+## 2026-07-18 17:15 — Docs merged; language cleanup PR open
+Docs PR #23 squash-merged at master 5467b99; worktree removed. Applied the
+language sweep on branch `cleanup-process-language` (77 findings; docs/
+findings mooted by #23): README intro/live-test rewrite and example renames,
+scripts/live renamed (live-bundle-prepare.sh, live-host-prepare.sh,
+live-hot-standby.sh), runner-functional.yml retitled "Runner Functional
+Check" with proof_id→correlation_id coupled to the harness run title,
+validate-incus.sh validate-probe- prefix, Go fixture/comment renames, small
+config-file wording. Uncertain .gitignore agent-tooling entries kept under a
+neutral heading pending the user's agent-infra-shipping decision. Verified:
+moon run root:check all green, .github Python tests OK, bash -n on scripts,
+residue grep clean. PR #25 open, CI monitored.
+Note: Release Please regenerated release PR #24 (1.0.0) after the docs
+commit reached master — expected while the gate is enabled; merging it is
+the maintainer's call.
