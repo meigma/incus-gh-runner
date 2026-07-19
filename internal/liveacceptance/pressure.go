@@ -262,7 +262,7 @@ func newGuestPressureArtifacts(runID string) guestPressureArtifacts {
 	token := hex.EncodeToString(digest[:8])
 	prefix := "incus-gh-runner-" + token + "-runtime-acceptance"
 	return guestPressureArtifacts{
-		executable: "/run/" + prefix,
+		executable: "/root/" + prefix,
 		disk:       "/var/tmp/" + prefix + ".bin",
 		result:     "/run/" + prefix + "-result.json",
 		stderr:     "/run/" + prefix + "-stderr.log",

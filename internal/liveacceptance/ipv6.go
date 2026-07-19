@@ -307,12 +307,16 @@ func executeIPv6NoBypass( //nolint:funlen,gocognit // The retained assertions fo
 
 // startIPv6Listener starts the fixed synthetic HTTP listener inside one runner.
 func startIPv6Listener(ctx context.Context, commands commandRunner, project string, instance string) error {
-	listenerScript := fmt.Sprintf(
-		`set -Eeuo pipefail; printf '#!/bin/sh\nprintf "HTTP/1.1 200 OK\\r\\nConnection: close\\r\\nContent-Length: 21\\r\\n\\r\\nipv6-isolation-probe\\n"\n' >/run/incus-gh-runner-ipv6-response; chmod 0700 /run/incus-gh-runner-ipv6-response; nohup systemd-socket-activate --listen='[::]:%d' --accept -- /run/incus-gh-runner-ipv6-response >/run/incus-gh-runner-ipv6-listener.log 2>&1 </dev/null & printf '%%s\n' "$!" >/run/incus-gh-runner-ipv6-listener.pid`,
+	_, err := guestOutput(ctx, commands, project, instance, "bash", "-c", ipv6ListenerScript())
+	return err
+}
+
+// ipv6ListenerScript returns the synthetic listener lifecycle script.
+func ipv6ListenerScript() string {
+	return fmt.Sprintf(
+		`set -Eeuo pipefail; printf '#!/bin/sh\nprintf "HTTP/1.1 200 OK\\r\\nConnection: close\\r\\nContent-Length: 21\\r\\n\\r\\nipv6-isolation-probe\\n"\n' >/run/incus-gh-runner-ipv6-response; chmod 0700 /run/incus-gh-runner-ipv6-response; nohup systemd-socket-activate --listen='[::]:%d' --accept --inetd -- /bin/sh /run/incus-gh-runner-ipv6-response >/run/incus-gh-runner-ipv6-listener.log 2>&1 </dev/null & printf '%%s\n' "$!" >/run/incus-gh-runner-ipv6-listener.pid`,
 		ipv6ProbePort,
 	)
-	_, err := guestOutput(ctx, commands, project, instance, "bash", "-c", listenerScript)
-	return err
 }
 
 // scopedIPv6URL formats one literal link-local URL with an escaped guest interface zone.

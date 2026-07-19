@@ -61,6 +61,8 @@ func TestGuestPressureArtifactsAreStableAndRunScoped(t *testing.T) {
 	assert.NotEqual(t, first, second)
 	assert.True(t, strings.HasSuffix(first.unit, ".service"))
 	assert.NotContains(t, first.executable, "acceptance-one")
+	assert.True(t, strings.HasPrefix(first.executable, "/root/"))
+	assert.False(t, strings.HasPrefix(first.executable, "/run/"))
 }
 
 // TestClassifyGuestPressureStatusRejectsAmbiguousResults proves only the explicit completion envelope is accepted.

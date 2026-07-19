@@ -18,6 +18,15 @@ func TestIPv6RunHextetIsStableAndBounded(t *testing.T) {
 	assert.Regexp(t, `^[a-f0-9]{4}$`, first)
 }
 
+// TestIPv6ListenerUsesInterpreterOnNoExecRun proves the response helper is not executed directly from /run.
+func TestIPv6ListenerUsesInterpreterOnNoExecRun(t *testing.T) {
+	t.Parallel()
+
+	script := ipv6ListenerScript()
+	assert.Contains(t, script, "--accept --inetd -- /bin/sh /run/incus-gh-runner-ipv6-response")
+	assert.NotContains(t, script, "--accept -- /run/incus-gh-runner-ipv6-response")
+}
+
 // TestClassifyGuestCurlDenialRejectsFalsePositiveFailures proves only explicit network denial closes the gate.
 func TestClassifyGuestCurlDenialRejectsFalsePositiveFailures(t *testing.T) {
 	t.Parallel()
