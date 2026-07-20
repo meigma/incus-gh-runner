@@ -788,3 +788,15 @@ secret-free evidence is retained under
 is at the draft PR review gate; final-rootfs SBOMs, vulnerability scanning,
 runner freshness policy, and provenance tightening remain later Slice 4
 increments.
+
+## 2026-07-20 08:35 — Slice 4A exact-head hosted gates complete
+
+All applicable hosted checks on exact PR #34 head
+`8351cd84e610ff8adc3c240754392e46b803128f` are green: CI, Actions and Go
+CodeQL, GitHub Pages, GitHub's CodeQL check, Kusari Inspector, and the renamed
+networked reference-image build. The image job built, inspected, and uploaded
+the unified VM archive successfully in 9m3s. Event-inapplicable release dry-run
+and Pages deployment jobs skipped normally. GitHub reports the draft PR
+mergeable and the feature worktree is clean and exactly synchronized with its
+remote branch. Slice 4A is ready for human review; no merge or later Slice 4
+work was started.
