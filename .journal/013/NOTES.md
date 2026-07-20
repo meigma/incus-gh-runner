@@ -720,3 +720,20 @@ layout and a clock 31 days ahead; the shipped rule removed the expired capture.
 No paid host, live Incus project, GitHub runner, or external registry was
 mutated for this proof. Exact-head hosted Linux gates remain to run after the
 Slice 3D branch is published.
+
+## 2026-07-19 22:39 — Slice 3D draft PR exact-head gates complete
+
+Opened draft PR #33. A final diff audit found that the first retention order
+could remove and then recreate an existing destination when that file was the
+oldest entry in a directory already at its 256-file cap. Moved the explicit
+destination-exists refusal ahead of pruning and added a full-capacity regression
+test proving the original evidence and file count remain unchanged. Amended and
+force-pushed exact head `f11d3a911bf08ccc690b1be53a9b3ea3fc66c546`.
+
+The focused race test and full local repository gate pass on that head. The
+fresh exact-head hosted matrix is also green: CI, both Go CodeQL analyses, the
+Actions CodeQL analysis, GitHub Pages, GitHub's CodeQL check, and Kusari
+Inspector succeeded; event-inapplicable release dry-run and Pages deployment
+jobs skipped normally. GitHub reports the draft PR mergeable. Slice 3D is now
+at its human review gate; no merge or additional live infrastructure action was
+taken.
