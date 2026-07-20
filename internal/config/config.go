@@ -54,6 +54,10 @@ const (
 	KeyGitHubAppPrivateKeyFile = "github.app.private_key_file"
 	// KeyGitHubTokenFile identifies the protected personal access token path.
 	KeyGitHubTokenFile = "github.token_file" //nolint:gosec // This is a configuration key, not a credential.
+	// KeyJobProofHostID identifies the stable enrolled controller host.
+	KeyJobProofHostID = "job_proof.host_id"
+	// KeyJobProofSigningKeyFile identifies the protected Ed25519 private-key path.
+	KeyJobProofSigningKeyFile = "job_proof.signing_key_file"
 	// KeyIncusSocket identifies an optional Incus Unix socket path.
 	KeyIncusSocket = "incus.socket"
 	// KeyIncusProject identifies the preconfigured Incus project.
@@ -71,6 +75,8 @@ const (
 	EnvGitHubToken = "INCUS_GH_RUNNER_GITHUB_TOKEN" //nolint:gosec // This is an environment variable name, not a credential.
 	// EnvGitHubTokenFile identifies the protected PAT path supplied through the environment.
 	EnvGitHubTokenFile = "INCUS_GH_RUNNER_GITHUB_TOKEN_FILE" //nolint:gosec // This is an environment variable name, not a credential.
+	// EnvJobProofSigningKeyFile identifies the protected proof-key path supplied through the environment.
+	EnvJobProofSigningKeyFile = "INCUS_GH_RUNNER_JOB_PROOF_SIGNING_KEY_FILE"
 )
 
 // Config contains immutable controller settings.
@@ -79,6 +85,8 @@ type Config struct {
 	GitHub GitHub `mapstructure:"github"`
 	// Incus configures the pre-existing environment used for runner VMs.
 	Incus Incus `mapstructure:"incus"`
+	// JobProof optionally configures signed job-bound machine receipts.
+	JobProof JobProof `mapstructure:"job_proof"`
 	// Capacity controls the minimum and maximum owned runner counts.
 	Capacity Capacity `mapstructure:"capacity"`
 	// Concurrency bounds external lifecycle operations.
@@ -115,6 +123,19 @@ type GitHubApp struct {
 	InstallationID int64 `mapstructure:"installation_id"`
 	// PrivateKeyFile is a protected PEM file read only during startup.
 	PrivateKeyFile string `mapstructure:"private_key_file"`
+}
+
+// JobProof contains the optional machine-proof identity and signing-key path.
+type JobProof struct {
+	// HostID is the stable operator-enrolled controller host identity.
+	HostID string `mapstructure:"host_id"`
+	// SigningKeyFile is the protected PKCS#8 Ed25519 private-key path.
+	SigningKeyFile string `mapstructure:"signing_key_file"`
+}
+
+// Enabled reports whether both job machine proof settings are configured.
+func (j JobProof) Enabled() bool {
+	return strings.TrimSpace(j.HostID) != "" && strings.TrimSpace(j.SigningKeyFile) != ""
 }
 
 // Incus contains references to the preconfigured runner environment.
@@ -200,6 +221,8 @@ func ConfigureViper(vp *viper.Viper) error {
 		KeyGitHubAppInstallationID: "INCUS_GH_RUNNER_GITHUB_APP_INSTALLATION_ID",
 		KeyGitHubAppPrivateKeyFile: "INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE",
 		KeyGitHubTokenFile:         EnvGitHubTokenFile,
+		KeyJobProofHostID:          "INCUS_GH_RUNNER_JOB_PROOF_HOST_ID",
+		KeyJobProofSigningKeyFile:  EnvJobProofSigningKeyFile,
 		KeyIncusSocket:             "INCUS_GH_RUNNER_INCUS_SOCKET",
 		KeyIncusProject:            "INCUS_GH_RUNNER_INCUS_PROJECT",
 		KeyIncusImage:              "INCUS_GH_RUNNER_INCUS_IMAGE",
@@ -246,6 +269,8 @@ func Load(vp *viper.Viper) (Config, error) {
 	}
 	cfg.GitHub.Token = strings.TrimSpace(os.Getenv(EnvGitHubToken))
 	cfg.GitHub.TokenFile = strings.TrimSpace(cfg.GitHub.TokenFile)
+	cfg.JobProof.HostID = strings.TrimSpace(cfg.JobProof.HostID)
+	cfg.JobProof.SigningKeyFile = strings.TrimSpace(cfg.JobProof.SigningKeyFile)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -478,6 +503,9 @@ func validConfigURLPort(port string) (bool, bool) {
 
 // Validate checks controller configuration invariants.
 func (c Config) Validate() error {
+	if err := validateJobProof(c.JobProof); err != nil {
+		return err
+	}
 	if c.Capacity.MinRunners < 0 {
 		return errors.New("capacity.min_runners must not be negative")
 	}
@@ -501,6 +529,17 @@ func (c Config) Validate() error {
 	}
 	if c.Retry.Maximum < c.Retry.Initial {
 		return errors.New("retry.maximum must be at least retry.initial")
+	}
+
+	return nil
+}
+
+// validateJobProof requires the host identity and signing key to be configured together.
+func validateJobProof(settings JobProof) error {
+	hostConfigured := strings.TrimSpace(settings.HostID) != ""
+	keyConfigured := strings.TrimSpace(settings.SigningKeyFile) != ""
+	if hostConfigured != keyConfigured {
+		return errors.New("job_proof.host_id and job_proof.signing_key_file must be configured together")
 	}
 
 	return nil

@@ -7,6 +7,7 @@ require (
 	github.com/actions/scaleset v0.4.0
 	github.com/google/uuid v1.6.0
 	github.com/lxc/incus/v7 v7.2.0
+	github.com/secure-systems-lab/go-securesystemslib v0.11.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0

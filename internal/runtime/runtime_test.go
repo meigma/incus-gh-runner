@@ -2,6 +2,9 @@ package runtime
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,6 +37,67 @@ func TestRunRejectsInvalidConfigurationBeforeConstructingAdapters(t *testing.T) 
 		"validate runtime configuration: "+
 			"github.config_url must be an absolute HTTPS GitHub organization or repository URL",
 	)
+}
+
+// TestPrepareJobProofSigner proves optional startup loading is bounded and secret-safe.
+func TestPrepareJobProofSigner(t *testing.T) {
+	t.Parallel()
+
+	privateKey := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+	encoded, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	require.NoError(t, err)
+	validPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encoded})
+	const secret = "private-material-must-not-appear"
+	tests := []struct {
+		name       string
+		prepare    func(*testing.T) config.JobProof
+		wantSigner bool
+		wantErr    string
+	}{
+		{
+			name:    "disabled",
+			prepare: func(*testing.T) config.JobProof { return config.JobProof{} },
+		},
+		{
+			name: "valid Ed25519 credential",
+			prepare: func(t *testing.T) config.JobProof {
+				t.Helper()
+				path := filepath.Join(t.TempDir(), "machine-provenance-key")
+				require.NoError(t, os.WriteFile(path, validPEM, 0o600))
+				return config.JobProof{HostID: "builder-host-01", SigningKeyFile: path}
+			},
+			wantSigner: true,
+		},
+		{
+			name: "malformed credential",
+			prepare: func(t *testing.T) config.JobProof {
+				t.Helper()
+				path := filepath.Join(t.TempDir(), "machine-provenance-key")
+				require.NoError(t, os.WriteFile(path, []byte(secret), 0o600))
+				return config.JobProof{HostID: "builder-host-01", SigningKeyFile: path}
+			},
+			wantErr: "load job proof signing key",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			prepared, prepareErr := prepareJobProofSigner(tt.prepare(t))
+
+			if tt.wantErr != "" {
+				require.ErrorContains(t, prepareErr, tt.wantErr)
+				assert.NotContains(t, prepareErr.Error(), secret)
+				assert.Nil(t, prepared.signer)
+				return
+			}
+			require.NoError(t, prepareErr)
+			if tt.wantSigner {
+				assert.NotNil(t, prepared.signer)
+			} else {
+				assert.Nil(t, prepared.signer)
+			}
+		})
+	}
 }
 
 func TestResolvePersonalAccessToken(t *testing.T) {

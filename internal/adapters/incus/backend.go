@@ -19,6 +19,7 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 
 	"github.com/meigma/incus-gh-runner/internal/controller"
+	"github.com/meigma/incus-gh-runner/internal/provenance"
 )
 
 const (
@@ -294,16 +295,8 @@ func profileDigest(profile *api.Profile) (string, error) {
 	if profile == nil {
 		return "", errors.New("profile is nil")
 	}
-	encoded, err := json.Marshal(struct {
-		Config  api.ConfigMap  `json:"config"`
-		Devices api.DevicesMap `json:"devices"`
-	}{Config: profile.Config, Devices: profile.Devices})
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(encoded)
 
-	return hex.EncodeToString(sum[:]), nil
+	return provenance.ProfileDigest(profile.Config, profile.Devices)
 }
 
 // pinnedIdentity returns an isolated copy of the preflight runtime identity.

@@ -51,6 +51,16 @@ Duration values use Go duration syntax (for example `30s`, `5m`).
 
 Each capture is limited to 1 MiB and the directory sink retains at most 256 capture files. The packaged tmpfiles policy expires files older than 30 days from `/var/log/incus-gh-runner/diagnostics`; deployments using another directory must update that policy path.
 
+### `job_proof`
+
+Job machine proofs are disabled when this section is absent. The two settings
+must be configured together; setting only one fails controller startup.
+
+| Key | Type | Default | Required / validation |
+|---|---|---|---|
+| `job_proof.host_id` | string | `""` | Stable host identity recorded in every proof and enrolled beside the public key. Required when `job_proof.signing_key_file` is set. |
+| `job_proof.signing_key_file` | string | `""` | Regular file no larger than 16 KiB containing exactly one PKCS#8 PEM Ed25519 private key. Read once during startup. Required when `job_proof.host_id` is set. |
+
 ### `capacity`
 
 | Key | Type | Default | Required / validation |
@@ -100,6 +110,8 @@ Examples:
 | `timeouts.shutdown` | `INCUS_GH_RUNNER_TIMEOUTS_SHUTDOWN` |
 | `github.token_file` | `INCUS_GH_RUNNER_GITHUB_TOKEN_FILE` |
 | `github.app.private_key_file` | `INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE` |
+| `job_proof.host_id` | `INCUS_GH_RUNNER_JOB_PROOF_HOST_ID` |
+| `job_proof.signing_key_file` | `INCUS_GH_RUNNER_JOB_PROOF_SIGNING_KEY_FILE` |
 
 ### `INCUS_GH_RUNNER_GITHUB_TOKEN`
 
@@ -125,6 +137,49 @@ Exactly one credential source must be configured:
 
 Configuring more than one method is an error, including setting both PAT sources. Configuring no credential is also an error.
 
+## Job proof key enrollment and rotation
+
+Generate the Ed25519 signing key and its SubjectPublicKeyInfo public key without
+loosening the process umask:
+
+```sh
+umask 077
+openssl genpkey -algorithm Ed25519 -out machine-provenance-key.pem
+openssl pkey \
+  -in machine-provenance-key.pem \
+  -pubout \
+  -out machine-provenance-key.pub.pem
+```
+
+Install the private key through a protected runtime credential path and set
+`job_proof.signing_key_file` to that path. Source-file ownership and mode are
+deployment checks; for a normal file-backed systemd credential, install the
+source as `root:root` mode `0600`. Enroll three values with each consumer:
+
+- the stable `job_proof.host_id`;
+- `machine-provenance-key.pub.pem`; and
+- its `sha256:<hex>` key ID over the public key's DER form.
+
+Derive the enrolled key ID with OpenSSL:
+
+```sh
+key_hex="$(
+  openssl pkey -pubin -in machine-provenance-key.pub.pem -outform DER |
+    openssl dgst -sha256 -r |
+    awk '{print $1}'
+)"
+printf 'sha256:%s\n' "$key_hex"
+```
+
+The key ID is a lookup hint over the public key's DER encoding, not a host
+identity by itself. A consumer must select the enrolled public key and require
+the matching host ID.
+
+Rotate with overlap: distribute and trust the new public key first, then restart
+the controller with the new private credential. Retain the old public key for as
+long as existing proofs must remain verifiable. Automatic key distribution and
+fleet PKI are not provided.
+
 !!! warning "Root-equivalent socket access"
     The controller's Incus client uses the account's `incus-admin` group membership, which grants root-equivalent control over the host. This applies regardless of which GitHub credential type is configured. The `incus.owner` value limits the controller's intended cleanup scope but is forgeable by another project writer; it is not authorization. Run the current production deployment only on a dedicated, single-purpose Incus host.
 
@@ -134,8 +189,8 @@ The packaged systemd deployment supplies either `github.app.private_key_file` or
 
 Running `incus-gh-runner` without a subcommand starts the controller. The
 controller configuration sources and flags documented above apply to that
-mode. The `validate` subcommand is independent of controller configuration and
-GitHub credentials.
+mode. The `validate` and `proof verify` subcommands are independent of controller
+configuration and GitHub credentials.
 
 ### `--config`
 
@@ -189,6 +244,30 @@ The live comparison confirms effective resource ceilings but cannot re-measure
 or re-prove the physical-host capacity and reserved headroom used to generate
 them. Re-render and review the baseline after those generation-time inputs
 change.
+
+### `proof verify <proof>`
+
+Authenticates one DSSE job machine proof against an enrolled Ed25519 public key
+and expected host identity:
+
+```sh
+incus-gh-runner proof verify \
+  --public-key machine-provenance-key.pub.pem \
+  --expected-host-id builder-host-01 \
+  job-proof.dsse.json > verified-payload.json
+```
+
+| Flag | Type | Default |
+|---|---|---|
+| `--public-key` | string | required |
+| `--expected-host-id` | string | required |
+
+The command reads no controller configuration and never loads the signing key.
+It limits the envelope and decoded payload to 64 KiB, requires the exact version
+1 payload type and one signature, rejects unknown payload fields, and prints
+only verified payload JSON to stdout. Repository, workflow, image, and freshness
+policy are deliberately left to the caller. Any parse, signature, key, schema,
+or host mismatch exits non-zero without printing unverified payload bytes.
 
 ### Exit behavior
 

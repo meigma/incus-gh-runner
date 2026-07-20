@@ -17,6 +17,8 @@ func TestLoadUsesDefaultsAndExplicitEnvironment(t *testing.T) {
 	t.Setenv("INCUS_GH_RUNNER_TIMEOUTS_SHUTDOWN", "45s")
 	t.Setenv("INCUS_GH_RUNNER_RETRY_MAXIMUM", "20s")
 	t.Setenv(config.EnvGitHubToken, "development-token")
+	t.Setenv("INCUS_GH_RUNNER_JOB_PROOF_HOST_ID", " builder-host-01 ")
+	t.Setenv(config.EnvJobProofSigningKeyFile, " /run/credentials/incus-gh-runner.service/machine-provenance-key ")
 	vp := viper.New()
 	require.NoError(t, config.ConfigureViper(vp))
 
@@ -32,6 +34,8 @@ func TestLoadUsesDefaultsAndExplicitEnvironment(t *testing.T) {
 	assert.Equal(t, "development-token", cfg.GitHub.Token)
 	assert.Equal(t, "default", cfg.GitHub.RunnerGroup)
 	assert.Equal(t, 5*time.Minute, cfg.Incus.BootstrapTimeout)
+	assert.Equal(t, "builder-host-01", cfg.JobProof.HostID)
+	assert.Equal(t, "/run/credentials/incus-gh-runner.service/machine-provenance-key", cfg.JobProof.SigningKeyFile)
 }
 
 func TestLoadRejectsGitHubTokenFromConfigurationWithoutLeakingIt(t *testing.T) {
@@ -79,6 +83,20 @@ func TestValidateRejectsInvalidConfiguration(t *testing.T) {
 		mutate func(*config.Config)
 		want   string
 	}{
+		{
+			name: "job proof host without key",
+			mutate: func(cfg *config.Config) {
+				cfg.JobProof.HostID = "builder-host-01"
+			},
+			want: "job_proof.host_id and job_proof.signing_key_file must be configured together",
+		},
+		{
+			name: "job proof key without host",
+			mutate: func(cfg *config.Config) {
+				cfg.JobProof.SigningKeyFile = "/run/credentials/machine-provenance-key"
+			},
+			want: "job_proof.host_id and job_proof.signing_key_file must be configured together",
+		},
 		{
 			name: "negative minimum",
 			mutate: func(cfg *config.Config) {
