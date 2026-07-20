@@ -15,3 +15,4 @@
 | 011 | 2026-07-18 | Pre-release language cleanup, docs overhaul, and licensing | complete | Removed development-process language, shipped the operator Diátaxis docs set, rewrote the README, and dual-licensed the repo under Apache-2.0/MIT. |
 | 012 | 2026-07-18 | Support GitHub App and PAT authentication | in-progress | Make GitHub App and repository-scoped PAT authentication clean production deployment options. |
 | 013 | 2026-07-18 | Plan SLSA security remediation | in-progress | Draft a reviewable plan to address every controller, runner-image, release, repository, and Incus security finding. |
+| 014 | 2026-07-20 | Review builder attestation architecture | in-progress | Review the cross-repository host attestation and image-admission model and define the smallest useful proof. |
