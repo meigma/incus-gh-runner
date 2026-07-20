@@ -59,3 +59,8 @@ Exact dependency pins were rechecked against current module metadata: `go-secure
 Two independent review rounds and a final red-team pass corrected the initial drafts. Material fixes include a supported verifier command; a reproducible, non-circular launch digest and existing profile digest; validated JIT response persistence on a stopped VM through conditional Incus `UpdateInstance` plus ETag; restart-safe runner fencing before terminal VM deletion; explicit queue-overflow behavior; immutable committed proof delivery; exact UUID checks; systemd-250-compatible TPM setup and cross-host testing; and a clear host-clock trust statement. The final plan has five gated phases, beginning with local proof format and a thin disposable host-to-VM channel before GitHub and TPM integration.
 
 Validation completed: both JSON examples parse, Markdown fences and whitespace are clean, the three module pins still resolve as latest on 2026-07-20, and the named DSSE APIs were verified in the pinned source. No implementation was started; the plan remains approval-gated.
+
+## 2026-07-20 14:19 — Close
+Session 014 closed as a journal-only architecture session; no implementation PR or branch was created or merged. The main checkout was clean, matched `origin/master` at `5471310`, and tracked no `.journal` files.
+
+Future agents should begin with `JOB_MACHINE_PROOF_DESIGN.md` for the reviewed claim and protocol, then use `JOB_MACHINE_PROOF_IMPLEMENTATION_PLAN.md` for the five approval-gated delivery phases. `SUMMARY.md` catalogs both artifacts, their handoff roles, resolved dependency pins, deferred scope, and the remaining availability and trust limitations.
