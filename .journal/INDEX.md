@@ -16,5 +16,5 @@
 | 012 | 2026-07-18 | Support GitHub App and PAT authentication | in-progress | Make GitHub App and repository-scoped PAT authentication clean production deployment options. |
 | 013 | 2026-07-18 | Plan SLSA security remediation | in-progress | Draft a reviewable plan to address every controller, runner-image, release, repository, and Incus security finding. |
 | 014 | 2026-07-20 | Review builder attestation architecture | complete | Produced the reviewed job-bound machine-proof design and five-phase plan for file-backed or TPM-bound systemd credentials. |
-| 015 | 2026-07-20 | Implement job machine proof phase 1 | in-progress | Review Session 014's plan and implement the first locally verifiable job machine proof slice. |
+| 015 | 2026-07-20 | Implement job machine proof phase 1 | complete | Implemented and merged the locally verifiable job machine proof format, signer, verifier, configuration, and documentation through PR #36. |
 | 016 | 2026-07-20 | Assess bootc image migration | in-progress | Evaluate bootc against distrobuilder through a disposable x86_64/KVM prototype and preserve the final migration decision. |
