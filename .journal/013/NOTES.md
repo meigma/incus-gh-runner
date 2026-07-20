@@ -610,3 +610,44 @@ Latitude server `sv_y3ZXaDErW0p2m`. Its exact-ID lookup returns `404 NotFound`
 and the provider project server list is empty. The host existed for about 35
 minutes, approximately `$0.30` at the quoted `$0.52/hour` before provider
 rounding.
+
+## 2026-07-19 22:27 — Slice 3B merged; Slice 3C local proof complete
+
+The user approved Slice 3B. Reverified exact PR #31 head
+`1430eed1608d18083464614a66247ef66498800a`, its clean tree, mergeable state,
+and every applicable hosted check, then marked it ready and squash merged it as
+`2e72d30be222edb1cdc10222492aac556fbae007`. Fast-forwarded local `master` to
+that exact merge, proved feature/master tree equality, removed the integrated
+worktree and branches, and started `feat/security-slice-3c` from the merged
+commit.
+
+Slice 3C now resolves the configured image reference once during Incus
+preflight and requires the full 64-character SHA-256 fingerprint. It captures
+the effective ordered profile configuration and devices, records a canonical
+SHA-256 digest for each profile, and revalidates those digests before every
+create. Runner requests use the pinned image fingerprint and materialize the
+captured profile state directly onto the instance with an explicit empty
+profile list. A wire-encoding assertion confirms that the Incus SDK preserves
+`"profiles":[]`, so later alias retargeting or profile edits cannot change the
+approved runner environment. Instance audit metadata records both the
+operator-facing image reference and resolved fingerprint plus the ordered
+profile digest identities.
+
+Deletion now binds the initially inspected name to Incus's server-generated
+`volatile.uuid`, rechecks owner and UUID before stop, diagnostics, and delete,
+and requires the Incus ETag for conditional stop. Incus 7.2 exposes no ETag or
+other conditional precondition for delete itself, so the implementation makes
+one final identity fetch immediately before deletion and the docs preserve the
+narrow fetch-to-delete residual rather than claiming atomic protection. The
+random UUID name component and dedicated restricted project remain the outer
+boundary for that unsupported server-side condition.
+
+Behavior tests cover alias retargeting, profile drift, configured/image/default
+profile selection, preservation of the explicit detached-profile wire value,
+replacement before stop/diagnostics/delete, ownership removal before delete,
+and refusal to stop without an ETag. The focused adapter race test and the full
+`moon run root:check` gate pass, including formatting, lint, build, all Go
+tests, docs, image contract, Incus isolation contracts, release configuration,
+and the platform-applicable systemd check. Exact-head hosted and disposable
+Incus acceptance gates remain to run; no live Slice 3C result is claimed by
+this checkpoint.
