@@ -27,3 +27,8 @@ Review-gate recommendation: keep the fixed path, immutable marker, and wait/copy
 
 ## 2026-07-20 16:35 — Pull request opened
 Opened ready PR #37, `feat(provenance): deliver proofs to runner guests`, from `feat/job-proof-phase-2` at exact head `c1f730ff074c0e5488ede4a0989f68b4484fa712` into `master`: https://github.com/meigma/incus-gh-runner/pull/37. The PR body records the local root check, exact hosted Reference Image run, Incus 7.2 guest-contract validation, live functional proof, measured delivery time, cleanup, and explicitly deferred Phase 3+ scope. Normal hosted checks are queued or running; no merge was requested or performed.
+
+## 2026-07-20 16:45 — Close
+After maintainer approval, verified PR #37 still targeted exact reviewed head `c1f730ff074c0e5488ede4a0989f68b4484fa712` and waited for all hosted gates to pass, including CI, CodeQL, GitHub Pages, Kusari Inspector, and the 8m40s networked reference-image build. Squash-merged the PR as `ea7e504087fd7e5d7b49782a5093fc9c48021e79`, fast-forwarded local `master`, and removed the `feat/job-proof-phase-2` Worktrunk and local/remote branch.
+
+Preserved the ignored live evidence before worktree removal at `build/live-phase2-evidence/20260720T231117Z/` in the main checkout; its checksum index remains `4eeab43c443948c8b28b94627a4ab9490854baab3d30d85a3624ebfee267fd14`. Session 017 closes complete with Phase 2 landed and proven. Continue from Phase 3 in Session 014's implementation plan; no Phase 3, genuine GitHub proof-consumption, or TPM work was included here.
