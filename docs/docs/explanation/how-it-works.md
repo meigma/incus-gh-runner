@@ -50,10 +50,16 @@ for the exact status values and file formats involved.
 
 Every VM the controller creates carries the configured `owner` value in one
 instance metadata key. Inventory includes only exact matches, and deletion
-rechecks that same value immediately before mutation. A missing or different
-value therefore prevents the controller from accidentally counting or reaping
-another controller's VM. The [guest contract reference](../reference/guest-contract.md)
-names the exact key.
+rechecks that same value and Incus's server-generated `volatile.uuid` before
+each destructive step. A missing, different, or replaced identity therefore
+prevents the controller from accidentally counting, stopping, or reaping
+another controller's VM. Stops use the instance ETag as an Incus-side
+precondition. Incus's delete operation has no ETag precondition, so the
+controller performs one final identity fetch immediately before deletion; the
+random UUID instance-name component and dedicated-project boundary remain the
+defense against the residual fetch-to-delete race. The
+[guest contract reference](../reference/guest-contract.md) names the exact
+metadata keys.
 
 The marker does not authorize an Incus operation. Any identity that can edit an
 instance in the project can copy the value, and the current controller's local
@@ -67,6 +73,14 @@ pre-existing deployment boundaries. The current production contract therefore
 requires a dedicated, single-purpose Incus host with a restricted runner
 project and network. Sharing that host with unrelated trusted workloads would
 turn controller compromise into compromise of those workloads as well.
+
+At startup the controller resolves the configured image alias to its full
+SHA-256 fingerprint and captures the effective configuration and devices of
+the selected profiles. Each runner is created by that fingerprint with the
+captured profile state copied directly onto the instance and no mutable profile
+attachment. Profile state is re-hashed before every create; drift pauses new
+capacity until an operator restores the approved profile state or deliberately
+restarts the controller and approves a new preflight snapshot.
 
 ## Failure philosophy
 

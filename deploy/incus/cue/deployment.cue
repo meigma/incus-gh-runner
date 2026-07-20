@@ -481,7 +481,7 @@ _#Baseline: {
 		incus: {
 			// project selects the restricted project that owns runner VMs.
 			project: inputs.names.project
-			// profiles is the exact, sole profile list applied to runner VMs.
+			// profiles is the exact profile source pinned and materialized into runner VMs.
 			profiles: [inputs.names.profile]
 		}
 		// capacity contains controller capacity coupled to Incus project limits.

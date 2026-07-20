@@ -30,13 +30,13 @@ func ConnectUnix(ctx context.Context, socketPath string, project string) (incusc
 
 // client is the context-aware Incus surface required by Backend.
 type client interface {
-	GetImage(ctx context.Context, name string) error
-	GetProfile(ctx context.Context, name string) error
+	ResolveImage(ctx context.Context, name string) (*api.Image, error)
+	GetProfile(ctx context.Context, name string) (*api.Profile, error)
 	GetInstances(ctx context.Context) ([]api.Instance, error)
-	GetInstance(ctx context.Context, name string) (*api.Instance, error)
+	GetInstance(ctx context.Context, name string) (*api.Instance, string, error)
 	CreateInstance(ctx context.Context, request api.InstancesPost) error
 	StartInstance(ctx context.Context, name string) error
-	StopInstance(ctx context.Context, name string) error
+	StopInstance(ctx context.Context, name string, etag string) error
 	CreateInstanceFile(ctx context.Context, name string, path string, content []byte, mode int) error
 	GetInstanceFile(ctx context.Context, name string, path string) ([]byte, error)
 	GetInstanceConsoleLog(ctx context.Context, name string) ([]byte, error)
@@ -70,23 +70,30 @@ func (c *serverClient) contextual(ctx context.Context) incusclient.InstanceServe
 	return c.server.WithContext(ctx)
 }
 
-// GetImage verifies that name resolves in the selected project.
-func (c *serverClient) GetImage(ctx context.Context, name string) error {
+// ResolveImage resolves name to the full content-addressed image identity.
+func (c *serverClient) ResolveImage(ctx context.Context, name string) (*api.Image, error) {
 	server := c.contextual(ctx)
-	_, _, err := server.GetImage(name)
+	image, _, err := server.GetImage(name)
 	classified := classifyError(err)
-	if err == nil || !errors.Is(classified, errNotFound) {
-		return classified
+	if err == nil {
+		return image, nil
+	}
+	if !errors.Is(classified, errNotFound) {
+		return nil, classified
 	}
 
-	_, _, err = server.GetImageAlias(name)
-	return classifyError(err)
+	alias, _, err := server.GetImageAlias(name)
+	if err != nil {
+		return nil, classifyError(err)
+	}
+	image, _, err = server.GetImage(alias.Target)
+	return image, classifyError(err)
 }
 
-// GetProfile verifies that name resolves in the selected project.
-func (c *serverClient) GetProfile(ctx context.Context, name string) error {
-	_, _, err := c.contextual(ctx).GetProfile(name)
-	return classifyError(err)
+// GetProfile returns one effective profile from the selected project.
+func (c *serverClient) GetProfile(ctx context.Context, name string) (*api.Profile, error) {
+	profile, _, err := c.contextual(ctx).GetProfile(name)
+	return profile, classifyError(err)
 }
 
 // GetInstances returns virtual machines in the selected project.
@@ -95,10 +102,10 @@ func (c *serverClient) GetInstances(ctx context.Context) ([]api.Instance, error)
 	return instances, classifyError(err)
 }
 
-// GetInstance returns one instance by name.
-func (c *serverClient) GetInstance(ctx context.Context, name string) (*api.Instance, error) {
-	instance, _, err := c.contextual(ctx).GetInstance(name)
-	return instance, classifyError(err)
+// GetInstance returns one instance and its conditional-mutation ETag.
+func (c *serverClient) GetInstance(ctx context.Context, name string) (*api.Instance, string, error) {
+	instance, etag, err := c.contextual(ctx).GetInstance(name)
+	return instance, etag, classifyError(err)
 }
 
 // CreateInstance creates one stopped virtual machine and waits for completion.
@@ -121,12 +128,12 @@ func (c *serverClient) StartInstance(ctx context.Context, name string) error {
 	return operation.WaitContext(ctx)
 }
 
-// StopInstance forcibly stops name and waits for completion.
-func (c *serverClient) StopInstance(ctx context.Context, name string) error {
+// StopInstance conditionally stops name at etag and waits for completion.
+func (c *serverClient) StopInstance(ctx context.Context, name string, etag string) error {
 	operation, err := c.contextual(ctx).UpdateInstanceState(
 		name,
 		api.InstanceStatePut{Action: "stop", Force: true},
-		"",
+		etag,
 	)
 	if err != nil {
 		return classifyError(err)

@@ -4,14 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/meigma/incus-gh-runner/internal/controller"
+)
+
+const (
+	testFingerprintA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	testFingerprintB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 )
 
 // fileWrite records one successful guest file transfer.
@@ -24,9 +31,12 @@ type fileWrite struct {
 
 // fakeClient provides an in-memory Incus lifecycle for adapter behavior tests.
 type fakeClient struct {
-	images             map[string]bool
-	profiles           map[string]bool
+	images             map[string]api.Image
+	imageAliases       map[string]string
+	profiles           map[string]api.Profile
 	instances          map[string]api.Instance
+	instanceETags      map[string]string
+	getInstance        func(context.Context, string) (*api.Instance, string, error)
 	statusFiles        map[string][]byte
 	statusErrors       map[string]error
 	statusRead         func(context.Context, string, string) ([]byte, error)
@@ -34,6 +44,7 @@ type fakeClient struct {
 	createRequest      api.InstancesPost
 	started            []string
 	stopped            []string
+	stopETags          []string
 	deleted            []string
 	fileWrites         []fileWrite
 	fileAttempts       int
@@ -48,34 +59,48 @@ type fakeClient struct {
 // newFakeClient creates an empty in-memory Incus client.
 func newFakeClient() *fakeClient {
 	return &fakeClient{
-		images:       make(map[string]bool),
-		profiles:     make(map[string]bool),
-		instances:    make(map[string]api.Instance),
-		statusFiles:  make(map[string][]byte),
-		statusErrors: make(map[string]error),
-		consoleLogs:  make(map[string][]byte),
-		fileWrites:   make([]fileWrite, 0),
-		started:      make([]string, 0),
-		stopped:      make([]string, 0),
-		deleted:      make([]string, 0),
-		fileAttempts: 0,
+		images:        make(map[string]api.Image),
+		imageAliases:  make(map[string]string),
+		profiles:      make(map[string]api.Profile),
+		instances:     make(map[string]api.Instance),
+		instanceETags: make(map[string]string),
+		statusFiles:   make(map[string][]byte),
+		statusErrors:  make(map[string]error),
+		consoleLogs:   make(map[string][]byte),
+		fileWrites:    make([]fileWrite, 0),
+		started:       make([]string, 0),
+		stopped:       make([]string, 0),
+		stopETags:     make([]string, 0),
+		deleted:       make([]string, 0),
+		fileAttempts:  0,
 	}
 }
 
-// GetImage resolves an image known to the fake.
-func (f *fakeClient) GetImage(_ context.Context, name string) error {
-	if !f.images[name] {
-		return errNotFound
+// ResolveImage resolves an image or alias known to the fake.
+func (f *fakeClient) ResolveImage(_ context.Context, name string) (*api.Image, error) {
+	image, ok := f.images[name]
+	if !ok {
+		target, aliasOK := f.imageAliases[name]
+		if !aliasOK {
+			return nil, errNotFound
+		}
+		image, ok = f.images[target]
+		if !ok {
+			return nil, errNotFound
+		}
 	}
-	return nil
+
+	return &image, nil
 }
 
 // GetProfile resolves a profile known to the fake.
-func (f *fakeClient) GetProfile(_ context.Context, name string) error {
-	if !f.profiles[name] {
-		return errNotFound
+func (f *fakeClient) GetProfile(_ context.Context, name string) (*api.Profile, error) {
+	profile, ok := f.profiles[name]
+	if !ok {
+		return nil, errNotFound
 	}
-	return nil
+
+	return &profile, nil
 }
 
 // GetInstances returns a stable snapshot of fake instances.
@@ -87,13 +112,16 @@ func (f *fakeClient) GetInstances(context.Context) ([]api.Instance, error) {
 	return instances, nil
 }
 
-// GetInstance returns one fake instance.
-func (f *fakeClient) GetInstance(_ context.Context, name string) (*api.Instance, error) {
+// GetInstance returns one fake instance and its ETag.
+func (f *fakeClient) GetInstance(ctx context.Context, name string) (*api.Instance, string, error) {
+	if f.getInstance != nil {
+		return f.getInstance(ctx, name)
+	}
 	instance, ok := f.instances[name]
 	if !ok {
-		return nil, errNotFound
+		return nil, "", errNotFound
 	}
-	return &instance, nil
+	return &instance, f.instanceETags[name], nil
 }
 
 // CreateInstance records and materializes a fake instance request.
@@ -107,6 +135,10 @@ func (f *fakeClient) CreateInstance(_ context.Context, request api.InstancesPost
 		Status:      "Stopped",
 		InstancePut: request.InstancePut,
 	}
+	instance := f.instances[request.Name]
+	instance.Config[instanceUUIDKey] = stableTestUUID(request.Name)
+	f.instances[request.Name] = instance
+	f.instanceETags[request.Name] = "etag-" + request.Name
 	return nil
 }
 
@@ -122,8 +154,8 @@ func (f *fakeClient) StartInstance(_ context.Context, name string) error {
 	return nil
 }
 
-// StopInstance records the fake stop transition.
-func (f *fakeClient) StopInstance(_ context.Context, name string) error {
+// StopInstance records the fake conditional stop transition.
+func (f *fakeClient) StopInstance(_ context.Context, name string, etag string) error {
 	if f.stopInstanceError != nil {
 		return f.stopInstanceError
 	}
@@ -134,6 +166,7 @@ func (f *fakeClient) StopInstance(_ context.Context, name string) error {
 	instance.Status = "Stopped"
 	f.instances[name] = instance
 	f.stopped = append(f.stopped, name)
+	f.stopETags = append(f.stopETags, etag)
 	return nil
 }
 
@@ -199,8 +232,11 @@ func TestBackendPreflightChecksConfiguredReferences(t *testing.T) {
 	t.Parallel()
 
 	client := newFakeClient()
-	client.images["runner-image"] = true
-	client.profiles["runner"] = true
+	client.images["runner-image"] = api.Image{
+		Fingerprint: testFingerprintA,
+		ImagePut:    api.ImagePut{Profiles: []string{}},
+	}
+	client.profiles["runner"] = api.Profile{Name: "runner"}
 	backend := newTestBackend(t, client, Options{Profiles: []string{"runner"}})
 
 	require.NoError(t, backend.Preflight(context.Background()))
@@ -208,6 +244,97 @@ func TestBackendPreflightChecksConfiguredReferences(t *testing.T) {
 	delete(client.profiles, "runner")
 	err := backend.Preflight(context.Background())
 	require.ErrorContains(t, err, "resolve runner profile")
+}
+
+func TestBackendPreflightRequiresFullImageFingerprint(t *testing.T) {
+	t.Parallel()
+
+	client := newFakeClient()
+	client.images["runner-image"] = api.Image{Fingerprint: "short", ImagePut: api.ImagePut{Profiles: []string{}}}
+	backend := newTestBackend(t, client, Options{})
+
+	err := backend.Preflight(context.Background())
+
+	require.ErrorContains(t, err, "image fingerprint must contain 64 hexadecimal characters")
+}
+
+func TestBackendCreateUsesPreflightImageDespiteAliasRetarget(t *testing.T) {
+	t.Parallel()
+
+	client := newFakeClient()
+	client.imageAliases["runner-image"] = testFingerprintA
+	client.images[testFingerprintA] = api.Image{
+		Fingerprint: testFingerprintA,
+		ImagePut:    api.ImagePut{Profiles: []string{}},
+	}
+	client.images[testFingerprintB] = api.Image{
+		Fingerprint: testFingerprintB,
+		ImagePut:    api.ImagePut{Profiles: []string{}},
+	}
+	backend := newTestBackend(t, client, Options{NewID: func() string { return "alias-race" }})
+	require.NoError(t, backend.Preflight(context.Background()))
+	client.imageAliases["runner-image"] = testFingerprintB
+
+	_, err := backend.Create(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, testFingerprintA, client.createRequest.Source.Fingerprint)
+	assert.Equal(t, testFingerprintA, client.createRequest.Config[imageKey])
+	assert.Equal(t, "runner-image", client.createRequest.Config[imageReferenceKey])
+}
+
+func TestEffectiveProfileNamesMatchesIncusSelection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		configured    []string
+		imageProfiles []string
+		want          []string
+	}{
+		{
+			name:          "configured",
+			configured:    []string{"runner"},
+			imageProfiles: []string{"image-profile"},
+			want:          []string{"runner"},
+		},
+		{name: "from image profiles", imageProfiles: []string{"image-profile"}, want: []string{"image-profile"}},
+		{name: "explicitly empty image profiles", imageProfiles: []string{}, want: []string{}},
+		{name: "default", want: []string{defaultProfileName}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, effectiveProfileNames(tt.configured, tt.imageProfiles))
+		})
+	}
+}
+
+func TestBackendCreateFailsClosedOnProfileDrift(t *testing.T) {
+	t.Parallel()
+
+	client := newFakeClient()
+	client.images["runner-image"] = api.Image{
+		Fingerprint: testFingerprintA,
+		ImagePut:    api.ImagePut{Profiles: []string{}},
+	}
+	client.profiles["runner"] = api.Profile{
+		Name:       "runner",
+		ProfilePut: api.ProfilePut{Config: api.ConfigMap{"limits.cpu": "2"}},
+	}
+	backend := newTestBackend(t, client, Options{Profiles: []string{"runner"}})
+	require.NoError(t, backend.Preflight(context.Background()))
+	client.profiles["runner"] = api.Profile{
+		Name:       "runner",
+		ProfilePut: api.ProfilePut{Config: api.ConfigMap{"limits.cpu": "8"}},
+	}
+
+	_, err := backend.Create(context.Background())
+
+	require.ErrorContains(t, err, `runner profile "runner" changed after preflight`)
+	assert.Empty(t, client.createRequest.Name, "profile drift must fail before Incus create")
 }
 
 func TestBackendListOwnedMapsLifecycleAndFiltersOwnership(t *testing.T) {
@@ -354,6 +481,25 @@ func TestBackendCreateOwnsStartsAndCommitsPayload(t *testing.T) {
 
 	now := time.Date(2026, 7, 17, 20, 0, 0, 0, time.UTC)
 	client := newFakeClient()
+	client.images["runner-image"] = api.Image{
+		Fingerprint: testFingerprintA,
+		ImagePut:    api.ImagePut{Profiles: []string{}},
+	}
+	client.profiles["default"] = api.Profile{
+		Name: "default",
+		ProfilePut: api.ProfilePut{
+			Config: api.ConfigMap{"limits.cpu": "2", "limits.memory": "4GiB"},
+		},
+	}
+	client.profiles["runner"] = api.Profile{
+		Name: "runner",
+		ProfilePut: api.ProfilePut{
+			Config: api.ConfigMap{"limits.cpu": "4"},
+			Devices: api.DevicesMap{
+				"root": {"type": "disk", "pool": "runner", "path": "/"},
+			},
+		},
+	}
 	client.agentFailures = 2
 	backend := newTestBackend(t, client, Options{
 		Profiles:          []string{"default", "runner"},
@@ -365,6 +511,7 @@ func TestBackendCreateOwnsStartsAndCommitsPayload(t *testing.T) {
 			return Payload{Version: 1, JITConfig: "secret-jit-config"}, nil
 		}),
 	})
+	require.NoError(t, backend.Preflight(context.Background()))
 
 	runner, err := backend.Create(context.Background())
 
@@ -374,11 +521,31 @@ func TestBackendCreateOwnsStartsAndCommitsPayload(t *testing.T) {
 		State: controller.RunnerProvisioning,
 	}, runner)
 	assert.Equal(t, api.InstanceTypeVM, client.createRequest.Type)
-	assert.Equal(t, "runner-image", client.createRequest.Source.Alias)
-	assert.Equal(t, []string{"default", "runner"}, client.createRequest.Profiles)
+	assert.Empty(t, client.createRequest.Source.Alias)
+	assert.Equal(t, testFingerprintA, client.createRequest.Source.Fingerprint)
+	assert.NotNil(t, client.createRequest.Profiles)
+	assert.Empty(t, client.createRequest.Profiles)
+	encodedRequest, err := json.Marshal(client.createRequest)
+	require.NoError(t, err)
+	assert.Contains(t, string(encodedRequest), `"profiles":[]`, "the detached profile list must survive SDK encoding")
+	assert.Equal(t, "4", client.createRequest.Config["limits.cpu"])
+	assert.Equal(t, "4GiB", client.createRequest.Config["limits.memory"])
+	assert.Equal(
+		t,
+		map[string]string{"type": "disk", "pool": "runner", "path": "/"},
+		client.createRequest.Devices["root"],
+	)
 	assert.Equal(t, "test-owner", client.createRequest.Config[ownershipKey])
 	assert.Equal(t, "runner-id", client.createRequest.Config[correlationKey])
 	assert.Equal(t, now.Format(time.RFC3339Nano), client.createRequest.Config[createdAtKey])
+	assert.Equal(t, testFingerprintA, client.createRequest.Config[imageKey])
+	assert.Equal(t, "runner-image", client.createRequest.Config[imageReferenceKey])
+	var profiles []profileReference
+	require.NoError(t, json.Unmarshal([]byte(client.createRequest.Config[profilesKey]), &profiles))
+	require.Len(t, profiles, 2)
+	assert.Equal(t, []string{"default", "runner"}, []string{profiles[0].Name, profiles[1].Name})
+	assert.NotEmpty(t, profiles[0].SHA256)
+	assert.NotEmpty(t, profiles[1].SHA256)
 	assert.Equal(t, []string{"incus-gh-runner-runner-id"}, client.started)
 	require.Len(t, client.fileWrites, 2)
 	assert.Equal(t, payloadPath, client.fileWrites[0].path)
@@ -397,6 +564,7 @@ func TestBackendDeleteRequiresOwnershipAndStoresDiagnostics(t *testing.T) {
 
 	client := newFakeClient()
 	client.instances["owned"] = ownedInstance("owned", "Running", time.Now())
+	client.instanceETags["owned"] = "owned-etag"
 	client.instances["unowned"] = api.Instance{
 		Name:   "unowned",
 		Status: "Stopped",
@@ -414,14 +582,97 @@ func TestBackendDeleteRequiresOwnershipAndStoresDiagnostics(t *testing.T) {
 	})
 
 	err := backend.Delete(context.Background(), "unowned")
-	require.ErrorContains(t, err, "refusing to delete unowned")
+	require.ErrorContains(t, err, "unowned Incus instance")
 	assert.Empty(t, client.deleted)
 
 	require.NoError(t, backend.Delete(context.Background(), "owned"))
 	assert.Equal(t, []string{"owned"}, client.stopped)
+	assert.Equal(t, []string{"owned-etag"}, client.stopETags)
 	assert.Equal(t, []string{"owned"}, client.deleted)
 	assert.Equal(t, Diagnostics{RunnerID: "owned", Console: []byte("secret-safe console")}, stored)
 	require.NoError(t, backend.Delete(context.Background(), "owned"), "delete should be idempotent")
+}
+
+func TestBackendDeleteRequiresETagBeforeStop(t *testing.T) {
+	t.Parallel()
+
+	client := newFakeClient()
+	client.instances["owned"] = ownedInstance("owned", "Running", time.Now())
+	backend := newTestBackend(t, client, Options{})
+
+	err := backend.Delete(context.Background(), "owned")
+
+	require.ErrorContains(t, err, `refusing to stop Incus instance "owned" without an ETag`)
+	assert.Empty(t, client.stopped)
+	assert.Empty(t, client.deleted)
+}
+
+func TestBackendDeleteRefusesSameNameReplacement(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 17, 20, 0, 0, 0, time.UTC)
+	original := ownedInstance("runner", "Running", now)
+	replacement := ownedInstance("runner", "Stopped", now.Add(time.Second))
+	replacement.Config[instanceUUIDKey] = stableTestUUID("replacement")
+	unowned := original
+	unowned.Config = map[string]string{
+		ownershipKey:    "someone-else",
+		instanceUUIDKey: original.Config[instanceUUIDKey],
+	}
+
+	tests := []struct {
+		name      string
+		sequence  []api.Instance
+		wantStops int
+		wantError string
+	}{
+		{
+			name:      "replacement before stop",
+			sequence:  []api.Instance{original, replacement},
+			wantError: "refusing to stop replacement",
+		},
+		{
+			name:      "replacement after stop",
+			sequence:  []api.Instance{original, original, replacement},
+			wantStops: 1,
+			wantError: "refusing to diagnostics replacement",
+		},
+		{
+			name:      "replacement before delete",
+			sequence:  []api.Instance{original, original, original, replacement},
+			wantStops: 1,
+			wantError: "refusing to delete replacement",
+		},
+		{
+			name:      "ownership removed before delete",
+			sequence:  []api.Instance{original, original, original, unowned},
+			wantStops: 1,
+			wantError: "refusing to delete unowned Incus instance",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := newFakeClient()
+			client.instances["runner"] = original
+			lookup := 0
+			client.getInstance = func(context.Context, string) (*api.Instance, string, error) {
+				require.Less(t, lookup, len(tt.sequence))
+				instance := tt.sequence[lookup]
+				lookup++
+				return &instance, fmt.Sprintf("etag-%d", lookup), nil
+			}
+			backend := newTestBackend(t, client, Options{})
+
+			err := backend.Delete(context.Background(), "runner")
+
+			require.ErrorContains(t, err, tt.wantError)
+			assert.Len(t, client.stopped, tt.wantStops)
+			assert.Empty(t, client.deleted, "replacement must never be deleted")
+		})
+	}
 }
 
 // newTestBackend constructs a backend with deterministic valid defaults.
@@ -474,9 +725,15 @@ func ownedInstance(name string, status string, createdAt time.Time) api.Instance
 		CreatedAt: createdAt,
 		InstancePut: api.InstancePut{
 			Config: api.ConfigMap{
-				ownershipKey: "test-owner",
-				createdAtKey: createdAt.UTC().Format(time.RFC3339Nano),
+				ownershipKey:    "test-owner",
+				createdAtKey:    createdAt.UTC().Format(time.RFC3339Nano),
+				instanceUUIDKey: stableTestUUID(name),
 			},
 		},
 	}
+}
+
+// stableTestUUID derives a valid stable identity from name.
+func stableTestUUID(name string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(name)).String()
 }

@@ -99,8 +99,10 @@ project's derived totals are correct.
 
 Use only the named `github-runner` profile in the controller configuration.
 Do not add a second controller profile: an additional profile can add devices
-or relax limits after this validator has checked the reference profile. The
-controller must create each runner with exactly this one profile.
+or relax limits after this validator has checked the reference profile. During
+preflight the controller pins this profile's effective configuration and
+devices, revalidates its digest before create, and materializes that snapshot
+directly into each VM with no mutable profile attachment.
 
 Incus 7.0 through 7.2 do not advertise the
 `projects_restricted_virtual_machines_nesting` extension. On those supported

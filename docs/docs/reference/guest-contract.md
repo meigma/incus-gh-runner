@@ -107,11 +107,22 @@ The controller sets these keys on every instance it creates:
 | `user.incus-gh-runner.owner` | The configured `incus.owner` value | Exact-match cleanup selector; instances without a matching value are excluded from listing and refused on delete, but another project writer can forge it |
 | `user.incus-gh-runner.correlation-id` | Generated UUID | Unique per-instance identifier, also used to derive the instance name |
 | `user.incus-gh-runner.created-at` | RFC3339Nano timestamp, UTC | Anchor for the `incus.bootstrap_timeout` calculation |
-| `user.incus-gh-runner.image` | The configured `incus.image` value | Records which image alias or fingerprint the instance was created from |
+| `user.incus-gh-runner.image` | Resolved full image fingerprint | Immutable image identity used to create the instance |
+| `user.incus-gh-runner.image-reference` | Configured `incus.image` value | Operator-friendly alias or fingerprint supplied to the controller |
+| `user.incus-gh-runner.profiles` | JSON array of profile names and SHA-256 digests | Audit identity for the effective profile configuration and devices materialized at create time |
+
+Image aliases are resolved once during controller preflight. The controller
+creates each VM by the resulting fingerprint. Effective profile configuration
+and devices are also captured during preflight, revalidated before each create,
+and written directly onto the instance with an explicit empty attached-profile
+list. Later alias retargeting or profile edits therefore cannot change an
+already approved runner environment; profile drift blocks new capacity until
+the approved profile state is restored or the controller is deliberately
+restarted and preflight succeeds again.
 
 ## Diagnostics capture
 
-When `incus.diagnostics_dir` is configured, the controller captures the instance's serial console log during deletion, before the instance is stopped and removed, and writes it to `<diagnostics_dir>/<runnerID>.console.log`, mode `0600`, inside a directory created with mode `0700`. When `incus.diagnostics_dir` is empty, no diagnostics file is written; captured console output is discarded rather than persisted.
+When `incus.diagnostics_dir` is configured, the controller captures the instance's serial console log during deletion, after ensuring the instance is stopped and before removing it, and writes it to `<diagnostics_dir>/<runnerID>.console.log`, mode `0600`, inside a directory created with mode `0700`. When `incus.diagnostics_dir` is empty, no diagnostics file is written; captured console output is discarded rather than persisted.
 
 !!! warning "Console diagnostics may contain sensitive output"
     Captured console content may include sensitive workload output. Diagnostics files must be handled with the same care as other job-adjacent artifacts.
