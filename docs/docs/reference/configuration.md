@@ -40,8 +40,8 @@ Duration values use Go duration syntax (for example `30s`, `5m`).
 |---|---|---|---|
 | `incus.socket` | string | `""` | Optional. Non-default local Incus Unix socket path. |
 | `incus.project` | string | — | Required. Non-empty. Must already exist. |
-| `incus.image` | string | — | Required. Non-empty. Existing local image alias or fingerprint. |
-| `incus.profiles` | list of strings | `[]` | Optional. No empty entries. Profiles must already exist. |
+| `incus.image` | string | — | Required. Non-empty. Existing local image alias or fingerprint, resolved to a full fingerprint during preflight. |
+| `incus.profiles` | list of strings | `[]` | Optional. No empty entries. Profiles must already exist. Their effective configuration and devices are pinned during preflight and materialized directly onto each VM. When omitted, Incus image/default profile selection is reproduced before pinning. |
 | `incus.owner` | string | — | Required. Non-empty. Exact cleanup selector written to every instance this process manages; not an authorization boundary. |
 | `incus.bootstrap_timeout` | duration | `5m` | Must be greater than `0`. |
 | `incus.diagnostics_dir` | string | `""` | Optional. Directory for terminal-runner serial console diagnostics. |

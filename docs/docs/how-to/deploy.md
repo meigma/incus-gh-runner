@@ -107,9 +107,11 @@ and the official Incus references behind each setting.
 
 Import a runner image into the validated project. See [Obtain, build, and
 validate runner images](./runner-images.md) for downloading a released image,
-building one locally, and importing it into Incus. Apply only the validated
-`github-runner` profile in controller configuration; adding the `default` or a
-second profile can add devices or relax limits outside the checked baseline.
+building one locally, and importing it into Incus. Configure only the validated
+`github-runner` profile; adding the `default` or a second profile can add
+devices or relax limits outside the checked baseline. The controller pins and
+materializes the validated profile snapshot into each VM, so later profile
+edits do not alter an approved runner environment.
 
 The hostile-runner harness exports effective configuration without mutation by
 default. Run that preflight against the production project, using only

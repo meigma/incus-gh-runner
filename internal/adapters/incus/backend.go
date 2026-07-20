@@ -2,12 +2,16 @@ package incus
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,9 +34,36 @@ const (
 	correlationKey         = "user.incus-gh-runner.correlation-id"
 	createdAtKey           = "user.incus-gh-runner.created-at"
 	imageKey               = "user.incus-gh-runner.image"
+	imageReferenceKey      = "user.incus-gh-runner.image-reference"
+	profilesKey            = "user.incus-gh-runner.profiles"
+	instanceUUIDKey        = "volatile.uuid"
+	defaultProfileName     = "default"
 	maximumInstanceNameLen = 63
+	imageFingerprintLength = sha256.Size * 2
 	payloadFileMode        = 0o600
 )
+
+// profileReference records one immutable profile input in instance audit metadata.
+type profileReference struct {
+	// Name is the operator-facing profile name resolved during preflight.
+	Name string `json:"name"`
+	// SHA256 identifies the effective profile configuration and devices.
+	SHA256 string `json:"sha256"`
+}
+
+// runtimeIdentity is the immutable Incus environment captured by preflight.
+type runtimeIdentity struct {
+	// imageFingerprint is the full content-addressed image identity.
+	imageFingerprint string
+	// profiles record the ordered profile inputs used during materialization.
+	profiles []profileReference
+	// profileMetadata is the serialized audit form written to instance config.
+	profileMetadata string
+	// config is the effective profile configuration captured during preflight.
+	config api.ConfigMap
+	// devices are the effective profile devices captured during preflight.
+	devices api.DevicesMap
+}
 
 // Payload is the versioned runtime input consumed by the one-shot guest.
 type Payload struct {
@@ -82,7 +113,7 @@ func (f DiagnosticsSinkFunc) Store(ctx context.Context, diagnostics Diagnostics)
 type Options struct {
 	// Image is an existing local image alias or fingerprint.
 	Image string
-	// Profiles are existing profiles applied to every runner VM.
+	// Profiles are existing profile sources pinned and materialized into every runner VM.
 	Profiles []string
 	// Owner is the exact durable ownership value required before any mutation.
 	Owner string
@@ -108,8 +139,10 @@ type Options struct {
 
 // Backend implements the controller runner lifecycle through Incus.
 type Backend struct {
-	client  client
-	options Options
+	client   client
+	options  Options
+	identity *runtimeIdentity
+	mu       sync.RWMutex
 }
 
 // NewBackend constructs an ownership-scoped backend from an Incus server.
@@ -174,17 +207,140 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
-// Preflight verifies the configured image and profiles without mutating Incus.
+// Preflight pins the configured image and effective profiles without mutating Incus.
 func (b *Backend) Preflight(ctx context.Context) error {
-	if err := b.client.GetImage(ctx, b.options.Image); err != nil {
+	image, err := b.client.ResolveImage(ctx, b.options.Image)
+	if err != nil {
 		return fmt.Errorf("resolve runner image %q: %w", b.options.Image, err)
 	}
-	for _, profile := range b.options.Profiles {
-		if strings.TrimSpace(profile) == "" {
+	if image == nil {
+		return fmt.Errorf("resolve runner image %q: empty image", b.options.Image)
+	}
+	if fingerprintErr := validateImageFingerprint(image.Fingerprint); fingerprintErr != nil {
+		return fmt.Errorf("resolve runner image %q: %w", b.options.Image, fingerprintErr)
+	}
+
+	profileNames := effectiveProfileNames(b.options.Profiles, image.Profiles)
+	identity := &runtimeIdentity{
+		imageFingerprint: image.Fingerprint,
+		profiles:         make([]profileReference, 0, len(profileNames)),
+		config:           make(api.ConfigMap),
+		devices:          make(api.DevicesMap),
+	}
+	for _, profileName := range profileNames {
+		if strings.TrimSpace(profileName) == "" {
 			return errors.New("incus profile names must not be empty")
 		}
-		if err := b.client.GetProfile(ctx, profile); err != nil {
-			return fmt.Errorf("resolve runner profile %q: %w", profile, err)
+		profile, profileErr := b.client.GetProfile(ctx, profileName)
+		if profileErr != nil {
+			return fmt.Errorf("resolve runner profile %q: %w", profileName, profileErr)
+		}
+		digest, digestErr := profileDigest(profile)
+		if digestErr != nil {
+			return fmt.Errorf("digest runner profile %q: %w", profileName, digestErr)
+		}
+		identity.profiles = append(identity.profiles, profileReference{Name: profileName, SHA256: digest})
+		maps.Copy(identity.config, profile.Config)
+		for name, device := range profile.Devices {
+			identity.devices[name] = maps.Clone(device)
+		}
+	}
+	profileMetadata, err := json.Marshal(identity.profiles)
+	if err != nil {
+		return fmt.Errorf("encode runner profile identities: %w", err)
+	}
+	identity.profileMetadata = string(profileMetadata)
+
+	b.mu.Lock()
+	b.identity = identity
+	b.mu.Unlock()
+	b.options.Logger.InfoContext(
+		ctx,
+		"Incus runtime identity pinned",
+		"image_reference", b.options.Image,
+		"image_fingerprint", image.Fingerprint,
+		"profiles", identity.profiles,
+	)
+
+	return nil
+}
+
+// validateImageFingerprint requires a full SHA-256 image identity.
+func validateImageFingerprint(fingerprint string) error {
+	if len(fingerprint) != imageFingerprintLength {
+		return fmt.Errorf("image fingerprint must contain %d hexadecimal characters", imageFingerprintLength)
+	}
+	if _, err := hex.DecodeString(fingerprint); err != nil {
+		return fmt.Errorf("image fingerprint is not hexadecimal: %w", err)
+	}
+
+	return nil
+}
+
+// effectiveProfileNames reproduces Incus image and default-profile selection.
+func effectiveProfileNames(configured []string, imageProfiles []string) []string {
+	if len(configured) > 0 {
+		return append(make([]string, 0, len(configured)), configured...)
+	}
+	if imageProfiles != nil {
+		return append(make([]string, 0, len(imageProfiles)), imageProfiles...)
+	}
+
+	return []string{defaultProfileName}
+}
+
+// profileDigest hashes the effective profile configuration and devices.
+func profileDigest(profile *api.Profile) (string, error) {
+	if profile == nil {
+		return "", errors.New("profile is nil")
+	}
+	encoded, err := json.Marshal(struct {
+		Config  api.ConfigMap  `json:"config"`
+		Devices api.DevicesMap `json:"devices"`
+	}{Config: profile.Config, Devices: profile.Devices})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(encoded)
+
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// pinnedIdentity returns an isolated copy of the preflight runtime identity.
+func (b *Backend) pinnedIdentity() (*runtimeIdentity, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.identity == nil {
+		return nil, errors.New("incus backend preflight has not completed")
+	}
+
+	identity := &runtimeIdentity{
+		imageFingerprint: b.identity.imageFingerprint,
+		profiles:         append([]profileReference(nil), b.identity.profiles...),
+		profileMetadata:  b.identity.profileMetadata,
+		config:           maps.Clone(b.identity.config),
+		devices:          make(api.DevicesMap, len(b.identity.devices)),
+	}
+	for name, device := range b.identity.devices {
+		identity.devices[name] = maps.Clone(device)
+	}
+
+	return identity, nil
+}
+
+// verifyProfiles rejects drift from the effective profiles pinned by preflight.
+func (b *Backend) verifyProfiles(ctx context.Context, expected []profileReference) error {
+	for _, reference := range expected {
+		profile, err := b.client.GetProfile(ctx, reference.Name)
+		if err != nil {
+			return fmt.Errorf("re-resolve runner profile %q: %w", reference.Name, err)
+		}
+		digest, err := profileDigest(profile)
+		if err != nil {
+			return fmt.Errorf("re-digest runner profile %q: %w", reference.Name, err)
+		}
+		if digest != reference.SHA256 {
+			return fmt.Errorf("runner profile %q changed after preflight", reference.Name)
 		}
 	}
 
@@ -242,6 +398,14 @@ func (b *Backend) statusReadContext(ctx context.Context, remaining int) (context
 
 // Create creates, starts, and injects one owned runner VM.
 func (b *Backend) Create(ctx context.Context) (controller.Runner, error) {
+	identity, err := b.pinnedIdentity()
+	if err != nil {
+		return controller.Runner{}, err
+	}
+	if profileErr := b.verifyProfiles(ctx, identity.profiles); profileErr != nil {
+		return controller.Runner{}, profileErr
+	}
+
 	correlationID := b.options.NewID()
 	if correlationID == "" || strings.ContainsAny(correlationID, " /\\") {
 		return controller.Runner{}, errors.New("generated correlation ID is not a safe instance-name component")
@@ -251,25 +415,28 @@ func (b *Backend) Create(ctx context.Context) (controller.Runner, error) {
 		return controller.Runner{}, fmt.Errorf("generated instance name exceeds %d characters", maximumInstanceNameLen)
 	}
 
+	config := maps.Clone(identity.config)
+	config[ownershipKey] = b.options.Owner
+	config[correlationKey] = correlationID
+	config[createdAtKey] = b.options.Now().UTC().Format(time.RFC3339Nano)
+	config[imageKey] = identity.imageFingerprint
+	config[imageReferenceKey] = b.options.Image
+	config[profilesKey] = identity.profileMetadata
 	request := api.InstancesPost{
 		Name: name,
 		Type: api.InstanceTypeVM,
 		InstancePut: api.InstancePut{
-			Config: api.ConfigMap{
-				ownershipKey:   b.options.Owner,
-				correlationKey: correlationID,
-				createdAtKey:   b.options.Now().UTC().Format(time.RFC3339Nano),
-				imageKey:       b.options.Image,
-			},
-			Profiles: append([]string(nil), b.options.Profiles...),
+			Config:   config,
+			Devices:  identity.devices,
+			Profiles: []string{},
 		},
-		Source: api.InstanceSource{Type: "image", Alias: b.options.Image},
+		Source: api.InstanceSource{Type: "image", Fingerprint: identity.imageFingerprint},
 	}
-	if err := b.client.CreateInstance(ctx, request); err != nil {
-		return controller.Runner{}, fmt.Errorf("create owned instance %q: %w", name, err)
+	if createErr := b.client.CreateInstance(ctx, request); createErr != nil {
+		return controller.Runner{}, fmt.Errorf("create owned instance %q: %w", name, createErr)
 	}
-	if err := b.client.StartInstance(ctx, name); err != nil {
-		return controller.Runner{}, fmt.Errorf("start owned instance %q: %w", name, err)
+	if startErr := b.client.StartInstance(ctx, name); startErr != nil {
+		return controller.Runner{}, fmt.Errorf("start owned instance %q: %w", name, startErr)
 	}
 
 	payload, err := b.options.Payloads.Payload(ctx, name)
@@ -286,11 +453,18 @@ func (b *Backend) Create(ctx context.Context) (controller.Runner, error) {
 	if err != nil {
 		return controller.Runner{}, fmt.Errorf("encode runtime payload for %q: %w", name, err)
 	}
-	if err := b.pushPayload(ctx, name, encoded); err != nil {
-		return controller.Runner{}, err
+	if pushErr := b.pushPayload(ctx, name, encoded); pushErr != nil {
+		return controller.Runner{}, pushErr
 	}
 
-	b.options.Logger.InfoContext(ctx, "owned Incus runner started", "runner_id", name, "correlation_id", correlationID)
+	b.options.Logger.InfoContext(
+		ctx,
+		"owned Incus runner started",
+		"runner_id", name,
+		"correlation_id", correlationID,
+		"image_fingerprint", identity.imageFingerprint,
+		"profiles", identity.profiles,
+	)
 	return controller.Runner{ID: name, State: controller.RunnerProvisioning}, nil
 }
 
@@ -317,36 +491,137 @@ func (b *Backend) pushPayload(ctx context.Context, name string, payload []byte) 
 	}
 }
 
-// Delete verifies exact ownership, collects diagnostics, and removes one instance.
+// Delete verifies stable identity, collects diagnostics, and removes one instance.
 func (b *Backend) Delete(ctx context.Context, runnerID string) error {
-	instance, err := b.client.GetInstance(ctx, runnerID)
+	instance, _, err := b.client.GetInstance(ctx, runnerID)
 	if errors.Is(err, errNotFound) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("get instance %q before delete: %w", runnerID, err)
 	}
-	if instance.Config[ownershipKey] != b.options.Owner {
-		return fmt.Errorf("refusing to delete unowned Incus instance %q", runnerID)
+	instanceUUID, err := b.verifyInstanceIdentity(runnerID, instance, "delete candidate")
+	if err != nil {
+		return err
 	}
-
-	console, err := b.client.GetInstanceConsoleLog(ctx, runnerID)
-	if err != nil && !errors.Is(err, errNotFound) {
-		b.options.Logger.WarnContext(ctx, "failed to collect runner diagnostics", "runner_id", runnerID, "error", err)
-	} else if err := b.options.Diagnostics.Store(ctx, Diagnostics{RunnerID: runnerID, Console: console}); err != nil {
-		b.options.Logger.WarnContext(ctx, "failed to store runner diagnostics", "runner_id", runnerID, "error", err)
+	if stopErr := b.stopInstance(ctx, runnerID, instanceUUID, instance); stopErr != nil {
+		return stopErr
 	}
-
-	if !strings.EqualFold(instance.Status, "stopped") {
-		if err := b.client.StopInstance(ctx, runnerID); err != nil && !errors.Is(err, errNotFound) {
-			return fmt.Errorf("stop owned instance %q before delete: %w", runnerID, err)
-		}
+	if diagnosticsErr := b.collectDiagnostics(ctx, runnerID, instanceUUID); diagnosticsErr != nil {
+		return diagnosticsErr
 	}
-	if err := b.client.DeleteInstance(ctx, runnerID); err != nil && !errors.Is(err, errNotFound) {
-		return fmt.Errorf("delete owned instance %q: %w", runnerID, err)
+	if _, _, verifyErr := b.getVerifiedInstance(ctx, runnerID, instanceUUID, "delete"); verifyErr != nil {
+		return verifyErr
+	}
+	if deleteErr := b.client.DeleteInstance(ctx, runnerID); deleteErr != nil && !errors.Is(deleteErr, errNotFound) {
+		return fmt.Errorf("delete owned instance %q: %w", runnerID, deleteErr)
 	}
 	b.options.Logger.InfoContext(ctx, "owned Incus runner deleted", "runner_id", runnerID)
 	return nil
+}
+
+// stopInstance conditionally stops the original instance when it is still running.
+func (b *Backend) stopInstance(
+	ctx context.Context,
+	runnerID string,
+	instanceUUID string,
+	initial *api.Instance,
+) error {
+	if strings.EqualFold(initial.Status, "stopped") {
+		return nil
+	}
+	current, etag, err := b.getVerifiedInstance(ctx, runnerID, instanceUUID, "stop")
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(current.Status, "stopped") {
+		return nil
+	}
+	if strings.TrimSpace(etag) == "" {
+		return fmt.Errorf("refusing to stop Incus instance %q without an ETag", runnerID)
+	}
+	if stopErr := b.client.StopInstance(ctx, runnerID, etag); stopErr != nil {
+		if errors.Is(stopErr, errNotFound) {
+			return fmt.Errorf("instance %q disappeared before conditional stop", runnerID)
+		}
+		return fmt.Errorf("stop owned instance %q before delete: %w", runnerID, stopErr)
+	}
+
+	return nil
+}
+
+// collectDiagnostics verifies identity and captures best-effort console evidence.
+func (b *Backend) collectDiagnostics(ctx context.Context, runnerID string, instanceUUID string) error {
+	if _, _, verifyErr := b.getVerifiedInstance(ctx, runnerID, instanceUUID, "diagnostics"); verifyErr != nil {
+		return verifyErr
+	}
+	console, err := b.client.GetInstanceConsoleLog(ctx, runnerID)
+	if err != nil {
+		if !errors.Is(err, errNotFound) {
+			b.options.Logger.WarnContext(
+				ctx,
+				"failed to collect runner diagnostics",
+				"runner_id",
+				runnerID,
+				"error",
+				err,
+			)
+		}
+		return nil
+	}
+	if storeErr := b.options.Diagnostics.Store(
+		ctx,
+		Diagnostics{RunnerID: runnerID, Console: console},
+	); storeErr != nil {
+		b.options.Logger.WarnContext(
+			ctx,
+			"failed to store runner diagnostics",
+			"runner_id",
+			runnerID,
+			"error",
+			storeErr,
+		)
+	}
+
+	return nil
+}
+
+// getVerifiedInstance re-fetches runnerID and confirms the original stable identity.
+func (b *Backend) getVerifiedInstance(
+	ctx context.Context,
+	runnerID string,
+	expectedUUID string,
+	operation string,
+) (*api.Instance, string, error) {
+	instance, etag, err := b.client.GetInstance(ctx, runnerID)
+	if err != nil {
+		return nil, "", fmt.Errorf("get instance %q before %s: %w", runnerID, operation, err)
+	}
+	instanceUUID, err := b.verifyInstanceIdentity(runnerID, instance, operation)
+	if err != nil {
+		return nil, "", err
+	}
+	if instanceUUID != expectedUUID {
+		return nil, "", fmt.Errorf("refusing to %s replacement Incus instance %q", operation, runnerID)
+	}
+
+	return instance, etag, nil
+}
+
+// verifyInstanceIdentity validates owner and the server-generated stable UUID.
+func (b *Backend) verifyInstanceIdentity(runnerID string, instance *api.Instance, operation string) (string, error) {
+	if instance == nil {
+		return "", fmt.Errorf("refusing to %s Incus instance %q without identity", operation, runnerID)
+	}
+	if instance.Config[ownershipKey] != b.options.Owner {
+		return "", fmt.Errorf("refusing to %s unowned Incus instance %q", operation, runnerID)
+	}
+	instanceUUID := instance.Config[instanceUUIDKey]
+	if _, err := uuid.Parse(instanceUUID); err != nil {
+		return "", fmt.Errorf("refusing to %s Incus instance %q without a valid stable UUID", operation, runnerID)
+	}
+
+	return instanceUUID, nil
 }
 
 // runnerState maps Incus and guest status into controller lifecycle state.
