@@ -800,3 +800,34 @@ and Pages deployment jobs skipped normally. GitHub reports the draft PR
 mergeable and the feature worktree is clean and exactly synchronized with its
 remote branch. Slice 4A is ready for human review; no merge or later Slice 4
 work was started.
+
+## 2026-07-20 09:12 — Slice 4A merged; Slice 4B final-rootfs SBOM path implemented
+
+The user approved Slice 4A. Reverified exact PR #34 head
+`8351cd84e610ff8adc3c240754392e46b803128f`, its clean tree, mergeable state,
+and every applicable hosted check, then marked it ready and squash merged it as
+`5471310a8dc3b18624af21669e6f5c06bbe7d9f4`. Fast-forwarded local `master` to
+that exact merge, proved feature/master tree equality, removed the integrated
+worktree and branches, and started `feat/security-slice-4b-sbom` from the
+merge.
+
+Kept Slice 4B to the final-rootfs SBOM and digest-binding gate. A small Python
+tool now extracts `rootfs.img` from the completed unified Incus archive,
+requires qcow2, mounts it read-only with explicit format selection, generates
+SPDX 2.3 with pinned Syft 1.44.0, rejects an empty package inventory, observes
+GitHub's 16 MiB predicate limit, and unmounts on both success and failure. The
+release stager validates that the SBOM identifies the requested release, emits
+versioned SBOM and checksum assets, puts the archive and SBOM in provenance,
+and emits a separate archive-only checksum list for the SBOM attestation.
+
+Reference-image CI, release rehearsal, and release publication are wired to
+the same generation path. The isolated reusable attestation workflow uses the
+archive digest as the SBOM subject, while provenance covers both downloadable
+assets. Operator docs now download and verify the archive and SBOM separately,
+then verify both provenance and the SPDX predicate. Actionlint, 23 release
+configuration tests, docs, lint, and isolation contract gates pass locally.
+The first aggregate local check hit a stale golangci-lint cache pointing at the
+removed Slice 4A worktree and a concurrent mocked-Incus process termination;
+both affected gates passed independently after clearing the cache. Full
+aggregate and exact-head hosted VM-build proof remain before the PR review
+gate.
