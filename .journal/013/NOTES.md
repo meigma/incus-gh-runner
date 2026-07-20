@@ -813,10 +813,11 @@ merge.
 
 Kept Slice 4B to the final-rootfs SBOM and digest-binding gate. A small Python
 tool now extracts `rootfs.img` from the completed unified Incus archive,
-requires qcow2, mounts it read-only with explicit format selection, generates
-SPDX 2.3 with pinned Syft 1.44.0, rejects an empty package inventory, observes
-GitHub's 16 MiB predicate limit, and unmounts on both success and failure. The
-release stager validates that the SBOM identifies the requested release, emits
+requires qcow2, copies its final root filesystem through unprivileged,
+explicitly read-only libguestfs access, generates CycloneDX 1.6 with pinned
+Syft 1.44.0, rejects an empty package inventory, and observes GitHub's 16 MiB
+predicate limit. The release stager validates that the SBOM identifies the
+requested release, emits
 versioned SBOM and checksum assets, puts the archive and SBOM in provenance,
 and emits a separate archive-only checksum list for the SBOM attestation.
 
@@ -824,10 +825,41 @@ Reference-image CI, release rehearsal, and release publication are wired to
 the same generation path. The isolated reusable attestation workflow uses the
 archive digest as the SBOM subject, while provenance covers both downloadable
 assets. Operator docs now download and verify the archive and SBOM separately,
-then verify both provenance and the SPDX predicate. Actionlint, 23 release
+then verify both provenance and the CycloneDX predicate. Actionlint, 24 release
 configuration tests, docs, lint, and isolation contract gates pass locally.
 The first aggregate local check hit a stale golangci-lint cache pointing at the
 removed Slice 4A worktree and a concurrent mocked-Incus process termination;
 both affected gates passed independently after clearing the cache. Full
 aggregate and exact-head hosted VM-build proof remain before the PR review
 gate.
+
+## 2026-07-20 10:31 — Slice 4B exact-head hosted final-rootfs proof complete
+
+Hosted iteration exercised the boundaries the local orchestration tests could
+not. Run 29758683200 rejected the initial Syft pin because Anchore's installer
+requires the `v1.44.0` tag spelling; the installer now runs before the expensive
+image build. Runs 29759352223 and 29760393934 exposed that the unprivileged
+libguestfs supermin appliance could not read Ubuntu's host kernel. The final
+workflow keeps guest access unprivileged and read-only, but grants read access
+to the ephemeral runner's existing `/boot/vmlinuz-*` before launching the
+appliance. It uses `guestfish copy-out` instead of a retained FUSE mount and
+surfaces bounded tool stderr on failure.
+
+Runs 29761014604 and 29762015412 then completed the real final-filesystem copy
+and Syft catalog but proved SPDX remained above GitHub's 16 MiB attestation
+limit, even after omitting per-file metadata. The final representation is
+CycloneDX 1.6, which `actions/attest` accepts natively; the checked-in Syft
+policy still retains all package catalogers and only omits per-file metadata.
+Operator verification now uses predicate type `https://cyclonedx.org/bom`.
+
+Exact PR #35 head `f10c9854b55e7fd364e98d067f85336ba1a3caeb` passed the
+full local `moon run root:check --concurrency 1` gate and all 24 release
+configuration tests. Hosted run 29763056425 built the unified VM, copied and
+cataloged the completed qcow2 root filesystem, validated the CycloneDX SBOM,
+re-inspected the image, and uploaded archive, checksum, metadata, and SBOM in
+14m15s. CI, Actions and Go CodeQL, GitHub Pages, GitHub's CodeQL check, and
+Kusari Inspector are also green; event-inapplicable release rehearsal and
+Pages deployment jobs skipped normally. GitHub reports the draft PR cleanly
+mergeable, and the feature worktree is clean and exactly synchronized with its
+remote. Slice 4B is at the human review gate; vulnerability policy/scanning and
+runner freshness remain later Slice 4 increments.
