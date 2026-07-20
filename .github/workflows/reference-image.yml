@@ -6,6 +6,7 @@ on:
       - master
     paths:
       - '.github/workflows/reference-image.yml'
+      - '.github/scripts/generate_reference_image_sbom.py'
       - 'image/**'
       - 'mise.lock'
       - 'mise.toml'
@@ -15,6 +16,7 @@ on:
       - master
     paths:
       - '.github/workflows/reference-image.yml'
+      - '.github/scripts/generate_reference_image_sbom.py'
       - 'image/**'
       - 'mise.lock'
       - 'mise.toml'
@@ -50,11 +52,16 @@ jobs:
             dosfstools \
             genisoimage \
             gpg \
+            libguestfs-tools \
             libwin-hivex-perl \
             qemu-kvm \
             rsync \
             squashfs-tools \
             wimtools
+
+          # Ubuntu restricts its host kernels to root, but unprivileged
+          # libguestfs/supermin needs one to build the inspection appliance.
+          sudo chmod a+r /boot/vmlinuz-*
 
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
@@ -62,8 +69,21 @@ jobs:
           version: 2026.6.14
           cache: true
 
+      - name: Install pinned Syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          syft-version: v1.44.0
+
       - name: Build unified Incus VM image
         run: mise exec -- image/build.sh build/reference-image
+
+      - name: Generate final-rootfs SBOM
+        run: |
+          python3 .github/scripts/generate_reference_image_sbom.py \
+            --archive build/reference-image/incus-gh-runner-ubuntu-24.04-x86_64.tar.xz \
+            --output build/reference-image/incus-gh-runner-ubuntu-24.04-x86_64.cdx.json \
+            --name incus-gh-runner-reference-image \
+            --version "${GITHUB_SHA}"
 
       - name: Inspect image artifact
         run: |
@@ -94,6 +114,7 @@ jobs:
           path: |
             build/reference-image/*.tar.xz
             build/reference-image/*.sha256
+            build/reference-image/*.cdx.json
             build/reference-image-inspection/metadata.yaml
             build/reference-image-inspection/qemu-info.json
           if-no-files-found: error

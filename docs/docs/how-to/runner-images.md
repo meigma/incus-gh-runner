@@ -12,36 +12,65 @@ Get a unified Incus VM image ready for `incus-gh-runner`: download and verify a 
 
 ## Use a released reference image
 
-Set the release tag and download the image archive and its checksum:
+Set the release tag and download the image archive, final-rootfs CycloneDX SBOM, and
+their checksums:
 
 ```bash
 tag=v0.1.0
 version=${tag#v}
 asset="incus-gh-runner-reference-image_${version}_ubuntu-24.04_x86_64.tar.xz"
+sbom="incus-gh-runner-reference-image_${version}_ubuntu-24.04_x86_64.cdx.json"
 
 gh release download "$tag" \
   --repo meigma/incus-gh-runner \
   --pattern "$asset" \
-  --pattern "${asset}.sha256"
+  --pattern "${asset}.sha256" \
+  --pattern "$sbom" \
+  --pattern "${sbom}.sha256"
 ```
 
-Verify the checksum:
+Verify the checksums:
 
 ```bash
 sha256sum --check "${asset}.sha256"
+sha256sum --check "${sbom}.sha256"
 ```
 
-Verify the release attestation:
+Verify release provenance for both downloaded artifacts:
+
+```bash
+for subject in "$asset" "$sbom"; do
+  gh attestation verify "$subject" \
+    --repo meigma/incus-gh-runner \
+    --signer-workflow meigma/incus-gh-runner/.github/workflows/attest.yml \
+    --source-ref "refs/tags/$tag" \
+    --deny-self-hosted-runners
+done
+```
+
+Verify that the signed SBOM predicate names the same archive digest:
 
 ```bash
 gh attestation verify "$asset" \
   --repo meigma/incus-gh-runner \
   --signer-workflow meigma/incus-gh-runner/.github/workflows/attest.yml \
   --source-ref "refs/tags/$tag" \
+  --predicate-type https://cyclonedx.org/bom \
   --deny-self-hosted-runners
 ```
 
-If either check fails, discard the file and re-download it. Do not import an image that fails checksum or attestation verification.
+The release workflow uses libguestfs to copy the completed VM disk's root
+filesystem out through an explicitly read-only qcow2 handle, then runs Syft
+over that final filesystem. The checked-in Syft configuration retains all
+package catalogers but omits per-file metadata, and emits CycloneDX JSON so the
+predicate remains within GitHub's attestation size limit. The downloaded SBOM
+is therefore a package inventory of the shipped VM, rather than the build host
+or the image source directory. Its checksum and the archive checksum are both
+covered by release provenance; the SBOM attestation uses the archive checksum
+alone as its subject.
+
+If any checksum or attestation check fails, discard the files and re-download
+them. Do not import an image that fails verification.
 
 Import the image into the runner project, using an alias that matches the `incus.image` value in your controller configuration:
 
@@ -98,8 +127,8 @@ Consequently, two builds from the same source commit may contain different
 Ubuntu package revisions and are not expected to produce byte-identical image
 archives. A release checksum and GitHub build attestation bind an operator to
 the exact archive produced by the release workflow; they do not establish a
-reproducible or offline build. Retain that checksum, attestation, and archive as
-one set when promoting an image.
+reproducible or offline build. Retain the archive, checksums, SBOM, and
+attestations as one set when promoting an image.
 
 ### Root disk growth
 

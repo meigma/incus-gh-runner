@@ -20,7 +20,12 @@ on:
   workflow_call:
     inputs:
       checksums-artifact:
-        description: Name of an uploaded artifact containing checksums.txt (binary provenance).
+        description: Name of an uploaded artifact containing checksums.txt (artifact provenance).
+        type: string
+        required: false
+        default: ''
+      sbom-file:
+        description: CycloneDX JSON file in checksums-artifact to attest against sbom-subject.checksums.txt.
         type: string
         required: false
         default: ''
@@ -58,11 +63,18 @@ jobs:
         with:
           name: ${{ inputs.checksums-artifact }}
 
-      - name: Attest binary checksums
+      - name: Attest artifact checksums
         if: ${{ inputs.checksums-artifact != '' }}
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-checksums: checksums.txt
+
+      - name: Attest SBOM against artifact checksums
+        if: ${{ inputs.sbom-file != '' }}
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-checksums: sbom-subject.checksums.txt
+          sbom-path: ${{ inputs.sbom-file }}
 
       # The image provenance is attached to the registry as a referrer, so this
       # isolated job needs its own GHCR login — the build job's docker login does

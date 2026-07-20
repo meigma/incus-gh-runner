@@ -18,8 +18,8 @@ deletes the VM when its one job finishes.
 - Unattended operation: GitHub session recovery with capped backoff, bounded
   shutdown escalation, and a hardened systemd unit with credential isolation.
 - Reference VM image: a network-built Ubuntu 24.04 image with a checksum-pinned
-  Actions Runner, published with checksums and build attestations that identify
-  the exact released archive.
+  Actions Runner, published with checksums, a final-rootfs CycloneDX SBOM, and build
+  attestations that identify the exact released archive.
 
 ## Requirements
 
@@ -36,7 +36,7 @@ deletes the VM when its one job finishes.
 Each GitHub release provides `incus-gh-runner_<version>_<os>_<arch>` binaries
 for Linux and macOS (amd64 and arm64), a multi-architecture controller OCI
 image, and a versioned Incus reference VM image, all with checksums and build
-attestations.
+attestations; the VM image also includes a CycloneDX SBOM.
 
 Download a binary from the [releases page](https://github.com/meigma/incus-gh-runner/releases)
 and install it:

@@ -1,0 +1,5 @@
+# Preserve the complete package catalog while omitting per-file metadata, which
+# makes the VM SBOM exceed GitHub's 16 MiB attestation limit.
+file:
+  metadata:
+    selection: 'none'

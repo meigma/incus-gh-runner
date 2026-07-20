@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import importlib.util
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,14 +29,27 @@ class StageReferenceImageReleaseTest(unittest.TestCase):
                 "incus-gh-runner-reference-image_1.2.3_ubuntu-24.04_x86_64.tar.xz"
             )
             archive = output / archive_name
+            sbom_name = (
+                "incus-gh-runner-reference-image_1.2.3_ubuntu-24.04_x86_64.cdx.json"
+            )
+            sbom = output / sbom_name
             checksum_line = f"{sha256(archive)}  {archive_name}\n"
+            sbom_checksum_line = f"{sha256(sbom)}  {sbom_name}\n"
             self.assertEqual(archive.read_bytes(), source.read_bytes())
             self.assertEqual((output / f"{archive_name}.sha256").read_text(), checksum_line)
-            self.assertEqual((output / "checksums.txt").read_text(), checksum_line)
+            self.assertEqual((output / f"{sbom_name}.sha256").read_text(), sbom_checksum_line)
+            self.assertEqual(
+                (output / "checksums.txt").read_text(),
+                checksum_line + sbom_checksum_line,
+            )
+            self.assertEqual(
+                (output / "sbom-subject.checksums.txt").read_text(),
+                checksum_line,
+            )
             self.assertIn(archive.as_posix(), stdout)
 
     def test_accepts_semver_prerelease_tag(self) -> None:
-        with fixture() as (root, source):
+        with fixture(sbom_version="1.2.3-rc.1") as (root, source):
             result, _, stderr = run_script(source, root / "dist", tag="v1.2.3-rc.1")
 
             self.assertEqual(result, 0, stderr)
@@ -71,6 +85,13 @@ class StageReferenceImageReleaseTest(unittest.TestCase):
             self.assertEqual(second, 1)
             self.assertIn("refusing to overwrite", second_stderr)
 
+    def test_rejects_sbom_for_different_release(self) -> None:
+        with fixture(sbom_version="9.9.9") as (root, source):
+            result, _, stderr = run_script(source, root / "dist")
+
+            self.assertEqual(result, 1)
+            self.assertIn("does not identify this image release", stderr)
+
 
 def run_script(
     source: Path,
@@ -82,13 +103,27 @@ def run_script(
     stderr = io.StringIO()
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         result = stage_reference_image_release.main(
-            ["--tag", tag, "--source", str(source), "--output", str(output)]
+            [
+                "--tag",
+                tag,
+                "--source",
+                str(source),
+                "--sbom",
+                str(source.with_name("incus-gh-runner-ubuntu-24.04-x86_64.cdx.json")),
+                "--output",
+                str(output),
+            ]
         )
     return result, stdout.getvalue(), stderr.getvalue()
 
 
 @contextlib.contextmanager
-def fixture(*, checksum: str | None = None, checksum_name: str | None = None):
+def fixture(
+    *,
+    checksum: str | None = None,
+    checksum_name: str | None = None,
+    sbom_version: str = "1.2.3",
+):
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         source_dir = root / "build/reference-image"
@@ -99,6 +134,24 @@ def fixture(*, checksum: str | None = None, checksum_name: str | None = None):
         name = checksum_name or source.name
         source.with_name(f"{source.name}.sha256").write_text(
             f"{digest}  {name}\n",
+            encoding="utf-8",
+        )
+        source.with_name("incus-gh-runner-ubuntu-24.04-x86_64.cdx.json").write_text(
+            json.dumps(
+                {
+                    "bomFormat": "CycloneDX",
+                    "specVersion": "1.6",
+                    "serialNumber": "urn:uuid:fixture",
+                    "metadata": {
+                        "component": {
+                            "type": "file",
+                            "name": "incus-gh-runner-reference-image",
+                            "version": sbom_version,
+                        }
+                    },
+                    "components": [{"type": "library", "name": "bash"}],
+                }
+            ),
             encoding="utf-8",
         )
         yield root, source
