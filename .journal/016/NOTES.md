@@ -11,3 +11,6 @@ Plan: Record the measured evidence and decision, abandon the temporary prototype
 
 ## 2026-07-20 15:45 — Assessment recorded
 Captured the complete experiment, measurements, compatibility findings, attestation boundary, and final rejection in `BOOTC_ASSESSMENT.md`. The Fedora 44 path was technically viable and passed `image/validate-incus.sh`, while CentOS Stream 10 lacked the 9p kernel support required by the Incus agent. The maintainer chose to retain the existing distrobuilder-based Ubuntu 24.04 plan; the prototype will be abandoned without a PR.
+
+## 2026-07-20 15:45 — Close
+No PRs were opened or merged. The rejected `feat/bootc-image-experiment` Worktrunk and branch were removed after its evidence was preserved. `SUMMARY.md` records the completed assessment and rejection; `TECH_NOTES.md` now makes distrobuilder retention the durable project direction. There are no open bootc migration threads.
