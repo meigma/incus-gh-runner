@@ -15,8 +15,10 @@ import (
 
 	githubadapter "github.com/meigma/incus-gh-runner/internal/adapters/github"
 	incusadapter "github.com/meigma/incus-gh-runner/internal/adapters/incus"
+	"github.com/meigma/incus-gh-runner/internal/adapters/provenancefile"
 	"github.com/meigma/incus-gh-runner/internal/app"
 	"github.com/meigma/incus-gh-runner/internal/config"
+	"github.com/meigma/incus-gh-runner/internal/provenance"
 )
 
 // BuildInfo identifies the executable in GitHub scale-set client requests.
@@ -29,8 +31,14 @@ type BuildInfo struct {
 
 // components contains the prepared production application and resolved scale-set identity.
 type components struct {
-	application *app.Application
-	scaleSetID  int
+	application    *app.Application
+	scaleSetID     int
+	jobProofSigner *provenance.Signer
+}
+
+// jobProofRuntime contains optional proof components prepared during startup.
+type jobProofRuntime struct {
+	signer *provenance.Signer
 }
 
 // jitPayloadSource binds Incus allocation identities to fresh GitHub JIT configurations.
@@ -76,6 +84,10 @@ func Run(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.L
 
 // prepare preflights Incus before resolving GitHub state and preparing message-session recovery.
 func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.Logger) (*components, error) {
+	jobProof, proofErr := prepareJobProofSigner(cfg.JobProof)
+	if proofErr != nil {
+		return nil, proofErr
+	}
 	githubClient, clientErr := newGitHubClient(cfg.GitHub, build)
 	if clientErr != nil {
 		return nil, clientErr
@@ -127,7 +139,28 @@ func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *sl
 		return nil, fmt.Errorf("construct application: %w", applicationErr)
 	}
 
-	return &components{application: application, scaleSetID: resolved.ID()}, nil
+	return &components{
+		application:    application,
+		scaleSetID:     resolved.ID(),
+		jobProofSigner: jobProof.signer,
+	}, nil
+}
+
+// prepareJobProofSigner loads the optional signing credential exactly once during startup.
+func prepareJobProofSigner(settings config.JobProof) (jobProofRuntime, error) {
+	if !settings.Enabled() {
+		return jobProofRuntime{}, nil
+	}
+	privateKey, err := provenancefile.LoadPrivateKey(settings.SigningKeyFile)
+	if err != nil {
+		return jobProofRuntime{}, fmt.Errorf("load job proof signing key: %w", err)
+	}
+	signer, err := provenance.NewSigner(privateKey)
+	if err != nil {
+		return jobProofRuntime{}, fmt.Errorf("configure job proof signer: %w", err)
+	}
+
+	return jobProofRuntime{signer: signer}, nil
 }
 
 // newIncusBackend constructs and preflights the ownership-scoped VM lifecycle adapter.

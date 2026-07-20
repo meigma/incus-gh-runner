@@ -26,6 +26,9 @@ incus:
   profiles: [default, runner]
   owner: production
   bootstrap_timeout: 5m
+job_proof:
+  host_id: builder-host-01
+  signing_key_file: /run/credentials/incus-gh-runner.service/machine-provenance-key
 capacity:
   min_runners: 0
   max_runners: 4

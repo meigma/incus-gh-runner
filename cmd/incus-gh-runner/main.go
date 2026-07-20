@@ -11,9 +11,11 @@ import (
 
 	incuspolicy "github.com/meigma/incus-gh-runner/deploy/incus"
 	incusadapter "github.com/meigma/incus-gh-runner/internal/adapters/incus"
+	"github.com/meigma/incus-gh-runner/internal/adapters/provenancefile"
 	"github.com/meigma/incus-gh-runner/internal/cli"
 	"github.com/meigma/incus-gh-runner/internal/config"
 	"github.com/meigma/incus-gh-runner/internal/incusvalidate"
+	"github.com/meigma/incus-gh-runner/internal/provenance"
 	runnerruntime "github.com/meigma/incus-gh-runner/internal/runtime"
 )
 
@@ -50,7 +52,8 @@ func run() int {
 				Commit:  commit,
 			}, logger)
 		},
-		Validate: validateIncusBaseline,
+		Validate:    validateIncusBaseline,
+		VerifyProof: verifyJobProof,
 	})
 	if err := root.ExecuteContext(ctx); err != nil {
 		if _, writeErr := fmt.Fprintln(os.Stderr, err); writeErr != nil {
@@ -61,6 +64,29 @@ func run() int {
 	}
 
 	return 0
+}
+
+// verifyJobProof authenticates one proof without loading controller configuration or credentials.
+func verifyJobProof(
+	ctx context.Context,
+	proofPath string,
+	publicKeyPath string,
+	expectedHostID string,
+) ([]byte, error) {
+	publicKey, err := provenancefile.LoadPublicKey(publicKeyPath)
+	if err != nil {
+		return nil, err
+	}
+	envelope, err := provenancefile.ReadEnvelope(proofPath)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := provenance.Verify(ctx, envelope, publicKey, expectedHostID)
+	if err != nil {
+		return nil, fmt.Errorf("verify job proof: %w", err)
+	}
+
+	return payload, nil
 }
 
 // validateIncusBaseline checks one rendered baseline without initializing controller runtime state.

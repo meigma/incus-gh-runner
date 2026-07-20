@@ -298,3 +298,88 @@ func TestRootCommandRejectsUnexpectedOperands(t *testing.T) {
 	require.Error(t, root.ExecuteContext(context.Background()))
 	assert.False(t, called)
 }
+
+// TestProofVerifyBypassesControllerConfiguration proves the verifier is an isolated machine interface.
+func TestProofVerifyBypassesControllerConfiguration(t *testing.T) {
+	t.Parallel()
+
+	invalidConfigPath := filepath.Join(t.TempDir(), "invalid.yaml")
+	require.NoError(t, os.WriteFile(invalidConfigPath, []byte("unknown: true\n"), 0o600))
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	controllerCalled := false
+	verifierCalled := false
+	root := NewRootCommand(Options{
+		Out:               &stdout,
+		Err:               &stderr,
+		DefaultConfigPath: invalidConfigPath,
+		Run: func(context.Context, config.Config) error {
+			controllerCalled = true
+			return nil
+		},
+		VerifyProof: func(
+			ctx context.Context,
+			proofPath string,
+			publicKeyPath string,
+			expectedHostID string,
+		) ([]byte, error) {
+			verifierCalled = true
+			require.NoError(t, ctx.Err())
+			assert.Equal(t, "job-proof.dsse.json", proofPath)
+			assert.Equal(t, "host.pub.pem", publicKeyPath)
+			assert.Equal(t, "builder-host-01", expectedHostID)
+			return []byte(`{"version":1,"host":{"id":"builder-host-01"}}`), nil
+		},
+	})
+	root.SetArgs([]string{
+		proofCommandName, "verify",
+		"--public-key", "host.pub.pem",
+		"--expected-host-id", "builder-host-01",
+		"job-proof.dsse.json",
+	})
+
+	require.NoError(t, root.ExecuteContext(context.Background()))
+	assert.True(t, verifierCalled)
+	assert.False(t, controllerCalled)
+	assert.JSONEq(t, `{"version":1,"host":{"id":"builder-host-01"}}`, stdout.String())
+	assert.Empty(t, stderr.String())
+}
+
+// TestProofVerifyRejectsMissingInputsWithoutOutput proves argument errors cannot emit unverified data.
+func TestProofVerifyRejectsMissingInputsWithoutOutput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "missing proof",
+			args: []string{proofCommandName, "verify", "--public-key", "host.pub", "--expected-host-id", "host"},
+		},
+		{
+			name: "missing public key",
+			args: []string{proofCommandName, "verify", "--expected-host-id", "host", "proof.json"},
+		},
+		{name: "missing host ID", args: []string{proofCommandName, "verify", "--public-key", "host.pub", "proof.json"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var stdout bytes.Buffer
+			called := false
+			root := NewRootCommand(Options{
+				Out: &stdout,
+				VerifyProof: func(context.Context, string, string, string) ([]byte, error) {
+					called = true
+					return []byte(`{"unverified":true}`), nil
+				},
+			})
+			root.SetArgs(tt.args)
+
+			require.Error(t, root.ExecuteContext(context.Background()))
+			assert.False(t, called)
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
