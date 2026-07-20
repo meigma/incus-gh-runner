@@ -207,11 +207,12 @@ Install the binary and base unit:
 ```sh
 sudo install -m 0755 incus-gh-runner /usr/bin/incus-gh-runner
 sudo install -m 0644 deploy/systemd/incus-gh-runner.service /etc/systemd/system/incus-gh-runner.service
+sudo install -m 0644 deploy/systemd/incus-gh-runner.tmpfiles.conf /usr/lib/tmpfiles.d/incus-gh-runner.conf
 sudo install -d -m 0755 /etc/incus-gh-runner
 sudo install -m 0644 config.yaml /etc/incus-gh-runner/config.yaml
 ```
 
-The unit runs under `DynamicUser=yes`, so `config.yaml` must remain readable by the dynamically allocated service user. Credential files remain root-only and are exposed to the service through systemd's protected credential directory.
+The unit runs under `DynamicUser=yes`, so `config.yaml` must remain readable by the dynamically allocated service user. Credential files remain root-only and are exposed to the service through systemd's protected credential directory. The tmpfiles policy does not enable diagnostics persistence; it expires files from the recommended diagnostics directory if you opt in later.
 
 ## 4. Write the configuration
 

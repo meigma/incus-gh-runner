@@ -60,8 +60,10 @@ incus:
 
 If `incus.diagnostics_dir` is unset, console captures are discarded and nothing is written to disk.
 
+The controller caps each capture at 1 MiB, marks truncated output, and retains at most 256 capture files by deleting the oldest before a new file is created. The packaged `incus-gh-runner.tmpfiles.conf` additionally removes files older than 30 days from the recommended directory. Install it as `/usr/lib/tmpfiles.d/incus-gh-runner.conf`; if you choose a different diagnostics directory, copy the policy and change its path to match. Ensure `systemd-tmpfiles-clean.timer` is enabled so expiration also runs while the controller is idle.
+
 !!! warning "Console output may contain sensitive workload content"
-    The serial console log is the guest's raw console output, including anything a running Actions job printed to it before exit. Treat diagnostics files as sensitive: restrict directory access to operators who are cleared to see job output, and rotate or delete captures on a schedule appropriate to your workload sensitivity.
+    The serial console log is the guest's raw console output, including anything a running Actions job printed to it before exit. Treat diagnostics files as sensitive and restrict directory access to operators who are cleared to see job output. Shorten the shipped 30-day expiration when your workload sensitivity requires it.
 
 For the full cleanup and metadata model behind runner VMs, see [How incus-gh-runner works](../explanation/how-it-works.md). For every configuration key, see [Configuration reference](../reference/configuration.md).
 

@@ -18,6 +18,12 @@ var (
 	errInstanceFileNotFound = errors.New("incus instance file not found")
 )
 
+const (
+	maximumGuestStatusBytes = 64 * 1024
+	maximumConsoleLogBytes  = 1024 * 1024
+	consoleTruncationMarker = "\n[incus-gh-runner: console log truncated at 1048576 bytes]\n"
+)
+
 // ConnectUnix constructs a client for a project on a local Incus Unix socket.
 func ConnectUnix(ctx context.Context, socketPath string, project string) (incusclient.InstanceServer, error) {
 	client, err := incusclient.ConnectIncusUnixWithContext(ctx, socketPath, nil)
@@ -172,9 +178,21 @@ func (c *serverClient) GetInstanceFile(ctx context.Context, name string, path st
 	}
 	defer content.Close()
 
-	data, err := io.ReadAll(content)
+	data, err := readGuestStatus(content)
 	if err != nil {
 		return nil, fmt.Errorf("read guest file: %w", err)
+	}
+
+	return data, nil
+}
+
+func readGuestStatus(reader io.Reader) ([]byte, error) {
+	data, truncated, err := readBounded(reader, maximumGuestStatusBytes)
+	if err != nil {
+		return nil, err
+	}
+	if truncated {
+		return nil, fmt.Errorf("guest file exceeds %d-byte limit", maximumGuestStatusBytes)
 	}
 
 	return data, nil
@@ -200,12 +218,44 @@ func (c *serverClient) GetInstanceConsoleLog(ctx context.Context, name string) (
 	}
 	defer content.Close()
 
-	data, err := io.ReadAll(content)
+	data, err := readConsoleLog(content)
 	if err != nil {
 		return nil, fmt.Errorf("read console log: %w", err)
 	}
 
 	return data, nil
+}
+
+func readConsoleLog(reader io.Reader) ([]byte, error) {
+	data, truncated, err := readBounded(reader, maximumConsoleLogBytes)
+	if err != nil {
+		return nil, err
+	}
+	if truncated {
+		data = append(
+			data[:maximumConsoleLogBytes-len(consoleTruncationMarker)],
+			consoleTruncationMarker...,
+		)
+	}
+
+	return data, nil
+}
+
+// readBounded reads at most limit bytes plus one byte used to detect overflow.
+func readBounded(reader io.Reader, limit int64) ([]byte, bool, error) {
+	if limit <= 0 {
+		return nil, false, errors.New("read limit must be positive")
+	}
+
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if int64(len(data)) <= limit {
+		return data, false, nil
+	}
+
+	return data[:limit], true, nil
 }
 
 // DeleteInstance deletes name and waits for completion.
