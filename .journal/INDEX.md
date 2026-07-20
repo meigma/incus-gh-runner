@@ -19,3 +19,4 @@
 | 015 | 2026-07-20 | Implement job machine proof phase 1 | complete | Implemented and merged the locally verifiable job machine proof format, signer, verifier, configuration, and documentation through PR #36. |
 | 016 | 2026-07-20 | Assess bootc image migration | complete | Proved bootc feasible on x86_64/KVM, rejected the migration, and retained the distrobuilder-based Ubuntu reference-image plan. |
 | 017 | 2026-07-20 | Implement job machine proof phase 2 | complete | Landed and proved the ownership-fenced host-to-VM proof channel through PR #37 on Incus 7.2. |
+| 018 | 2026-07-20 | Implement job machine proof phase 3 | in-progress | Review Session 014's plan and begin the GitHub job/JIT correlation and signing-coordinator phase. |
