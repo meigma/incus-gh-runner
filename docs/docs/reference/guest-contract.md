@@ -122,7 +122,9 @@ restarted and preflight succeeds again.
 
 ## Diagnostics capture
 
-When `incus.diagnostics_dir` is configured, the controller captures the instance's serial console log during deletion, after ensuring the instance is stopped and before removing it, and writes it to `<diagnostics_dir>/<runnerID>.console.log`, mode `0600`, inside a directory created with mode `0700`. When `incus.diagnostics_dir` is empty, no diagnostics file is written; captured console output is discarded rather than persisted.
+When `incus.diagnostics_dir` is configured, the controller captures the instance's serial console log during deletion, after ensuring the instance is stopped and before removing it. The read is capped at 1 MiB; oversized output is truncated within that cap and ends with an explicit marker. The controller safely creates `<diagnostics_dir>/<runnerID>.console.log` without replacing an existing path, mode `0600`, inside a directory created with mode `0700`. It retains at most 256 capture files, removing the oldest before a new capture is written. When `incus.diagnostics_dir` is empty, no diagnostics file is written; captured console output is discarded rather than persisted.
+
+Guest status observations are capped at 64 KiB. Because partial JSON is not authoritative, an oversized status document is rejected instead of truncated and the inventory observation fails closed.
 
 !!! warning "Console diagnostics may contain sensitive output"
     Captured console content may include sensitive workload output. Diagnostics files must be handled with the same care as other job-adjacent artifacts.

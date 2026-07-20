@@ -11,7 +11,8 @@ incus:
   profiles: [github-runner]
   owner: incus-gh-runner-production
   bootstrap_timeout: 5m
-  diagnostics_dir: /var/log/incus-gh-runner/runners
+  # Diagnostics persistence is opt-in; see the operations guide before enabling it.
+  diagnostics_dir: ""
 capacity:
   min_runners: 1
   max_runners: 4

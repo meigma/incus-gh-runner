@@ -44,10 +44,12 @@ Duration values use Go duration syntax (for example `30s`, `5m`).
 | `incus.profiles` | list of strings | `[]` | Optional. No empty entries. Profiles must already exist. Their effective configuration and devices are pinned during preflight and materialized directly onto each VM. When omitted, Incus image/default profile selection is reproduced before pinning. |
 | `incus.owner` | string | — | Required. Non-empty. Exact cleanup selector written to every instance this process manages; not an authorization boundary. |
 | `incus.bootstrap_timeout` | duration | `5m` | Must be greater than `0`. |
-| `incus.diagnostics_dir` | string | `""` | Optional. Directory for terminal-runner serial console diagnostics. |
+| `incus.diagnostics_dir` | string | `""` | Optional. Directory for terminal-runner serial console diagnostics. Persistence is disabled when empty. |
 
 !!! warning "Sensitive console diagnostics"
     Content written to `incus.diagnostics_dir` can include workload console output. Restrict access to this directory accordingly.
+
+Each capture is limited to 1 MiB and the directory sink retains at most 256 capture files. The packaged tmpfiles policy expires files older than 30 days from `/var/log/incus-gh-runner/diagnostics`; deployments using another directory must update that policy path.
 
 ### `capacity`
 
