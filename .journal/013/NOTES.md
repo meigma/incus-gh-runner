@@ -558,3 +558,55 @@ exact disposable server `sv_x3egaQZVQ046Q`, and confirmed its exact-ID lookup
 returned `404 NotFound`. Exact-head artifacts remain under `/tmp` for a fresh
 host run after GitHub recovers; runtime was about 31 minutes, approximately
 `$0.27` at the quoted `$0.52/hour` before provider rounding.
+
+## 2026-07-19 21:37 — Slice 3B exact-head live gates complete
+
+GitHub Actions recovered and a raw scale-set probe first confirmed message
+delivery with workflow run 29715856422 before any paid-host acceptance work was
+trusted. Provisioned fresh Latitude server `sv_y3ZXaDErW0p2m` in MEX2, installed
+Incus 7.0.1, imported the same checksum-verified exact image fingerprint
+`d31a6f9cbdfbf48c31843ead51eb2365e0ccdf222b8bdb2b7faa92145550ad64`, and
+deployed the exact review binary. The GitHub token again existed only in the
+systemd manager environment and was never written to disk.
+
+The primary queue/cancel fence case passed on commit
+`40506ca8097953774d4106c723c0fc237cbe245a`. Active workflow run 29716167138
+remained in progress on runner
+`incus-gh-runner-667b7bef-062c-4d97-9abf-89cdc06122af` while queued run
+29716222144 was canceled without a runner identity. The controller removed and
+confirmed absence of the excess runner's exact GitHub registration, retained
+its VM until guest terminal, then deleted it. The active workflow stayed on its
+original runner and completed successfully; final owned inventory returned to
+zero.
+
+An abrupt controller crash exposed an adjacent recovery defect: GitHub retained
+the old message session temporarily, and repeated `409 active session`
+responses exhausted systemd's start limit. Moved initial message-session
+acquisition into the existing capped in-process reconnect loop, added coverage
+for the initial-open failure, and committed the fix as
+`1430eed1608d18083464614a66247ef66498800a`
+(`fix(github): retry initial message session`). Focused race tests and the full
+`moon run root:check` gate passed, and all applicable hosted checks on that
+exact head are green.
+
+The patched binary then passed the crash-recovery proof: one forced SIGKILL
+caused one systemd restart, the replacement process stayed alive through
+`409` responses with 1/2/4/5-second capped backoff, and the same PID acquired a
+message session about 13 seconds later without consuming another restart.
+Successful exact-head workflow run 29717076777 supplied the cold-start
+inventory proof. While its job and QEMU process were active, malformed guest
+status forced fail-closed inventory uncertainty and the controller was
+restarted. PID `265503` remained active, retried initial inventory at
+1/2/4/5 seconds without mutation, and resumed reconciliation after valid status
+was restored. The workflow and VM remained running throughout, the workflow
+completed successfully, owned inventory returned to zero, and the unowned
+sentinel remained untouched.
+
+No reusable acceptance framework or probe source was added. PR #31 now records
+the protocol, local, hosted, and live evidence and remains draft for human
+review. Stopped the controller, removed the systemd credential, deleted the
+test instances, exact image, and `runner-test` project, then destroyed exact
+Latitude server `sv_y3ZXaDErW0p2m`. Its exact-ID lookup returns `404 NotFound`
+and the provider project server list is empty. The host existed for about 35
+minutes, approximately `$0.30` at the quoted `$0.52/hour` before provider
+rounding.
