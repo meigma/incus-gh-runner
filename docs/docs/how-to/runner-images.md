@@ -85,6 +85,22 @@ sha256sum --check incus-gh-runner-ubuntu-24.04-x86_64.tar.xz.sha256
 
 Import the resulting archive the same way as a released image (see above), or validate it first.
 
+### Build integrity and reproducibility
+
+The reference-image build is networked and non-hermetic. It resolves Ubuntu
+packages from the configured live `noble` repositories and downloads the
+Actions Runner archive while the build is running. The repository pins the
+Actions Runner version and archive checksum, and mise pins `distrobuilder`, but
+the Ubuntu repository snapshot and complete resolved package set are not yet
+pinned or recorded. Building without network access is not supported.
+
+Consequently, two builds from the same source commit may contain different
+Ubuntu package revisions and are not expected to produce byte-identical image
+archives. A release checksum and GitHub build attestation bind an operator to
+the exact archive produced by the release workflow; they do not establish a
+reproducible or offline build. Retain that checksum, attestation, and archive as
+one set when promoting an image.
+
 ### Root disk growth
 
 The reference archive starts with an 8 GiB virtual disk. On first boot,
