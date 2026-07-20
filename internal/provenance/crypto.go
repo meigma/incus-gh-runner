@@ -27,6 +27,12 @@ type Signer struct {
 	envelope *dsse.EnvelopeSigner
 }
 
+// EnvelopeVerifier authenticates proofs from one enrolled host key and identity.
+type EnvelopeVerifier struct {
+	publicKey      ed25519.PublicKey
+	expectedHostID string
+}
+
 // NewSigner constructs a DSSE signer from one Ed25519 private key.
 func NewSigner(privateKey ed25519.PrivateKey) (*Signer, error) {
 	if len(privateKey) != ed25519.PrivateKeySize {
@@ -46,6 +52,21 @@ func NewSigner(privateKey ed25519.PrivateKey) (*Signer, error) {
 	}
 
 	return &Signer{envelope: envelope}, nil
+}
+
+// NewEnvelopeVerifier constructs a reusable verifier for one host enrollment.
+func NewEnvelopeVerifier(publicKey ed25519.PublicKey, expectedHostID string) (*EnvelopeVerifier, error) {
+	if len(publicKey) != ed25519.PublicKeySize {
+		return nil, errors.New("Ed25519 public key has an invalid size")
+	}
+	if err := validateIdentity("expected host ID", expectedHostID); err != nil {
+		return nil, err
+	}
+
+	return &EnvelopeVerifier{
+		publicKey:      bytes.Clone(publicKey),
+		expectedHostID: expectedHostID,
+	}, nil
 }
 
 // Sign validates and signs one complete version 1 payload.
@@ -76,6 +97,23 @@ func (s *Signer) Sign(ctx context.Context, payload Payload) ([]byte, error) {
 	}
 
 	return encodedEnvelope, nil
+}
+
+// Verify authenticates one envelope and returns its validated payload.
+func (v *EnvelopeVerifier) Verify(ctx context.Context, encodedEnvelope []byte) (Payload, error) {
+	if v == nil {
+		return Payload{}, errors.New("proof verifier is not configured")
+	}
+	verifiedPayload, err := Verify(ctx, encodedEnvelope, v.publicKey, v.expectedHostID)
+	if err != nil {
+		return Payload{}, err
+	}
+	var payload Payload
+	if decodeErr := decodeStrictJSON(verifiedPayload, &payload); decodeErr != nil {
+		return Payload{}, fmt.Errorf("decode verified proof payload: %w", decodeErr)
+	}
+
+	return payload, nil
 }
 
 // ParsePrivateKeyPEM parses exactly one PKCS#8 PEM-encoded Ed25519 private key.

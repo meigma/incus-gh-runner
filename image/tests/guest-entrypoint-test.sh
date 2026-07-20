@@ -3,9 +3,11 @@ set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 guest_entrypoint="${repo_root}/image/guest/incus-gh-runner-guest"
+proof_helper="${repo_root}/image/guest/incus-gh-runner-proof"
 bash -n \
   "${repo_root}/image/build.sh" \
   "$guest_entrypoint" \
+  "$proof_helper" \
   "${repo_root}/image/validate-incus.sh"
 grep -Fq '"http:distrobuilder"' "${repo_root}/mise.toml"
 grep -Fq 'command -v distrobuilder' "${repo_root}/image/build.sh"
@@ -16,6 +18,8 @@ grep -Fq -- '- cloud-initramfs-growroot' "${repo_root}/image/image.yaml"
 grep -Fq 'defaults,x-systemd.growfs' "${repo_root}/image/image.yaml"
 ! grep -Fq 'image info "$alias" --format' "${repo_root}/image/validate-incus.sh"
 grep -Fq 'minimum_server_version=7.0' "${repo_root}/image/validate-incus.sh"
+grep -Fq 'd /run/incus-gh-runner 0700 root root -' "${repo_root}/image/guest/incus-gh-runner.conf"
+grep -Fq 'd /run/incus-gh-runner-proof 0755 root root -' "${repo_root}/image/guest/incus-gh-runner.conf"
 
 set +e
 validation_usage="$(${repo_root}/image/validate-incus.sh 2>&1)"
@@ -104,4 +108,54 @@ POWEROFF
 run_case valid '{"version":1,"jit_config":"test-jit-secret"}' success
 run_case invalid '{"version":1,"jit_config":"test-jit-secret","unexpected":true}' failure
 
-printf 'guest entrypoint contract tests passed\n'
+file_mode() {
+  if stat -c '%a' "$1" >/dev/null 2>&1; then
+    stat -c '%a' "$1"
+  else
+    stat -f '%Lp' "$1"
+  fi
+}
+
+proof_root="${test_root}/proof"
+proof_output="${test_root}/retrieved-proof.json"
+mkdir -p "$proof_root"
+cat >"${proof_root}/job-proof.dsse.json" <<'PROOF'
+{"payloadType":"application/vnd.meigma.incus-gh-runner.job-provenance.v1+json","payload":"dGVzdA==","signatures":[{"keyid":"sha256:test","sig":"dGVzdA=="}]}
+PROOF
+: >"${proof_root}/job-proof.ready"
+PROOF_ROOT="$proof_root" "$proof_helper" --output "$proof_output" --timeout 1s
+cmp "${proof_root}/job-proof.dsse.json" "$proof_output"
+[[ "$(file_mode "$proof_output")" == 600 ]]
+
+rm -f -- "${proof_root}/job-proof.ready" "$proof_output"
+set +e
+timeout_output="$(PROOF_ROOT="$proof_root" "$proof_helper" --output "$proof_output" --timeout 1s 2>&1)"
+timeout_exit="$?"
+set -e
+[[ "$timeout_exit" -ne 0 ]]
+grep -Fq 'timed out waiting for job machine proof' <<<"$timeout_output"
+[[ ! -e "$proof_output" ]]
+
+printf '{"malformed":true}\n' >"${proof_root}/job-proof.dsse.json"
+: >"${proof_root}/job-proof.ready"
+set +e
+malformed_output="$(PROOF_ROOT="$proof_root" "$proof_helper" --output "$proof_output" --timeout 1s 2>&1)"
+malformed_exit="$?"
+set -e
+[[ "$malformed_exit" -ne 0 ]]
+grep -Fq 'not a DSSE-shaped JSON document' <<<"$malformed_output"
+[[ ! -e "$proof_output" ]]
+
+rm -f -- "${proof_root}/job-proof.ready"
+PROOF_ROOT="$proof_root" "$proof_helper" --output "$proof_output" --timeout 30s >/dev/null 2>&1 &
+helper_pid="$!"
+sleep 0.1
+kill -TERM "$helper_pid"
+set +e
+wait "$helper_pid"
+interrupted_exit="$?"
+set -e
+[[ "$interrupted_exit" -ne 0 ]]
+[[ ! -e "$proof_output" ]]
+
+printf 'guest entrypoint and proof helper contract tests passed\n'

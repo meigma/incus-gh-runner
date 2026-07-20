@@ -76,6 +76,11 @@ files:
     source: image/guest/incus-gh-runner-guest
     mode: 0755
 
+  - path: /usr/local/bin/incus-gh-runner-proof
+    generator: copy
+    source: image/guest/incus-gh-runner-proof
+    mode: 0755
+
   - path: /usr/lib/systemd/system/incus-gh-runner-guest.service
     generator: copy
     source: image/guest/incus-gh-runner-guest.service

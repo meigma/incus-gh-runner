@@ -15,6 +15,23 @@ The controller writes two files into this directory through the Incus agent, in 
 
 A `path` unit watches for `payload.ready` and starts the one-shot guest service once it exists. The guest service requires both files to be present, parses and validates `payload.json`, and deletes both files before the Actions Runner process starts. If either file is missing when the service starts, the guest treats this as a fatal startup error, writes an error line to the serial console, and exits.
 
+Machine proofs use a separate public staging directory so the root-only JIT
+payload boundary does not change. `/run/incus-gh-runner-proof/` is `root:root`
+mode `0755`; the controller writes `job-proof.dsse.json` first and
+`job-proof.ready` last, both `root:root` mode `0444`. The ready marker is the
+commit point and a committed proof is immutable.
+
+An unprivileged workflow retrieves the committed envelope with:
+
+```sh
+incus-gh-runner-proof --output <path> [--timeout 60s]
+```
+
+The helper waits for readiness, rejects a missing, empty, or malformed
+DSSE-shaped document, and copies the envelope to the selected path with mode
+`0600`. It does not verify the signature; external verification uses the
+enrolled host public key. A timeout or malformed committed proof exits non-zero.
+
 ## Payload schema (`payload.json`)
 
 ```json
