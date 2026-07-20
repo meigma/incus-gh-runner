@@ -530,3 +530,31 @@ passed, the new controller cases passed 50 repetitions, and the full
 `40506ca` (`fix(controller): fence idle runners before scale-down`), pushed the
 branch, and opened draft PR #31. Hosted and exact-head live fence/restart gates
 remain pending; no live fence result is claimed by this checkpoint.
+
+## 2026-07-19 17:10 — Slice 3B live gate paused for advertised GitHub Actions outage
+
+All applicable hosted checks for exact PR #31 head
+`40506ca8097953774d4106c723c0fc237cbe245a` are green. Exact-head reference
+image workflow run 29708275005 also completed successfully. Its downloaded
+archive passed the published checksum and imported into Incus as fingerprint
+`d31a6f9cbdfbf48c31843ead51eb2365e0ccdf222b8bdb2b7faa92145550ad64`.
+The exact controller binary reported version `40506ca`, the complete commit,
+and its explicit build timestamp on the disposable host.
+
+Provisioned Latitude server `sv_x3egaQZVQ046Q` in MEX2 with `lsh`, installed
+Incus 7.0.1, staged the exact-head controller and image, and passed the token
+only through the systemd manager environment. The live lifecycle scenario
+could not begin because GitHub's private runner-registration endpoint returned
+500, 503 (`github-launch service unavailable`), and 504 responses or stalled.
+The same upstream scale-set probe reproduced the failure locally while
+ordinary GitHub API requests from both systems remained healthy.
+
+GitHub Status advertised a critical GitHub Actions incident beginning at
+23:34 UTC, identified a cause at 23:57 UTC, and later expanded the notice to
+degraded API availability. This is retained as an external acceptance blocker,
+not treated as a Slice 3B controller defect. No live fence, cancellation, or
+restart result is claimed. Stopped the controller and orphaned probe, destroyed
+exact disposable server `sv_x3egaQZVQ046Q`, and confirmed its exact-ID lookup
+returned `404 NotFound`. Exact-head artifacts remain under `/tmp` for a fresh
+host run after GitHub recovers; runtime was about 31 minutes, approximately
+`$0.27` at the quoted `$0.52/hour` before provider rounding.
