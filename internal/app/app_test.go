@@ -89,6 +89,9 @@ func TestApplicationBoundsShutdownWhenDemandSourceIgnoresCancellation(t *testing
 // newApplication constructs an application with fast deterministic test configuration.
 func newApplication(t *testing.T, options app.Options) *app.Application {
 	t.Helper()
+	if options.RunnerFencer == nil {
+		options.RunnerFencer = fencerFunc(func(context.Context, string) error { return nil })
+	}
 
 	options.Config = config.Config{
 		Capacity: config.Capacity{MinRunners: 0, MaxRunners: 4},
@@ -126,6 +129,14 @@ type demandSourceFunc func(context.Context, func(controller.Demand)) error
 // Run invokes the adapted demand-source function.
 func (f demandSourceFunc) Run(ctx context.Context, publish func(controller.Demand)) error {
 	return f(ctx, publish)
+}
+
+// fencerFunc adapts a function to the controller registration-fence port.
+type fencerFunc func(context.Context, string) error
+
+// Fence invokes f for runnerID.
+func (f fencerFunc) Fence(ctx context.Context, runnerID string) error {
+	return f(ctx, runnerID)
 }
 
 // fakeBackend provides the in-memory runner lifecycle used by application tests.

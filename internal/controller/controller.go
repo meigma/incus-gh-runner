@@ -19,6 +19,9 @@ func New(options Options) (*Controller, error) {
 	if options.Backend == nil {
 		return nil, errors.New("backend is required")
 	}
+	if options.Fencer == nil {
+		return nil, errors.New("runner fencer is required")
+	}
 	if options.Demand == nil {
 		return nil, errors.New("demand channel is required")
 	}
@@ -55,13 +58,9 @@ func New(options Options) (*Controller, error) {
 
 // Run inventories owned runners and reconciles until ctx is canceled.
 func (c *Controller) Run(ctx context.Context) error {
-	runners, err := c.listOwned(ctx)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil
-		}
-
-		return err
+	runners := c.waitForInitialInventory(ctx)
+	if ctx.Err() != nil {
+		return nil
 	}
 
 	state, err := newReconcileState(c.options, runners)
@@ -108,17 +107,35 @@ func (c *Controller) Run(ctx context.Context) error {
 	}
 }
 
-// listOwned retrieves the initial owned-runner inventory within the operation timeout.
-func (c *Controller) listOwned(ctx context.Context) ([]Runner, error) {
-	operationContext, cancel := context.WithTimeout(ctx, c.options.OperationTimeout)
-	defer cancel()
+// waitForInitialInventory retries the startup snapshot without permitting mutation from uncertain state.
+func (c *Controller) waitForInitialInventory(ctx context.Context) []Runner {
+	delay := time.Duration(0)
+	for {
+		operationContext, cancel := context.WithTimeout(ctx, c.options.OperationTimeout)
+		runners, err := c.options.Backend.ListOwned(operationContext)
+		cancel()
+		if err == nil {
+			return runners
+		}
+		if ctx.Err() != nil {
+			return nil
+		}
 
-	runners, err := c.options.Backend.ListOwned(operationContext)
-	if err != nil {
-		return nil, fmt.Errorf("list owned runners: %w", err)
+		delay = nextFailureDelay(delay, c.options.RetryInitial, c.options.RetryMaximum)
+		c.options.Logger.WarnContext(
+			ctx,
+			"initial runner inventory failed; retrying",
+			"retry_after", delay,
+			"error", fmt.Errorf("list owned runners: %w", err),
+		)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil
+		case <-timer.C:
+		}
 	}
-
-	return runners, nil
 }
 
 // runWorker executes backend operations until the work channel closes.
@@ -138,6 +155,8 @@ func (c *Controller) runWorker(
 			result.runners, result.err = c.options.Backend.ListOwned(operationContext)
 		case operationCreate:
 			result.runner, result.err = c.options.Backend.Create(operationContext)
+		case operationFence:
+			result.err = c.options.Fencer.Fence(operationContext, item.runnerID)
 		case operationDelete:
 			result.err = c.options.Backend.Delete(operationContext, item.runnerID)
 		}
@@ -181,14 +200,16 @@ type operationKind string
 const (
 	operationList   operationKind = "list"
 	operationCreate operationKind = "create"
+	operationFence  operationKind = "fence"
 	operationDelete operationKind = "delete"
 )
 
 // operation describes one scheduled backend lifecycle action.
 type operation struct {
-	id       uint64
-	kind     operationKind
-	runnerID string
+	id         uint64
+	kind       operationKind
+	runnerID   string
+	generation uint64
 }
 
 // operationResult carries a backend lifecycle outcome to the reconciler.
@@ -216,9 +237,13 @@ type reconcileState struct {
 	options        Options
 	runners        map[string]Runner
 	operations     map[uint64]operation
-	deleting       map[string]uint64
+	runnerOps      map[string]uint64
 	failures       map[failureKey]failureBackoff
+	created        map[string]uint64
+	busyRunners    map[string]struct{}
+	fencedRunners  map[string]struct{}
 	inventoryStale bool
+	generation     uint64
 	target         int
 	nextID         uint64
 }
@@ -226,12 +251,15 @@ type reconcileState struct {
 // newReconcileState validates inventory and creates the initial reconciliation state.
 func newReconcileState(options Options, runners []Runner) (*reconcileState, error) {
 	state := &reconcileState{
-		options:    options,
-		runners:    make(map[string]Runner, len(runners)),
-		operations: make(map[uint64]operation),
-		deleting:   make(map[string]uint64),
-		failures:   make(map[failureKey]failureBackoff),
-		target:     options.MinRunners,
+		options:       options,
+		runners:       make(map[string]Runner, len(runners)),
+		operations:    make(map[uint64]operation),
+		runnerOps:     make(map[string]uint64),
+		failures:      make(map[failureKey]failureBackoff),
+		created:       make(map[string]uint64),
+		busyRunners:   make(map[string]struct{}),
+		fencedRunners: make(map[string]struct{}),
+		target:        options.MinRunners,
 	}
 
 	for _, runner := range runners {
@@ -247,8 +275,20 @@ func newReconcileState(options Options, runners []Runner) (*reconcileState, erro
 // setDemand derives the bounded capacity target from the latest demand.
 func (s *reconcileState) setDemand(demand Demand) {
 	assignedJobs := max(demand.AssignedJobs, 0)
+	s.generation = demand.Generation
+	s.busyRunners = make(map[string]struct{}, len(demand.BusyRunners))
+	for _, runnerID := range demand.BusyRunners {
+		if runnerID != "" {
+			s.busyRunners[runnerID] = struct{}{}
+		}
+	}
 	s.target = min(s.options.MaxRunners, s.options.MinRunners+assignedJobs)
-	s.options.Logger.Info("runner demand updated", "assigned_jobs", assignedJobs, "target", s.target)
+	s.options.Logger.Info(
+		"runner demand updated",
+		"assigned_jobs", assignedJobs,
+		"target", s.target,
+		"generation", s.generation,
+	)
 }
 
 // refresh schedules a new owned-runner inventory when no lifecycle operation is in flight.
@@ -274,7 +314,7 @@ func (s *reconcileState) reconcile(work chan<- operation) {
 
 	live := s.liveCapacity()
 	for live < s.target {
-		if !s.trySchedule(work, operation{kind: operationCreate}) {
+		if !s.trySchedule(work, operation{kind: operationCreate, generation: s.generation}) {
 			break
 		}
 		live++
@@ -282,7 +322,7 @@ func (s *reconcileState) reconcile(work chan<- operation) {
 
 	for live > s.target {
 		id, ok := s.idleRunner()
-		if !ok || !s.trySchedule(work, operation{kind: operationDelete, runnerID: id}) {
+		if !ok || !s.trySchedule(work, operation{kind: operationFence, runnerID: id}) {
 			break
 		}
 		live--
@@ -295,7 +335,7 @@ func (s *reconcileState) trySchedule(work chan<- operation, item operation) bool
 		return false
 	}
 	if item.runnerID != "" {
-		if _, exists := s.deleting[item.runnerID]; exists {
+		if _, exists := s.runnerOps[item.runnerID]; exists {
 			return false
 		}
 	}
@@ -306,7 +346,7 @@ func (s *reconcileState) trySchedule(work chan<- operation, item operation) bool
 	case work <- item:
 		s.operations[item.id] = item
 		if item.runnerID != "" {
-			s.deleting[item.runnerID] = item.id
+			s.runnerOps[item.runnerID] = item.id
 		}
 		s.options.Logger.Info(
 			"runner operation scheduled",
@@ -328,7 +368,7 @@ func (s *reconcileState) apply(result operationResult) bool {
 	}
 	delete(s.operations, item.id)
 	if item.runnerID != "" {
-		delete(s.deleting, item.runnerID)
+		delete(s.runnerOps, item.runnerID)
 	}
 
 	if result.err != nil {
@@ -344,6 +384,7 @@ func (s *reconcileState) apply(result operationResult) bool {
 			return false
 		}
 		s.runners = inventory
+		s.pruneRunnerKnowledge(inventory)
 		s.inventoryStale = false
 	case operationCreate:
 		if err := validateRunner(result.runner); err != nil {
@@ -351,8 +392,14 @@ func (s *reconcileState) apply(result operationResult) bool {
 			return false
 		}
 		s.runners[result.runner.ID] = result.runner
+		s.created[result.runner.ID] = item.generation
+	case operationFence:
+		s.fencedRunners[item.runnerID] = struct{}{}
 	case operationDelete:
 		delete(s.runners, item.runnerID)
+		delete(s.created, item.runnerID)
+		delete(s.busyRunners, item.runnerID)
+		delete(s.fencedRunners, item.runnerID)
 	}
 	delete(s.failures, keyFor(item))
 
@@ -367,6 +414,20 @@ func (s *reconcileState) apply(result operationResult) bool {
 		"runner_id", runnerID,
 	)
 	return true
+}
+
+// pruneRunnerKnowledge drops process-local authority for runners absent from a fresh backend snapshot.
+func (s *reconcileState) pruneRunnerKnowledge(inventory map[string]Runner) {
+	for runnerID := range s.created {
+		if _, exists := inventory[runnerID]; !exists {
+			delete(s.created, runnerID)
+		}
+	}
+	for runnerID := range s.fencedRunners {
+		if _, exists := inventory[runnerID]; !exists {
+			delete(s.fencedRunners, runnerID)
+		}
+	}
 }
 
 // retryBlocked reports whether item is still inside its failure cooldown.
@@ -436,7 +497,10 @@ func validatedInventory(runners []Runner) (map[string]Runner, error) {
 func (s *reconcileState) liveCapacity() int {
 	live := 0
 	for id, runner := range s.runners {
-		if _, deleting := s.deleting[id]; deleting {
+		if _, running := s.runnerOps[id]; running {
+			continue
+		}
+		if _, fenced := s.fencedRunners[id]; fenced {
 			continue
 		}
 		if runner.State != RunnerTerminal {
@@ -452,13 +516,23 @@ func (s *reconcileState) liveCapacity() int {
 	return live
 }
 
-// idleRunner selects an idle runner that is not already being deleted.
+// idleRunner selects an authoritatively idle scale-down candidate.
 func (s *reconcileState) idleRunner() (string, bool) {
 	for id, runner := range s.runners {
-		if runner.State != RunnerIdle {
+		if runner.State != RunnerIdle && runner.State != RunnerReady {
 			continue
 		}
-		if _, deleting := s.deleting[id]; !deleting {
+		if _, busy := s.busyRunners[id]; busy {
+			continue
+		}
+		createdGeneration, created := s.created[id]
+		if !created || createdGeneration != s.generation {
+			continue
+		}
+		if _, fenced := s.fencedRunners[id]; fenced {
+			continue
+		}
+		if _, running := s.runnerOps[id]; !running {
 			return id, true
 		}
 	}
@@ -472,7 +546,7 @@ func validateRunner(runner Runner) error {
 		return errors.New("runner ID is required")
 	}
 	switch runner.State {
-	case RunnerProvisioning, RunnerIdle, RunnerBusy, RunnerTerminal:
+	case RunnerProvisioning, RunnerReady, RunnerIdle, RunnerBusy, RunnerTerminal:
 		return nil
 	default:
 		return fmt.Errorf("runner %q has unknown state %q", runner.ID, runner.State)

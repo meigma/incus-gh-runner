@@ -193,6 +193,186 @@ func TestControllerPreservesActiveRunnersDuringUncertainInventory(t *testing.T) 
 	require.NoError(t, receiveError(t, errCh))
 }
 
+func TestControllerFencesCurrentGenerationReadyRunnerAfterDemandCancellation(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	backend.createState = controller.RunnerReady
+	fenced := make(chan string, 2)
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{
+		Workers: 1,
+		Fencer: fencerFunc(func(_ context.Context, runnerID string) error {
+			fenced <- runnerID
+			return nil
+		}),
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	mailbox.Publish(controller.Demand{AssignedJobs: 1, Generation: 1})
+	require.Eventually(t, func() bool {
+		return backend.hasRunner("runner-1")
+	}, time.Second, time.Millisecond, "expected demand to create one ready runner")
+
+	mailbox.Publish(controller.Demand{Generation: 1})
+	require.Eventually(t, func() bool {
+		return len(fenced) == 1
+	}, time.Second, time.Millisecond, "expected canceled demand to fence the ready runner")
+	assert.Equal(t, "runner-1", <-fenced)
+	assert.Never(t, func() bool {
+		return backend.deleteAttempts("runner-1") != 0
+	}, 40*time.Millisecond, 2*time.Millisecond, "fencing alone must not terminate the runner")
+
+	backend.setRunnerState("runner-1", controller.RunnerTerminal)
+	require.Eventually(t, func() bool {
+		return !backend.hasRunner("runner-1")
+	}, time.Second, time.Millisecond, "expected terminal fenced runner cleanup")
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
+func TestControllerPreservesReadyRunnerAfterJobStarted(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	backend.createState = controller.RunnerReady
+	fenced := make(chan string, 1)
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{
+		Workers: 1,
+		Fencer: fencerFunc(func(_ context.Context, runnerID string) error {
+			fenced <- runnerID
+			return nil
+		}),
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	mailbox.Publish(controller.Demand{AssignedJobs: 1, Generation: 3})
+	require.Eventually(t, func() bool {
+		return backend.hasRunner("runner-1")
+	}, time.Second, time.Millisecond, "expected one current-generation runner")
+	mailbox.Publish(controller.Demand{Generation: 3, BusyRunners: []string{"runner-1"}})
+	assert.Never(t, func() bool {
+		return len(fenced) != 0
+	}, 40*time.Millisecond, 2*time.Millisecond, "JobStarted authority must protect the busy runner")
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
+func TestControllerPreservesRestartReconstructedReadyRunner(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend(controller.Runner{ID: "existing", State: controller.RunnerReady})
+	fenced := make(chan string, 1)
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{
+		Workers: 1,
+		Fencer: fencerFunc(func(_ context.Context, runnerID string) error {
+			fenced <- runnerID
+			return nil
+		}),
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	assert.Never(t, func() bool {
+		return len(fenced) != 0
+	}, 40*time.Millisecond, 2*time.Millisecond, "restart-reconstructed readiness must remain ambiguous")
+	assert.True(t, backend.hasRunner("existing"))
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
+func TestControllerInvalidatesReadyAuthorityAfterMessageSessionChange(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	backend.createState = controller.RunnerReady
+	fenced := make(chan string, 1)
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{
+		Workers: 1,
+		Fencer: fencerFunc(func(_ context.Context, runnerID string) error {
+			fenced <- runnerID
+			return nil
+		}),
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	mailbox.Publish(controller.Demand{AssignedJobs: 1, Generation: 1})
+	require.Eventually(t, func() bool {
+		return backend.hasRunner("runner-1")
+	}, time.Second, time.Millisecond, "expected one runner from the first message session")
+	mailbox.Publish(controller.Demand{Generation: 2})
+	assert.Never(t, func() bool {
+		return len(fenced) != 0
+	}, 40*time.Millisecond, 2*time.Millisecond, "a reconnect must invalidate process-local idle authority")
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
+func TestControllerKeepsCreateBoundToSchedulingMessageSession(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	backend.createState = controller.RunnerReady
+	gate := make(chan struct{})
+	backend.createGate = gate
+	fenced := make(chan string, 1)
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{
+		Workers: 1,
+		Fencer: fencerFunc(func(_ context.Context, runnerID string) error {
+			fenced <- runnerID
+			return nil
+		}),
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	mailbox.Publish(controller.Demand{AssignedJobs: 1, Generation: 1})
+	require.Eventually(t, func() bool {
+		return backend.concurrentCreates() == 1
+	}, time.Second, time.Millisecond, "expected create under the first message session")
+	mailbox.Publish(controller.Demand{Generation: 2})
+	close(gate)
+	require.Eventually(t, func() bool {
+		return backend.hasRunner("runner-1")
+	}, time.Second, time.Millisecond, "expected the in-flight create to finish")
+	assert.Never(t, func() bool {
+		return len(fenced) != 0
+	}, 40*time.Millisecond, 2*time.Millisecond, "reconnect during create must invalidate its idle authority")
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
+func TestControllerRetriesUncertainInitialInventory(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	backend.setListFailures(2)
+	mailbox := controller.NewMailbox()
+	ctrl := newController(t, backend, mailbox, controller.Options{Workers: 1})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := runController(ctx, ctrl)
+
+	mailbox.Publish(controller.Demand{AssignedJobs: 1, Generation: 1})
+	require.Eventually(t, func() bool {
+		return backend.listAttempts() >= 3 && backend.runnerCount() == 1
+	}, time.Second, time.Millisecond, "expected startup inventory to recover before mutation")
+
+	cancel()
+	require.NoError(t, receiveError(t, errCh))
+}
+
 func TestControllerAppliesMinimumAndMaximumCapacity(t *testing.T) {
 	t.Parallel()
 
@@ -255,16 +435,37 @@ func TestControllerPreservesBusyCapacityWhileScalingDown(t *testing.T) {
 
 	backend := newFakeBackend(
 		controller.Runner{ID: "busy", State: controller.RunnerBusy},
-		controller.Runner{ID: "idle", State: controller.RunnerIdle},
 	)
+	fenced := make(chan string, 1)
 	mailbox := controller.NewMailbox()
-	ctrl := newController(t, backend, mailbox, controller.Options{Workers: 1})
+	ctrl := newController(t, backend, mailbox, controller.Options{
+		Workers: 1,
+		Fencer: fencerFunc(func(_ context.Context, runnerID string) error {
+			fenced <- runnerID
+			backend.setRunnerState(runnerID, controller.RunnerTerminal)
+			return nil
+		}),
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := runController(ctx, ctrl)
 
+	mailbox.Publish(controller.Demand{
+		AssignedJobs: 2,
+		Generation:   1,
+		BusyRunners:  []string{"busy"},
+	})
 	require.Eventually(t, func() bool {
-		return backend.hasRunner("busy") && !backend.hasRunner("idle")
+		return backend.hasRunner("runner-1")
+	}, time.Second, time.Millisecond, "expected a current-generation idle runner")
+	mailbox.Publish(controller.Demand{
+		AssignedJobs: 1,
+		Generation:   1,
+		BusyRunners:  []string{"busy"},
+	})
+	require.Eventually(t, func() bool {
+		return backend.hasRunner("busy") && !backend.hasRunner("runner-1")
 	}, time.Second, time.Millisecond, "expected only idle excess capacity to be removed")
+	assert.Equal(t, "runner-1", <-fenced)
 
 	cancel()
 	require.NoError(t, receiveError(t, errCh))
@@ -390,9 +591,16 @@ func newController(
 	overrides controller.Options,
 ) *controller.Controller {
 	t.Helper()
+	defaultFencer := fencerFunc(func(_ context.Context, runnerID string) error {
+		if fake, ok := backend.(*fakeBackend); ok {
+			fake.setRunnerState(runnerID, controller.RunnerTerminal)
+		}
+		return nil
+	})
 
 	options := controller.Options{
 		Backend:           backend,
+		Fencer:            defaultFencer,
 		Demand:            mailbox.Updates(),
 		MinRunners:        0,
 		MaxRunners:        10,
@@ -405,6 +613,9 @@ func newController(
 	}
 	if overrides.Workers != 0 {
 		options.Workers = overrides.Workers
+	}
+	if overrides.Fencer != nil {
+		options.Fencer = overrides.Fencer
 	}
 	if overrides.ReconcileInterval != 0 {
 		options.ReconcileInterval = overrides.ReconcileInterval
@@ -448,6 +659,14 @@ func receiveError(t *testing.T, errCh <-chan error) error {
 		t.Fatal("controller did not stop")
 		return nil
 	}
+}
+
+// fencerFunc adapts a function to the controller registration-fence port.
+type fencerFunc func(context.Context, string) error
+
+// Fence invokes f for runnerID.
+func (f fencerFunc) Fence(ctx context.Context, runnerID string) error {
+	return f(ctx, runnerID)
 }
 
 // fakeBackend provides controllable in-memory runner lifecycle behavior.

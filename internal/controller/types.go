@@ -19,6 +19,8 @@ type RunnerState string
 const (
 	// RunnerProvisioning is an owned runner that is not ready yet.
 	RunnerProvisioning RunnerState = "provisioning"
+	// RunnerReady is an owned runner whose guest listener is running but whose job occupancy requires controller authority.
+	RunnerReady RunnerState = "ready"
 	// RunnerIdle is an owned runner that can accept a job.
 	RunnerIdle RunnerState = "idle"
 	// RunnerBusy is an owned runner that is executing a job.
@@ -39,6 +41,16 @@ type Runner struct {
 type Demand struct {
 	// AssignedJobs is the number of jobs currently assigned to the scale set.
 	AssignedJobs int
+	// Generation identifies the GitHub message session that produced this observation.
+	Generation uint64
+	// BusyRunners is the authoritative snapshot of runners with observed JobStarted events in this generation.
+	BusyRunners []string
+}
+
+// Fencer removes a runner's GitHub registration before backend teardown.
+type Fencer interface {
+	// Fence prevents runnerID from receiving a new GitHub job.
+	Fence(ctx context.Context, runnerID string) error
 }
 
 // Backend performs external runner inventory and lifecycle operations.
@@ -55,6 +67,8 @@ type Backend interface {
 type Options struct {
 	// Backend performs runner inventory and lifecycle operations.
 	Backend Backend
+	// Fencer removes GitHub registration before idle scale-down.
+	Fencer Fencer
 	// Demand supplies coalesced scale-set demand updates.
 	Demand <-chan Demand
 	// Logger receives structured, secret-safe lifecycle events.
@@ -92,6 +106,7 @@ func NewMailbox() *Mailbox {
 func (m *Mailbox) Publish(demand Demand) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	demand.BusyRunners = append([]string(nil), demand.BusyRunners...)
 
 	select {
 	case <-m.updates:

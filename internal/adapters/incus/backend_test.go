@@ -243,7 +243,7 @@ func TestBackendListOwnedMapsLifecycleAndFiltersOwnership(t *testing.T) {
 		{ID: "stopped", State: controller.RunnerTerminal},
 		{ID: "starting", State: controller.RunnerProvisioning},
 		{ID: "missing", State: controller.RunnerProvisioning},
-		{ID: "working", State: controller.RunnerBusy},
+		{ID: "working", State: controller.RunnerReady},
 		{ID: "expired", State: controller.RunnerTerminal},
 	}, runners)
 }

@@ -29,16 +29,16 @@ type retryWaiter func(ctx context.Context, delay time.Duration) error
 
 // ResilientDemandSource recreates failed GitHub message sessions with capped backoff.
 type ResilientDemandSource struct {
-	mu      sync.Mutex
-	initial messageSession
-	open    sessionOpener
-	wait    retryWaiter
-	options DemandSourceOptions
+	mu        sync.Mutex
+	available bool
+	open      sessionOpener
+	wait      retryWaiter
+	options   DemandSourceOptions
 }
 
-// NewResilientDemandSource opens the startup message session and prepares transient recovery.
+// NewResilientDemandSource prepares startup and reconnecting message-session acquisition.
 func NewResilientDemandSource(
-	ctx context.Context,
+	_ context.Context,
 	client *scaleset.Client,
 	owner string,
 	options DemandSourceOptions,
@@ -60,31 +60,16 @@ func NewResilientDemandSource(
 		}
 		return session, nil
 	}
-	initial, err := open(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("create initial GitHub message session: %w", err)
-	}
 
-	source, err := newResilientDemandSource(initial, open, options, waitForRetry)
-	if err != nil {
-		closeContext, cancelClose := context.WithTimeout(context.Background(), options.SessionCloseTimeout)
-		defer cancelClose()
-		_ = initial.Close(closeContext)
-		return nil, err
-	}
-	return source, nil
+	return newResilientDemandSource(open, options, waitForRetry)
 }
 
 // newResilientDemandSource constructs a reconnecting source around testable session seams.
 func newResilientDemandSource(
-	initial messageSession,
 	open sessionOpener,
 	options DemandSourceOptions,
 	wait retryWaiter,
 ) (*ResilientDemandSource, error) {
-	if initial == nil {
-		return nil, errors.New("initial message session is required")
-	}
 	if open == nil {
 		return nil, errors.New("message-session opener is required")
 	}
@@ -97,11 +82,19 @@ func newResilientDemandSource(
 	if options.Logger == nil {
 		options.Logger = slog.New(slog.DiscardHandler)
 	}
-	if _, err := NewDemandSource(initial, options); err != nil {
-		return nil, err
+	if options.MinRunners < 0 {
+		return nil, errors.New("minimum runners must not be negative")
+	}
+	if options.MaxRunners < options.MinRunners {
+		return nil, errors.New("maximum runners must be at least minimum runners")
 	}
 
-	return &ResilientDemandSource{initial: initial, open: open, wait: wait, options: options}, nil
+	return &ResilientDemandSource{
+		available: true,
+		open:      open,
+		wait:      wait,
+		options:   options,
+	}, nil
 }
 
 // validateReconnectOptions checks bounded reconnect and cleanup timing.
@@ -123,16 +116,17 @@ func (s *ResilientDemandSource) Run(ctx context.Context, publish func(controller
 	if publish == nil {
 		return errors.New("demand publisher is required")
 	}
-	session := s.takeInitial()
-	if session == nil {
+	if !s.claim() {
 		return errors.New("resilient demand source is already running or closed")
 	}
 
 	backoff := newReconnectBackoff(s.options.ReconnectInitial, s.options.ReconnectMaximum)
-	var disconnectErr error
+	session, disconnectErr := s.openInitial(ctx)
+	var generation uint64
 	for {
 		if session != nil {
-			disconnectErr = s.runSession(ctx, session, publish, backoff.Reset)
+			generation++
+			disconnectErr = s.runSession(ctx, session, publish, backoff.Reset, generation)
 			s.closeSession(session)
 			session = nil
 			if ctx.Err() != nil {
@@ -152,19 +146,32 @@ func (s *ResilientDemandSource) Run(ctx context.Context, publish func(controller
 	}
 }
 
+// openInitial attempts the first message session without delaying application startup.
+func (s *ResilientDemandSource) openInitial(ctx context.Context) (messageSession, error) {
+	session, err := s.open(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create initial GitHub message session: %w", err)
+	}
+	return session, nil
+}
+
 // runSession polls one GitHub message session and reports why it disconnected.
 func (s *ResilientDemandSource) runSession(
 	ctx context.Context,
 	session messageSession,
 	publish func(controller.Demand),
 	onContact func(),
+	generation uint64,
 ) error {
 	source, err := NewDemandSource(session, s.options)
 	if err != nil {
 		return err
 	}
 	source.onContact = onContact
-	if err := source.Run(ctx, publish); err != nil {
+	if err := source.Run(ctx, func(demand controller.Demand) {
+		demand.Generation = generation
+		publish(demand)
+	}); err != nil {
 		return err
 	}
 	return errors.New("scale-set listener stopped unexpectedly")
@@ -193,23 +200,22 @@ func (s *ResilientDemandSource) reconnect(
 	return session, nil
 }
 
-// Close releases the startup session when the prepared application cannot start.
-func (s *ResilientDemandSource) Close(ctx context.Context) error {
-	session := s.takeInitial()
-	if session == nil {
-		return nil
-	}
-	return session.Close(ctx)
+// Close prevents a prepared demand source from starting when application construction fails.
+func (s *ResilientDemandSource) Close(context.Context) error {
+	s.claim()
+	return nil
 }
 
-// takeInitial transfers ownership of the startup session exactly once.
-func (s *ResilientDemandSource) takeInitial() messageSession {
+// claim transfers ownership of the demand source exactly once.
+func (s *ResilientDemandSource) claim() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	session := s.initial
-	s.initial = nil
-	return session
+	if !s.available {
+		return false
+	}
+	s.available = false
+	return true
 }
 
 // closeSession releases one replaced message session within a fresh bounded context.

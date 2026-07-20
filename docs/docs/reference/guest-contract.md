@@ -51,12 +51,15 @@ The reference guest writes this file to a temporary path in the same directory a
 
 ## Controller state mapping
 
-The controller derives each runner's lifecycle state from the Incus instance status and, while the instance is running, from `status.json`:
+The controller combines Incus and `status.json` with authoritative GitHub
+message-session events. Guest state alone never proves that a connected runner
+is idle:
 
 | Signal | Runner state |
 |---|---|
 | Incus instance status is `stopped` or `error` | `terminal` |
-| Incus instance status is `running` and `status.json` state is `running` | `busy` |
+| Incus instance status is `running` and `status.json` state is `running` | `ready`; job occupancy is resolved by the controller |
+| Exact `JobStarted` event in the current GitHub message session | `busy` and ineligible for scale-down |
 | Incus instance status is `running` and `status.json` state is `exited` or `failed` | `terminal` |
 | Instance not yet `running`, or a running instance with an absent `status.json` or state `starting` | `provisioning`, until the instance's age exceeds `incus.bootstrap_timeout`, then `terminal` |
 
@@ -70,6 +73,14 @@ its last observation and schedules no create or delete mutation until a fresh
 inventory succeeds. Each runner status read receives an independent bounded
 share of the overall Incus operation deadline, so one slow guest agent cannot
 consume the observation budget for later runners.
+
+Only a ready runner created under the current GitHub message-session generation
+can be considered for idle scale-down. Before changing its Incus state, the
+controller removes and confirms absence of the runner's exact GitHub
+registration. The fenced VM remains alive until the guest runner process exits
+and reports a terminal state. A controller restart or GitHub message-session
+reconnect invalidates process-local idle knowledge; reconstructed ready runners
+remain capacity but are not scale-down candidates.
 
 ## Serial console contract
 

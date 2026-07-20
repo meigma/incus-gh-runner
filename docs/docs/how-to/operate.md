@@ -28,8 +28,8 @@ The following events carry the fields you need for day-2 monitoring. All other f
 
 | Event | Fields | Meaning |
 |---|---|---|
-| `runner demand updated` | `assigned_jobs`, `target` | Controller recomputed capacity target from GitHub-reported job demand. |
-| `runner operation scheduled` | `operation` (`create`/`delete`/`list`), `operation_id`, `runner_id` | An Incus operation was handed to a worker. |
+| `runner demand updated` | `assigned_jobs`, `target`, `generation` | Controller recomputed capacity target and current GitHub message-session authority. |
+| `runner operation scheduled` | `operation` (`create`/`fence`/`delete`/`list`), `operation_id`, `runner_id` | An external lifecycle operation was handed to a worker. `fence` removes GitHub registration before idle scale-down. |
 | `runner operation completed` | `operation`, `operation_id`, `runner_id` | The operation succeeded. |
 | `runner operation failed` | `operation`, `operation_id`, `runner_id`, `retry_after`, `error` | The operation failed and entered cooldown; see [Troubleshooting](#troubleshooting) below. |
 | `GitHub Actions job started` | `runner_name`, `job_id` | A queued job was assigned to a runner. |
