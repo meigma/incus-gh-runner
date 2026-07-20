@@ -62,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          probe_root=/tmp/incus-gh-runner-jit-boundary
+          probe_root=/opt/actions-runner/.jit-boundary-probe
           runner_root=/opt/actions-runner
           install -d -m 0700 "$probe_root"
 
@@ -110,7 +110,7 @@ jobs:
           #!/usr/bin/env bash
           set -u
 
-          probe_root=/tmp/incus-gh-runner-jit-boundary
+          probe_root=/opt/actions-runner/.jit-boundary-probe
           sleep 8
           timeout 15 /opt/actions-runner/run.sh \
             --jitconfig "$(<"${probe_root}/encoded-jit-config")" \
