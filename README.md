@@ -17,8 +17,9 @@ deletes the VM when its one job finishes.
   authorization boundary.
 - Unattended operation: GitHub session recovery with capped backoff, bounded
   shutdown escalation, and a hardened systemd unit with credential isolation.
-- Reference VM image: a reproducible, offline-built Ubuntu 24.04 image with a
-  pinned Actions Runner, published with checksums and build attestations.
+- Reference VM image: a network-built Ubuntu 24.04 image with a checksum-pinned
+  Actions Runner, published with checksums and build attestations that identify
+  the exact released archive.
 
 ## Requirements
 

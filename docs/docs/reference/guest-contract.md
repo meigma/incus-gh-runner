@@ -95,8 +95,14 @@ The guest's serial console is `ttyS0`. It carries secret-free lifecycle lines on
 
 After the `action=poweroff` line, the guest sleeps 30 seconds — a fixed diagnostic grace period — before calling `systemctl poweroff`. This grace period runs on every exit path, including startup validation failures.
 
-!!! warning "JIT configuration never reaches the console or guest journal"
-    `jit_config` is passed to the Actions Runner process only as a command-line argument. The guest never writes it to `/dev/ttyS0` or to its own systemd journal, on any code path, including error paths.
+!!! warning "JIT configuration stays out of guest logs, not out of job reach"
+    The guest never writes `jit_config` to `/dev/ttyS0` or its own systemd journal, including on error paths. It does pass the value to the stock `Runner.Listener` process as a command-line argument. The listener and `Runner.Worker` run as the same `actions-runner` UID, and the listener materializes JIT/session files under `/opt/actions-runner` owned by that user. A running job can therefore read the listener command line and those files. Deleting `payload.json` removes the root-owned staging copy; it does not create a secrecy boundary between a job and its own JIT registration.
+
+This is a one-job containment boundary. The renewable controller App key or
+PAT remains on the Incus host and is never injected into the VM. GitHub deletes
+the JIT runner registration after its job, and the controller deletes the VM
+rather than reusing it for another job. Workloads must not rely on JIT material
+being hidden from the job that receives it.
 
 ## Instance metadata
 

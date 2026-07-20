@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build offline VM image
+    name: Build networked VM image
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
