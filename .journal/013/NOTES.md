@@ -689,3 +689,34 @@ image, and transferred artifacts, then destroyed exact Latitude server
 project server list is empty. Runtime was about 11 minutes, approximately
 `$0.10` at the quoted `$0.52/hour` before provider rounding. Slice 3C local,
 hosted, and live gates are complete; PR #32 remains draft for human review.
+
+## 2026-07-19 22:33 — Slice 3C merged; Slice 3D local and Linux proofs complete
+
+The user approved Slice 3C. Reverified exact PR #32 head
+`ad05ad041ebc17077bab3f2c856862bb1e3c11a0`, its clean tree, mergeable state,
+and every applicable hosted check, then marked it ready and squash merged it as
+`6e11ff198d2ab46cd358404f545e545c60641b03`. Fast-forwarded local `master` to
+that exact merge, proved feature/master tree equality, removed the integrated
+worktree and branches, and started `feat/security-slice-3d` from the merge.
+
+Slice 3D now caps guest status reads at 64 KiB and rejects oversized partial
+JSON rather than treating it as authoritative. Serial console reads are capped
+at 1 MiB before allocation and oversized evidence is truncated within that cap
+with an explicit marker. Diagnostics persistence remains disabled by default.
+When deliberately enabled, the directory sink refuses broadly readable
+directories, creates files with exclusive `0600` semantics rather than
+following or replacing an existing destination, rejects oversized input,
+removes oversized legacy captures, and retains at most 256 controller-created
+captures by pruning the oldest before each new write.
+
+The recommended systemd deployment now ships an `e`-type tmpfiles rule for
+`/var/log/incus-gh-runner/diagnostics`, which does not create or enable the
+opt-in directory but expires captures after 30 days. Documentation installs
+and explains the policy, including the need to update its path for a custom
+diagnostics directory. The full `moon run root:check` gate and focused Go race
+test pass. A disposable Ubuntu 24.04 container with real systemd verified the
+unit and tmpfiles syntax, then simulated the `DynamicUser` private-log symlink
+layout and a clock 31 days ahead; the shipped rule removed the expired capture.
+No paid host, live Incus project, GitHub runner, or external registry was
+mutated for this proof. Exact-head hosted Linux gates remain to run after the
+Slice 3D branch is published.
