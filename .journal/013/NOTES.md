@@ -737,3 +737,54 @@ Inspector succeeded; event-inapplicable release dry-run and Pages deployment
 jobs skipped normally. GitHub reports the draft PR mergeable. Slice 3D is now
 at its human review gate; no merge or additional live infrastructure action was
 taken.
+
+## 2026-07-20 08:25 — Slice 3D merged; Slice 4A JIT boundary proven
+
+The user approved Slice 3D. Reverified exact PR #33 head
+`f11d3a911bf08ccc690b1be53a9b3ea3fc66c546`, its clean tree, mergeable state,
+and all applicable hosted checks, then marked it ready and squash merged it as
+`e2138adea423b48ee798e9f909d780895dbbefa3`. Fast-forwarded local `master` to
+that exact merge, proved feature/master tree equality, removed the integrated
+worktree and branches, and started `feat/security-slice-4a` from the merge.
+
+Kept the first Slice 4 increment deliberately narrow: run the required stock
+Actions Runner JIT-boundary spike before considering a listener/worker UID
+split. Exact upstream Actions Runner 2.335.1 source shows `Runner.Listener`
+materializes JIT configuration files and launches `Runner.Worker` as an
+ordinary child process with no supported user-switch setting. A clean split
+would require a privileged wrapper or maintained fork, so no speculative
+architecture change was made.
+
+Live workflow run 29754484647 on a disposable Incus 7.0.1/KVM host proved that
+the job, listener, and worker share the `actions-runner` UID; the job can read
+the listener command line and materialized JIT/session files; and the renewable
+controller PAT is absent from the runner listener environment. Replaying the
+captured material after the job reached `Connected to GitHub`, but GitHub
+immediately reported the registration deleted; the replay exited after three
+seconds without reaching `Listening for Jobs` or accepting another job. The
+durable boundary is therefore one job and one destroyed VM, not secrecy of a
+job's own JIT material.
+
+The first post-job classifier treated every exit code `0` as acceptance and
+was too coarse. A bounded manual replay distinguished the server-side deletion
+response without exporting any raw log or credential. No encoded JIT
+configuration, runner credential file, raw diagnostic log, PAT, private key,
+or reusable probe framework is retained. The temporary workflow step was
+removed from the final product diff.
+
+Corrected the README and image workflow's false offline/reproducible language,
+documented that the networked build does not pin Ubuntu repository snapshots or
+the complete resolved package set, and added the observed same-UID JIT boundary
+to the explanation and guest-contract docs. The full local `moon run
+root:check` gate passes after clearing a stale linter cache that referenced the
+already-removed Slice 3C worktree. Opened draft PR #34 at exact head
+`8351cd84e610ff8adc3c240754392e46b803128f`; hosted checks are running.
+
+Deleted the temporary GitHub runner scale set with the upstream client,
+destroyed exact Latitude server `sv_y9815XYwxavEk`, confirmed exact-ID
+`404 NotFound`, and confirmed the provider project server list is empty. Full
+secret-free evidence is retained under
+`.journal/013/evidence/slice4a-jit-boundary-actions-runner-2.335.1/`. Slice 4A
+is at the draft PR review gate; final-rootfs SBOMs, vulnerability scanning,
+runner freshness policy, and provenance tightening remain later Slice 4
+increments.
