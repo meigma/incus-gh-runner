@@ -74,7 +74,7 @@ func Run(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.L
 	return prepared.application.Run(ctx)
 }
 
-// prepare preflights Incus before resolving GitHub state and opening a message session.
+// prepare preflights Incus before resolving GitHub state and preparing message-session recovery.
 func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.Logger) (*components, error) {
 	githubClient, clientErr := newGitHubClient(cfg.GitHub, build)
 	if clientErr != nil {
@@ -263,7 +263,7 @@ func resolvePersonalAccessToken(settings config.GitHub) (string, error) {
 	return token, nil
 }
 
-// closePreparedDemandSource releases an unused startup session within a bounded fresh context.
+// closePreparedDemandSource prevents an unused demand source from starting.
 func closePreparedDemandSource(
 	source *githubadapter.ResilientDemandSource,
 	timeout time.Duration,

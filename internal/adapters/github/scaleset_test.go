@@ -428,7 +428,7 @@ func TestResilientDemandSourceCapsReconnectBackoff(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	initial := newFakeMessageSession(func(context.Context, int, int) (*scaleset.RunnerScaleSetMessage, error) {
+	disconnected := newFakeMessageSession(func(context.Context, int, int) (*scaleset.RunnerScaleSetMessage, error) {
 		return nil, errors.New("message queue unavailable")
 	})
 	recovered := newFakeMessageSession(
@@ -440,17 +440,21 @@ func TestResilientDemandSourceCapsReconnectBackoff(t *testing.T) {
 	attempts := 0
 	open := func(context.Context) (messageSession, error) {
 		attempts++
-		if attempts < 3 {
+		switch attempts {
+		case 1:
+			return disconnected, nil
+		case 2, 3:
 			return nil, errors.New("session API unavailable")
+		default:
+			return recovered, nil
 		}
-		return recovered, nil
 	}
 	var delays []time.Duration
 	wait := func(_ context.Context, delay time.Duration) error {
 		delays = append(delays, delay)
 		return nil
 	}
-	source, err := newResilientDemandSource(initial, open, DemandSourceOptions{
+	source, err := newResilientDemandSource(open, DemandSourceOptions{
 		ScaleSetID:          73,
 		MinRunners:          1,
 		MaxRunners:          4,
@@ -464,7 +468,7 @@ func TestResilientDemandSourceCapsReconnectBackoff(t *testing.T) {
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, []time.Duration{time.Second, 2 * time.Second, 3 * time.Second}, delays)
-	assert.Equal(t, 1, initial.closeCount)
+	assert.Equal(t, 1, disconnected.closeCount)
 	assert.Equal(t, 1, recovered.closeCount)
 }
 
@@ -487,10 +491,14 @@ func TestResilientDemandSourceResetsBackoffAfterHealthyPolling(t *testing.T) {
 	attempts := 0
 	open := func(context.Context) (messageSession, error) {
 		attempts++
-		if attempts == 1 {
+		switch attempts {
+		case 1:
+			return initial, nil
+		case 2:
 			return nil, errors.New("session API unavailable")
+		default:
+			return healthy, nil
 		}
-		return healthy, nil
 	}
 	var delays []time.Duration
 	wait := func(ctx context.Context, delay time.Duration) error {
@@ -501,7 +509,7 @@ func TestResilientDemandSourceResetsBackoffAfterHealthyPolling(t *testing.T) {
 		}
 		return nil
 	}
-	source, err := newResilientDemandSource(initial, open, DemandSourceOptions{
+	source, err := newResilientDemandSource(open, DemandSourceOptions{
 		ScaleSetID:          73,
 		MinRunners:          1,
 		MaxRunners:          4,
@@ -521,6 +529,49 @@ func TestResilientDemandSourceResetsBackoffAfterHealthyPolling(t *testing.T) {
 	assert.Equal(t, []uint64{1, 2, 2}, generations)
 	assert.Equal(t, 1, initial.closeCount)
 	assert.Equal(t, 1, healthy.closeCount)
+}
+
+func TestResilientDemandSourceRetriesInitialSessionOpen(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	recovered := newFakeMessageSession(
+		func(ctx context.Context, _ int, _ int) (*scaleset.RunnerScaleSetMessage, error) {
+			cancel()
+			return nil, ctx.Err()
+		},
+	)
+	attempts := 0
+	open := func(context.Context) (messageSession, error) {
+		attempts++
+		if attempts < 3 {
+			return nil, errors.New("active session conflict")
+		}
+		return recovered, nil
+	}
+	var delays []time.Duration
+	wait := func(_ context.Context, delay time.Duration) error {
+		delays = append(delays, delay)
+		return nil
+	}
+	source, err := newResilientDemandSource(open, DemandSourceOptions{
+		ScaleSetID:          73,
+		MinRunners:          1,
+		MaxRunners:          4,
+		ReconnectInitial:    time.Second,
+		ReconnectMaximum:    10 * time.Second,
+		SessionCloseTimeout: time.Second,
+	}, wait)
+	require.NoError(t, err)
+	assert.Zero(t, attempts, "construction must not acquire a failure-prone external session")
+
+	err = source.Run(ctx, func(controller.Demand) {})
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 3, attempts)
+	assert.Equal(t, []time.Duration{time.Second, 2 * time.Second}, delays)
+	assert.Equal(t, 1, recovered.closeCount)
 }
 
 // fakeScaleSetClient provides behavior-controlled scale-set operations.
