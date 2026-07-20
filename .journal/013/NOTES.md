@@ -611,7 +611,7 @@ and the provider project server list is empty. The host existed for about 35
 minutes, approximately `$0.30` at the quoted `$0.52/hour` before provider
 rounding.
 
-## 2026-07-19 22:27 — Slice 3B merged; Slice 3C local proof complete
+## 2026-07-19 22:01 — Slice 3B merged; Slice 3C local proof complete
 
 The user approved Slice 3B. Reverified exact PR #31 head
 `1430eed1608d18083464614a66247ef66498800a`, its clean tree, mergeable state,
@@ -651,3 +651,41 @@ tests, docs, image contract, Incus isolation contracts, release configuration,
 and the platform-applicable systemd check. Exact-head hosted and disposable
 Incus acceptance gates remain to run; no live Slice 3C result is claimed by
 this checkpoint.
+
+## 2026-07-19 22:14 — Slice 3C exact-head hosted and live gates complete
+
+Opened draft PR #32 from exact head
+`ad05ad041ebc17077bab3f2c856862bb1e3c11a0`. CI, both CodeQL workflows,
+GitHub Pages, Kusari Inspector, and GitHub's CodeQL check are green; release
+dry-run and Pages deployment jobs skipped normally for this pull-request
+shape. GitHub reports the branch mergeable.
+
+Provisioned exact Latitude server `sv_BDXM5Ekjz0rpk` in MEX2 with the same
+hourly `c3-small-x86` shape used by the prior slices. Installed Incus 7.0.1,
+verified the exact-head controller identity and SHA-256, and imported the
+unchanged checksum-verified reference image from workflow run 29708275005 as
+fingerprint
+`d31a6f9cbdfbf48c31843ead51eb2365e0ccdf222b8bdb2b7faa92145550ad64`.
+
+A one-use probe compiled from exact PR source first changed the approved
+profile after preflight and proved create failed closed without an instance.
+It restored the profile, retargeted the configured alias to a different valid
+VM image fingerprint, and created through the already-preflighted production
+backend. The live VM's `volatile.base_image`, controller audit metadata, and
+pinned fingerprint all remained the approved reference fingerprint; attached
+profiles were exactly empty. Changing the source profile again left the live
+VM's expanded CPU at the approved value and did not introduce the drift marker.
+The production deletion path then removed the exact stable-UUID instance and
+returned owned inventory to zero. The test passed in 29.54 seconds.
+
+The throwaway probe source was deleted from the worktree before execution and
+does not enter the product branch. Full targets, hashes, exact JSON evidence,
+and cleanup are retained under
+`.journal/013/evidence/slice3c-runtime-identity-incus-7.0.1/`.
+
+Removed both test images, the profile and project, alternate default-project
+image, and transferred artifacts, then destroyed exact Latitude server
+`sv_BDXM5Ekjz0rpk`. Its exact-ID lookup returns `404 NotFound` and the provider
+project server list is empty. Runtime was about 11 minutes, approximately
+`$0.10` at the quoted `$0.52/hour` before provider rounding. Slice 3C local,
+hosted, and live gates are complete; PR #32 remains draft for human review.
