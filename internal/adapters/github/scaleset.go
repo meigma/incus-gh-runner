@@ -38,6 +38,18 @@ type ScaleSet struct {
 	id     int
 }
 
+// JITConfig contains one validated runner registration and its opaque guest payload.
+type JITConfig struct {
+	// Encoded is the opaque one-runner configuration consumed by the GitHub Actions runner.
+	Encoded string
+	// RunnerID is the positive GitHub runner registration identifier.
+	RunnerID int
+	// RunnerName is the exact controller-requested runner name.
+	RunnerName string
+	// ScaleSetID is the resolved runner scale-set identifier.
+	ScaleSetID int
+}
+
 // ResolveScaleSet resolves an existing scale set or creates it when absent.
 func ResolveScaleSet(
 	ctx context.Context,
@@ -164,23 +176,43 @@ func (s *ScaleSet) ID() int {
 	return s.id
 }
 
-// JITConfig generates a fresh opaque one-runner registration configuration.
-func (s *ScaleSet) JITConfig(ctx context.Context, runnerName string) (string, error) {
+// JITConfig generates and validates one fresh runner registration configuration.
+func (s *ScaleSet) JITConfig(ctx context.Context, runnerName string) (JITConfig, error) {
 	if strings.TrimSpace(runnerName) == "" {
-		return "", errors.New("runner name is required")
+		return JITConfig{}, errors.New("runner name is required")
 	}
 	jit, err := s.client.GenerateJitRunnerConfig(ctx, &scaleset.RunnerScaleSetJitRunnerSetting{
 		Name:       runnerName,
 		WorkFolder: defaultWorkFolder,
 	}, s.id)
 	if err != nil {
-		return "", fmt.Errorf("generate JIT configuration for %q: %w", runnerName, err)
+		return JITConfig{}, fmt.Errorf("generate JIT configuration for %q: %w", runnerName, err)
 	}
-	if jit == nil || strings.TrimSpace(jit.EncodedJITConfig) == "" {
-		return "", fmt.Errorf("generate JIT configuration for %q: response is empty", runnerName)
+	if jit == nil || strings.TrimSpace(jit.EncodedJITConfig) == "" || jit.Runner == nil {
+		return JITConfig{}, fmt.Errorf("generate JIT configuration for %q: response is incomplete", runnerName)
+	}
+	if jit.Runner.ID <= 0 {
+		return JITConfig{}, fmt.Errorf("generate JIT configuration for %q: runner response has no ID", runnerName)
+	}
+	if jit.Runner.Name != runnerName {
+		return JITConfig{}, fmt.Errorf(
+			"generate JIT configuration for %q: runner response name does not match",
+			runnerName,
+		)
+	}
+	if jit.Runner.RunnerScaleSetID != s.id {
+		return JITConfig{}, fmt.Errorf(
+			"generate JIT configuration for %q: runner response scale set does not match",
+			runnerName,
+		)
 	}
 
-	return jit.EncodedJITConfig, nil
+	return JITConfig{
+		Encoded:    jit.EncodedJITConfig,
+		RunnerID:   jit.Runner.ID,
+		RunnerName: jit.Runner.Name,
+		ScaleSetID: jit.Runner.RunnerScaleSetID,
+	}, nil
 }
 
 // Fence removes runnerID from the resolved scale set and confirms its registration is absent.

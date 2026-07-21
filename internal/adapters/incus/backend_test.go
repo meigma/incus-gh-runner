@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/meigma/incus-gh-runner/internal/controller"
+	"github.com/meigma/incus-gh-runner/internal/provenance"
 )
 
 const (
@@ -29,6 +31,14 @@ type fileWrite struct {
 	mode    int
 }
 
+// testFencerFunc adapts a function to the controller registration-fence port.
+type testFencerFunc func(context.Context, string) error
+
+// Fence invokes f for runnerID.
+func (f testFencerFunc) Fence(ctx context.Context, runnerID string) error {
+	return f(ctx, runnerID)
+}
+
 // fakeClient provides an in-memory Incus lifecycle for adapter behavior tests.
 type fakeClient struct {
 	images             map[string]api.Image
@@ -42,6 +52,8 @@ type fakeClient struct {
 	statusRead         func(context.Context, string, string) ([]byte, error)
 	consoleLogs        map[string][]byte
 	createRequest      api.InstancesPost
+	updatedRequest     api.InstancePut
+	updateETag         string
 	started            []string
 	stopped            []string
 	stopETags          []string
@@ -52,6 +64,7 @@ type fakeClient struct {
 	consoleError       error
 	deleteError        error
 	createInstanceErr  error
+	updateInstanceErr  error
 	startInstanceError error
 	stopInstanceError  error
 }
@@ -139,6 +152,26 @@ func (f *fakeClient) CreateInstance(_ context.Context, request api.InstancesPost
 	instance.Config[instanceUUIDKey] = stableTestUUID(request.Name)
 	f.instances[request.Name] = instance
 	f.instanceETags[request.Name] = "etag-" + request.Name
+	return nil
+}
+
+// UpdateInstance records and materializes one conditional fake instance update.
+func (f *fakeClient) UpdateInstance(_ context.Context, name string, request api.InstancePut, etag string) error {
+	if f.updateInstanceErr != nil {
+		return f.updateInstanceErr
+	}
+	instance, ok := f.instances[name]
+	if !ok {
+		return errNotFound
+	}
+	if etag == "" || etag != f.instanceETags[name] {
+		return errors.New("ETag mismatch")
+	}
+	f.updatedRequest = request
+	f.updateETag = etag
+	instance.InstancePut = request
+	f.instances[name] = instance
+	f.instanceETags[name] = etag + "-updated"
 	return nil
 }
 
@@ -256,6 +289,40 @@ func TestBackendPreflightRequiresFullImageFingerprint(t *testing.T) {
 	err := backend.Preflight(context.Background())
 
 	require.ErrorContains(t, err, "image fingerprint must contain 64 hexadecimal characters")
+}
+
+// TestBackendPreflightRejectsReservedProfileMetadata protects the launch-digest namespace boundary.
+func TestBackendPreflightRejectsReservedProfileMetadata(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		key  string
+	}{
+		{name: "Incus volatile namespace", key: "volatile.last_state.idmap"},
+		{name: "controller audit namespace", key: "user.incus-gh-runner.owner"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client := newFakeClient()
+			client.images["runner-image"] = api.Image{
+				Fingerprint: testFingerprintA,
+				ImagePut:    api.ImagePut{Profiles: []string{"runner"}},
+			}
+			client.profiles["runner"] = api.Profile{
+				Name:       "runner",
+				ProfilePut: api.ProfilePut{Config: api.ConfigMap{tt.key: "reserved"}},
+			}
+			backend := newTestBackend(t, client, Options{})
+
+			err := backend.Preflight(context.Background())
+
+			require.ErrorContains(t, err, "uses reserved config key")
+			assert.Contains(t, err.Error(), tt.key)
+		})
+	}
 }
 
 func TestBackendCreateUsesPreflightImageDespiteAliasRetarget(t *testing.T) {
@@ -508,7 +575,11 @@ func TestBackendCreateOwnsStartsAndCommitsPayload(t *testing.T) {
 		AgentPollInterval: time.Millisecond,
 		Payloads: PayloadSourceFunc(func(_ context.Context, runnerID string) (Payload, error) {
 			assert.Equal(t, "incus-gh-runner-runner-id", runnerID)
-			return Payload{Version: 1, JITConfig: "secret-jit-config"}, nil
+			assert.Equal(t, "Stopped", client.instances[runnerID].Status)
+			assert.Empty(t, client.started, "the VM must remain stopped until its JIT reference is durable")
+			payload := validTestPayload(runnerID)
+			payload.JITConfig = "secret-jit-config"
+			return payload, nil
 		}),
 	})
 	require.NoError(t, backend.Preflight(context.Background()))
@@ -540,12 +611,32 @@ func TestBackendCreateOwnsStartsAndCommitsPayload(t *testing.T) {
 	assert.Equal(t, now.Format(time.RFC3339Nano), client.createRequest.Config[createdAtKey])
 	assert.Equal(t, testFingerprintA, client.createRequest.Config[imageKey])
 	assert.Equal(t, "runner-image", client.createRequest.Config[imageReferenceKey])
-	var profiles []profileReference
-	require.NoError(t, json.Unmarshal([]byte(client.createRequest.Config[profilesKey]), &profiles))
-	require.Len(t, profiles, 2)
-	assert.Equal(t, []string{"default", "runner"}, []string{profiles[0].Name, profiles[1].Name})
-	assert.NotEmpty(t, profiles[0].SHA256)
-	assert.NotEmpty(t, profiles[1].SHA256)
+	var profileReferences []profileReference
+	require.NoError(t, json.Unmarshal([]byte(client.createRequest.Config[profilesKey]), &profileReferences))
+	require.Len(t, profileReferences, 2)
+	assert.Equal(t, []string{"default", "runner"}, []string{profileReferences[0].Name, profileReferences[1].Name})
+	assert.NotEmpty(t, profileReferences[0].SHA256)
+	assert.NotEmpty(t, profileReferences[1].SHA256)
+	expectedLaunchDigest, err := provenance.LaunchDigest(provenance.LaunchInput{
+		Version:          provenance.Version,
+		InstanceType:     provenance.LaunchInstanceType,
+		ImageFingerprint: testFingerprintA,
+		Profiles: []provenance.Profile{
+			{Name: profileReferences[0].Name, SHA256: profileReferences[0].SHA256},
+			{Name: profileReferences[1].Name, SHA256: profileReferences[1].SHA256},
+		},
+		Config: map[string]string{"limits.cpu": "4", "limits.memory": "4GiB"},
+		Devices: map[string]map[string]string{
+			"root": {"type": "disk", "pool": "runner", "path": "/"},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, expectedLaunchDigest, client.createRequest.Config[launchDigestKey])
+	assert.Equal(t, "41", client.updatedRequest.Config[jitRunnerIDKey])
+	assert.Equal(t, "incus-gh-runner-runner-id", client.updatedRequest.Config[jitRunnerNameKey])
+	assert.Equal(t, "73", client.updatedRequest.Config[jitScaleSetIDKey])
+	assert.Equal(t, expectedLaunchDigest, client.updatedRequest.Config[launchDigestKey])
+	assert.Equal(t, "etag-incus-gh-runner-runner-id", client.updateETag)
 	assert.Equal(t, []string{"incus-gh-runner-runner-id"}, client.started)
 	require.Len(t, client.fileWrites, 2)
 	assert.Equal(t, payloadPath, client.fileWrites[0].path)
@@ -557,6 +648,139 @@ func TestBackendCreateOwnsStartsAndCommitsPayload(t *testing.T) {
 	require.NoError(t, json.Unmarshal(client.fileWrites[0].content, &payload))
 	assert.InDelta(t, 1, payload["version"], 0)
 	assert.Equal(t, "secret-jit-config", payload["jit_config"])
+}
+
+// TestBackendCreateDoesNotBootWithoutDurableJITBinding proves every failed binding leaves the VM stopped.
+func TestBackendCreateDoesNotBootWithoutDurableJITBinding(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		mutatePayload   func(*Payload)
+		configureClient func(*fakeClient)
+		wantErr         string
+	}{
+		{
+			name: "empty runner reference",
+			mutatePayload: func(payload *Payload) {
+				payload.Runner.ID = 0
+			},
+			wantErr: "runtime payload",
+		},
+		{
+			name: "mismatched runner name",
+			mutatePayload: func(payload *Payload) {
+				payload.Runner.Name = "another-runner"
+			},
+			wantErr: "runtime payload",
+		},
+		{
+			name: "empty scale set reference",
+			mutatePayload: func(payload *Payload) {
+				payload.Runner.ScaleSetID = 0
+			},
+			wantErr: "runtime payload",
+		},
+		{
+			name: "stale instance ETag",
+			configureClient: func(client *fakeClient) {
+				client.getInstance = func(_ context.Context, name string) (*api.Instance, string, error) {
+					instance := client.instances[name]
+					return &instance, "stale-etag", nil
+				}
+			},
+			wantErr: "ETag mismatch",
+		},
+		{
+			name: "failed conditional update",
+			configureClient: func(client *fakeClient) {
+				client.updateInstanceErr = errors.New("update unavailable")
+			},
+			wantErr: "update unavailable",
+		},
+		{
+			name: "same-name replacement after update",
+			configureClient: func(client *fakeClient) {
+				lookups := 0
+				client.getInstance = func(_ context.Context, name string) (*api.Instance, string, error) {
+					instance := client.instances[name]
+					lookups++
+					if lookups == 2 {
+						instance.Config = maps.Clone(instance.Config)
+						instance.Config[instanceUUIDKey] = stableTestUUID("replacement")
+					}
+					return &instance, client.instanceETags[name], nil
+				}
+			},
+			wantErr: "replacement Incus instance",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client := newFakeClient()
+			var fenced []string
+			client.images["runner-image"] = api.Image{
+				Fingerprint: testFingerprintA,
+				ImagePut:    api.ImagePut{Profiles: []string{}},
+			}
+			backend := newTestBackend(t, client, Options{
+				NewID: func() string { return "runner-id" },
+				RunnerFencer: testFencerFunc(func(_ context.Context, runnerID string) error {
+					fenced = append(fenced, runnerID)
+					return nil
+				}),
+				Payloads: PayloadSourceFunc(func(_ context.Context, runnerName string) (Payload, error) {
+					payload := validTestPayload(runnerName)
+					if tt.mutatePayload != nil {
+						tt.mutatePayload(&payload)
+					}
+					return payload, nil
+				}),
+			})
+			require.NoError(t, backend.Preflight(context.Background()))
+			if tt.configureClient != nil {
+				tt.configureClient(client)
+			}
+
+			_, err := backend.Create(context.Background())
+
+			require.ErrorContains(t, err, tt.wantErr)
+			assert.Equal(t, []string{"incus-gh-runner-runner-id"}, fenced)
+			assert.Empty(t, client.started, "a runner without a durable JIT binding must not boot")
+			assert.Empty(
+				t,
+				client.fileWrites,
+				"a runner without a durable JIT binding must not receive the JIT payload",
+			)
+		})
+	}
+}
+
+// TestBackendCreateReportsProvisioningAndFenceFailures preserves both actionable errors.
+func TestBackendCreateReportsProvisioningAndFenceFailures(t *testing.T) {
+	t.Parallel()
+
+	client := newFakeClient()
+	client.images["runner-image"] = api.Image{
+		Fingerprint: testFingerprintA,
+		ImagePut:    api.ImagePut{Profiles: []string{}},
+	}
+	client.startInstanceError = errors.New("start unavailable")
+	backend := newTestBackend(t, client, Options{
+		NewID: func() string { return "runner-id" },
+		RunnerFencer: testFencerFunc(func(context.Context, string) error {
+			return errors.New("fence unavailable")
+		}),
+	})
+	require.NoError(t, backend.Preflight(context.Background()))
+
+	_, err := backend.Create(context.Background())
+
+	require.ErrorContains(t, err, "start unavailable")
+	require.ErrorContains(t, err, "fence unavailable")
+	assert.Empty(t, client.fileWrites)
 }
 
 func TestBackendDeleteRequiresOwnershipAndStoresDiagnostics(t *testing.T) {
@@ -574,7 +798,13 @@ func TestBackendDeleteRequiresOwnershipAndStoresDiagnostics(t *testing.T) {
 	}
 	client.consoleLogs["owned"] = []byte("secret-safe console")
 	var stored Diagnostics
+	var fenced []string
 	backend := newTestBackend(t, client, Options{
+		RunnerFencer: testFencerFunc(func(_ context.Context, runnerID string) error {
+			assert.Empty(t, client.deleted, "registration fencing must precede instance deletion")
+			fenced = append(fenced, runnerID)
+			return nil
+		}),
 		Diagnostics: DiagnosticsSinkFunc(func(_ context.Context, diagnostics Diagnostics) error {
 			stored = diagnostics
 			return nil
@@ -589,8 +819,29 @@ func TestBackendDeleteRequiresOwnershipAndStoresDiagnostics(t *testing.T) {
 	assert.Equal(t, []string{"owned"}, client.stopped)
 	assert.Equal(t, []string{"owned-etag"}, client.stopETags)
 	assert.Equal(t, []string{"owned"}, client.deleted)
+	assert.Equal(t, []string{"owned"}, fenced)
 	assert.Equal(t, Diagnostics{RunnerID: "owned", Console: []byte("secret-safe console")}, stored)
 	require.NoError(t, backend.Delete(context.Background(), "owned"), "delete should be idempotent")
+}
+
+// TestBackendDeleteStopsBeforeMutationWhenRegistrationFenceFails protects recovered runners.
+func TestBackendDeleteStopsBeforeMutationWhenRegistrationFenceFails(t *testing.T) {
+	t.Parallel()
+
+	client := newFakeClient()
+	client.instances["owned"] = ownedInstance("owned", "Running", time.Now())
+	client.instanceETags["owned"] = "owned-etag"
+	backend := newTestBackend(t, client, Options{
+		RunnerFencer: testFencerFunc(func(context.Context, string) error {
+			return errors.New("fence unavailable")
+		}),
+	})
+
+	err := backend.Delete(context.Background(), "owned")
+
+	require.ErrorContains(t, err, "fence unavailable")
+	assert.Empty(t, client.stopped)
+	assert.Empty(t, client.deleted)
 }
 
 func TestBackendDeleteRequiresETagBeforeStop(t *testing.T) {
@@ -683,8 +934,11 @@ func newTestBackend(t *testing.T, client client, overrides Options) *Backend {
 		Image:            "runner-image",
 		Owner:            "test-owner",
 		BootstrapTimeout: time.Minute,
-		Payloads: PayloadSourceFunc(func(context.Context, string) (Payload, error) {
-			return Payload{Version: 1, JITConfig: "test-config"}, nil
+		RunnerFencer: testFencerFunc(func(context.Context, string) error {
+			return nil
+		}),
+		Payloads: PayloadSourceFunc(func(_ context.Context, runnerID string) (Payload, error) {
+			return validTestPayload(runnerID), nil
 		}),
 	}
 	if overrides.Profiles != nil {
@@ -695,6 +949,9 @@ func newTestBackend(t *testing.T, client client, overrides Options) *Backend {
 	}
 	if overrides.Payloads != nil {
 		options.Payloads = overrides.Payloads
+	}
+	if overrides.RunnerFencer != nil {
+		options.RunnerFencer = overrides.RunnerFencer
 	}
 	if overrides.Diagnostics != nil {
 		options.Diagnostics = overrides.Diagnostics
@@ -715,6 +972,19 @@ func newTestBackend(t *testing.T, client client, overrides Options) *Backend {
 	backend, err := newBackend(client, options)
 	require.NoError(t, err)
 	return backend
+}
+
+// validTestPayload creates a complete fake JIT response for runnerName.
+func validTestPayload(runnerName string) Payload {
+	return Payload{
+		Version:   1,
+		JITConfig: "test-config",
+		Runner: JITRunnerReference{
+			ID:         41,
+			Name:       runnerName,
+			ScaleSetID: 73,
+		},
+	}
 }
 
 // ownedInstance creates a fake instance carrying the test ownership marker.

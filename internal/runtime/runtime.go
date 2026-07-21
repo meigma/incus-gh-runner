@@ -18,6 +18,7 @@ import (
 	"github.com/meigma/incus-gh-runner/internal/adapters/provenancefile"
 	"github.com/meigma/incus-gh-runner/internal/app"
 	"github.com/meigma/incus-gh-runner/internal/config"
+	"github.com/meigma/incus-gh-runner/internal/controller"
 	"github.com/meigma/incus-gh-runner/internal/provenance"
 )
 
@@ -46,6 +47,12 @@ type jitPayloadSource struct {
 	scaleSet *githubadapter.ScaleSet
 }
 
+// runnerPayloadSource combines JIT acquisition with registration cleanup.
+type runnerPayloadSource interface {
+	incusadapter.PayloadSource
+	controller.Fencer
+}
+
 // Payload returns the versioned guest input for one allocated runner.
 func (s *jitPayloadSource) Payload(ctx context.Context, runnerID string) (incusadapter.Payload, error) {
 	if s.scaleSet == nil {
@@ -56,7 +63,24 @@ func (s *jitPayloadSource) Payload(ctx context.Context, runnerID string) (incusa
 		return incusadapter.Payload{}, jitErr
 	}
 
-	return incusadapter.Payload{Version: 1, JITConfig: jitConfig}, nil
+	return incusadapter.Payload{
+		Version:   1,
+		JITConfig: jitConfig.Encoded,
+		Runner: incusadapter.JITRunnerReference{
+			ID:         jitConfig.RunnerID,
+			Name:       jitConfig.RunnerName,
+			ScaleSetID: jitConfig.ScaleSetID,
+		},
+	}, nil
+}
+
+// Fence removes one runner registration through the resolved scale set.
+func (s *jitPayloadSource) Fence(ctx context.Context, runnerID string) error {
+	if s.scaleSet == nil {
+		return errors.New("GitHub runner scale set is not resolved")
+	}
+
+	return s.scaleSet.Fence(ctx, runnerID)
 }
 
 // Run validates configuration, preflights adapters, and runs the controller application.
@@ -167,7 +191,7 @@ func prepareJobProofSigner(settings config.JobProof) (jobProofRuntime, error) {
 func newIncusBackend(
 	ctx context.Context,
 	cfg config.Config,
-	payloads incusadapter.PayloadSource,
+	payloads runnerPayloadSource,
 	logger *slog.Logger,
 ) (*incusadapter.Backend, error) {
 	incusServer, connectErr := incusadapter.ConnectUnix(ctx, cfg.Incus.Socket, cfg.Incus.Project)
@@ -184,6 +208,7 @@ func newIncusBackend(
 		Owner:            cfg.Incus.Owner,
 		BootstrapTimeout: cfg.Incus.BootstrapTimeout,
 		Payloads:         payloads,
+		RunnerFencer:     payloads,
 		Diagnostics:      diagnostics,
 		Logger:           logger.WithGroup("incus"),
 	})

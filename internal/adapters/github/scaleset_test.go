@@ -235,18 +235,43 @@ func TestScaleSetJITConfigUsesRunnerIdentityAndRejectsEmptyResponse(t *testing.T
 		name        string
 		response    *scaleset.RunnerScaleSetJitRunnerConfig
 		responseErr error
-		want        string
+		want        JITConfig
 		wantErr     string
 	}{
 		{
-			name:     "returns a fresh encoded configuration",
-			response: &scaleset.RunnerScaleSetJitRunnerConfig{EncodedJITConfig: "opaque-jit"},
-			want:     "opaque-jit",
+			name: "returns a validated runner reference with the opaque configuration",
+			response: &scaleset.RunnerScaleSetJitRunnerConfig{
+				EncodedJITConfig: "opaque-jit",
+				Runner: &scaleset.RunnerReference{
+					ID: 41, Name: "runner-123", RunnerScaleSetID: 73,
+				},
+			},
+			want: JITConfig{Encoded: "opaque-jit", RunnerID: 41, RunnerName: "runner-123", ScaleSetID: 73},
 		},
 		{
 			name:     "rejects an empty configuration",
 			response: &scaleset.RunnerScaleSetJitRunnerConfig{},
-			wantErr:  "response is empty",
+			wantErr:  "response is incomplete",
+		},
+		{
+			name: "rejects a mismatched runner name",
+			response: &scaleset.RunnerScaleSetJitRunnerConfig{
+				EncodedJITConfig: "opaque-jit",
+				Runner: &scaleset.RunnerReference{
+					ID: 41, Name: "other-runner", RunnerScaleSetID: 73,
+				},
+			},
+			wantErr: "runner response name does not match",
+		},
+		{
+			name: "rejects a mismatched scale set",
+			response: &scaleset.RunnerScaleSetJitRunnerConfig{
+				EncodedJITConfig: "opaque-jit",
+				Runner: &scaleset.RunnerReference{
+					ID: 41, Name: "runner-123", RunnerScaleSetID: 74,
+				},
+			},
+			wantErr: "runner response scale set does not match",
 		},
 		{
 			name:        "wraps an upstream failure",

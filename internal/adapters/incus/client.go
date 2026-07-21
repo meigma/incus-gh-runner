@@ -41,6 +41,7 @@ type client interface {
 	GetInstances(ctx context.Context) ([]api.Instance, error)
 	GetInstance(ctx context.Context, name string) (*api.Instance, string, error)
 	CreateInstance(ctx context.Context, request api.InstancesPost) error
+	UpdateInstance(ctx context.Context, name string, request api.InstancePut, etag string) error
 	StartInstance(ctx context.Context, name string) error
 	StopInstance(ctx context.Context, name string, etag string) error
 	CreateInstanceFile(ctx context.Context, name string, path string, content []byte, mode int) error
@@ -117,6 +118,21 @@ func (c *serverClient) GetInstance(ctx context.Context, name string) (*api.Insta
 // CreateInstance creates one stopped virtual machine and waits for completion.
 func (c *serverClient) CreateInstance(ctx context.Context, request api.InstancesPost) error {
 	operation, err := c.contextual(ctx).CreateInstance(request)
+	if err != nil {
+		return classifyError(err)
+	}
+
+	return operation.WaitContext(ctx)
+}
+
+// UpdateInstance conditionally changes one instance and waits for completion.
+func (c *serverClient) UpdateInstance(
+	ctx context.Context,
+	name string,
+	request api.InstancePut,
+	etag string,
+) error {
+	operation, err := c.contextual(ctx).UpdateInstance(name, request, etag)
 	if err != nil {
 		return classifyError(err)
 	}
