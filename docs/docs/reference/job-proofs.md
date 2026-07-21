@@ -2,7 +2,7 @@
 
 A job machine proof is a signed receipt binding one authenticated GitHub Actions job-start event to the Incus VM provisioned for it. This page describes the version 1 proof wire format: the DSSE envelope, the payload schema, the fixed constants and size limits, the key-ID rule, and the host-key enrollment facts a verifier depends on.
 
-Guest-side delivery — the staging directory, ready marker, and the `incus-gh-runner-proof` helper — is described in the [guest contract reference](guest-contract.md#filesystem-contract). The `job_proof` configuration keys and the `proof verify` command are described in the [configuration reference](configuration.md#job_proof). The procedure for generating, enrolling, installing, and rotating the proof key is in [Deploy to production](../how-to/deploy.md#6-enable-job-proofs-optional).
+Guest-side delivery — the staging directory, ready marker, and the `incus-gh-runner-proof` helper — is described in the [guest contract reference](guest-contract.md#filesystem-contract). The `job_proof` configuration keys are described in the [configuration reference](configuration.md#job_proof) and the `proof verify` command in [its CLI section](configuration.md#proof-verify-proof). The procedure for generating, enrolling, installing, and rotating the proof key is in [Deploy to production](../how-to/deploy.md#6-enable-job-proofs-optional).
 
 ## Constants
 
