@@ -13,7 +13,7 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
     !!! warning "Root-equivalent socket access"
         `SupplementaryGroups=incus-admin` in the unit file gives the controller the same host access as a user in `incus-admin`. Run the controller on a host dedicated to this workload, not one shared with unrelated services.
 
-- A systemd version supporting `LoadCredential=` and the `%d` credentials-directory specifier the unit relies on, along with `DynamicUser=` and the unit's other sandboxing directives. Ubuntu 24.04 is the validated reference host. TPM-bound proof keys additionally require systemd 250 or newer and an enrolled TPM 2.0 device.
+- A systemd version supporting `LoadCredential=` and the `%d` credentials-directory specifier the unit relies on, along with `DynamicUser=` and the unit's other sandboxing directives. Ubuntu 24.04 is the validated reference host. TPM-bound proof keys additionally require systemd 250 or newer, an enrolled TPM 2.0 device, and the distribution's TPM2 userspace runtime libraries.
 - Administrative access to the target GitHub organization or repository.
 - The `incus-gh-runner` binary for your platform, and a checked-out or downloaded copy of `deploy/systemd/` from the repository.
 
@@ -331,6 +331,18 @@ Use systemd 250 or newer to encrypt the same PKCS#8 Ed25519 key to the target
 host's TPM. The encryption attempt is the capability check; do not gate this
 procedure on `systemd-creds has-tpm2`, which is unavailable on older supported
 systemd versions.
+
+Install the distribution's TPM2 userspace stack first. On minimal Ubuntu 24.04
+systems, `systemd` reports `+TPM2` but the dynamically loaded TSS2 libraries are
+not necessarily installed; the `tpm2-tools` package supplies them:
+
+```sh
+sudo apt-get update
+sudo apt-get install tpm2-tools
+```
+
+Treat a failed encryption attempt as authoritative even when `systemd
+--version` reports `+TPM2`.
 
 Create the encrypted credential directory explicitly and stage the plaintext
 key only on the root-owned `/run` temporary filesystem:
