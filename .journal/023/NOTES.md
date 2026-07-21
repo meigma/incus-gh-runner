@@ -36,3 +36,24 @@ Open scope questions for the maintainer: (1) do `image/guest/*` scripts go
 too (they are the only shipped guest-side implementation of the contract);
 (2) does validate-incus.sh go (it validates *custom* images, not just the
 reference one); (3) Diátaxis type/placement of the new hardening page.
+
+## 2026-07-21 16:55 — Implementation landed on PR #45
+Maintainer decisions via Q&A: keep `image/guest/*` as product code (moved to
+top-level `guest/`), remove `validate-incus.sh`, replace runner-images.md with
+a how-to page.
+Branch `feat/remove-reference-image` → PR #45. One commit `940eeae`:
+24 files, +238/-1220. Deleted image.yaml/build.sh/validate-incus.sh,
+reference-image.yml, the release.yml reference-image + attest jobs and
+inspection-summary block, the release-dry-run.yml job, the staging python
+script + unittest, the distrobuilder mise pin (mise lock re-run cleanly
+pruned only that entry), runner-images.md, and the manifest's
+`Reference Image Dry Run` required-check context. Added
+docs/docs/how-to/build-runner-images.md (hardening guide) and rewired all
+cross-refs (README, index, deploy, operate, guest-contract, mkdocs nav).
+`moon run root:check` passed (8 tasks incl. strict docs build).
+Learned: the live GitHub ruleset `Default` (id 19156537) only requires `ci` —
+the repository-settings.toml dry-run contexts were never applied live, and
+`configure_github_repo.py plan` shows broad pre-existing drift (would create
+both managed rulesets). Do not run `apply` casually; it would change more
+than one context. PR body corrected to reflect this.
+Next: wait for PR checks; merge is the maintainer's call.
