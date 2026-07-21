@@ -26,4 +26,4 @@ Verification passed: full `mise exec -- moon run root:check`; race-enabled tests
 ## 2026-07-20 17:38 — Disabled-proof callback fix
 Addressed the review finding that assigning a nil `*JobStartedQueue` to the `JobStartedSink` interface made the interface non-nil. Runtime now assigns the sink only when the proof queue exists, in commit `9079942` on draft PR #38. A disabled-mode wiring test sends a real job-start message through the upstream listener and verifies normal job logging continues without a proof-drop error.
 
-Verification passed: `mise exec -- go test -race ./internal/runtime ./internal/adapters/github ./internal/provenance ./internal/app` and full `mise exec -- moon run root:check`. The updated PR head is `907994237cdfbf9d74acc3b344868196565bda8b`; hosted checks were queued after the push.
+Verification passed: `mise exec -- go test -race ./internal/runtime ./internal/adapters/github ./internal/provenance ./internal/app` and full `mise exec -- moon run root:check`. The updated PR head is `907994237cdfbf9d74acc3b344868196565bda8b`; hosted CI run `29790841627`, CodeQL run `29790839655`, GitHub Pages, and Kusari all passed.
