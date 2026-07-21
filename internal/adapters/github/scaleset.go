@@ -13,6 +13,7 @@ import (
 	"github.com/actions/scaleset/listener"
 
 	"github.com/meigma/incus-gh-runner/internal/controller"
+	"github.com/meigma/incus-gh-runner/internal/provenance"
 )
 
 const (
@@ -36,6 +37,18 @@ type ScaleSetOptions struct {
 type ScaleSet struct {
 	client scaleSetClient
 	id     int
+}
+
+// JITConfig contains one validated runner registration and its opaque guest payload.
+type JITConfig struct {
+	// Encoded is the opaque one-runner configuration consumed by the GitHub Actions runner.
+	Encoded string
+	// RunnerID is the positive GitHub runner registration identifier.
+	RunnerID int
+	// RunnerName is the exact controller-requested runner name.
+	RunnerName string
+	// ScaleSetID is the resolved runner scale-set identifier.
+	ScaleSetID int
 }
 
 // ResolveScaleSet resolves an existing scale set or creates it when absent.
@@ -164,23 +177,43 @@ func (s *ScaleSet) ID() int {
 	return s.id
 }
 
-// JITConfig generates a fresh opaque one-runner registration configuration.
-func (s *ScaleSet) JITConfig(ctx context.Context, runnerName string) (string, error) {
+// JITConfig generates and validates one fresh runner registration configuration.
+func (s *ScaleSet) JITConfig(ctx context.Context, runnerName string) (JITConfig, error) {
 	if strings.TrimSpace(runnerName) == "" {
-		return "", errors.New("runner name is required")
+		return JITConfig{}, errors.New("runner name is required")
 	}
 	jit, err := s.client.GenerateJitRunnerConfig(ctx, &scaleset.RunnerScaleSetJitRunnerSetting{
 		Name:       runnerName,
 		WorkFolder: defaultWorkFolder,
 	}, s.id)
 	if err != nil {
-		return "", fmt.Errorf("generate JIT configuration for %q: %w", runnerName, err)
+		return JITConfig{}, fmt.Errorf("generate JIT configuration for %q: %w", runnerName, err)
 	}
-	if jit == nil || strings.TrimSpace(jit.EncodedJITConfig) == "" {
-		return "", fmt.Errorf("generate JIT configuration for %q: response is empty", runnerName)
+	if jit == nil || strings.TrimSpace(jit.EncodedJITConfig) == "" || jit.Runner == nil {
+		return JITConfig{}, fmt.Errorf("generate JIT configuration for %q: response is incomplete", runnerName)
+	}
+	if jit.Runner.ID <= 0 {
+		return JITConfig{}, fmt.Errorf("generate JIT configuration for %q: runner response has no ID", runnerName)
+	}
+	if jit.Runner.Name != runnerName {
+		return JITConfig{}, fmt.Errorf(
+			"generate JIT configuration for %q: runner response name does not match",
+			runnerName,
+		)
+	}
+	if jit.Runner.RunnerScaleSetID != s.id {
+		return JITConfig{}, fmt.Errorf(
+			"generate JIT configuration for %q: runner response scale set does not match",
+			runnerName,
+		)
 	}
 
-	return jit.EncodedJITConfig, nil
+	return JITConfig{
+		Encoded:    jit.EncodedJITConfig,
+		RunnerID:   jit.Runner.ID,
+		RunnerName: jit.Runner.Name,
+		ScaleSetID: jit.Runner.RunnerScaleSetID,
+	}, nil
 }
 
 // Fence removes runnerID from the resolved scale set and confirms its registration is absent.
@@ -235,6 +268,8 @@ type scaleSetClient interface {
 type DemandSourceOptions struct {
 	// ScaleSetID is the resolved runner scale-set ID.
 	ScaleSetID int
+	// ScaleSetName is the controller-resolved scale-set name used in proof events.
+	ScaleSetName string
 	// MinRunners is the idle runner floor used for desired-count reporting.
 	MinRunners int
 	// MaxRunners is the maximum capacity reported while polling.
@@ -247,6 +282,8 @@ type DemandSourceOptions struct {
 	ReconnectMaximum time.Duration
 	// SessionCloseTimeout bounds cleanup of each replaced GitHub message session.
 	SessionCloseTimeout time.Duration
+	// JobStartedSink receives validated proof events without blocking callbacks when configured.
+	JobStartedSink provenance.JobStartedSink
 }
 
 // DemandSource publishes coalescible demand from one GitHub message session.
@@ -280,6 +317,14 @@ func newDemandSource(upstream demandListener, options DemandSourceOptions) (*Dem
 	}
 	if options.MaxRunners < options.MinRunners {
 		return nil, errors.New("maximum runners must be at least minimum runners")
+	}
+	if options.JobStartedSink != nil {
+		if options.ScaleSetID <= 0 {
+			return nil, errors.New("proof-enabled demand source requires a positive scale-set ID")
+		}
+		if strings.TrimSpace(options.ScaleSetName) == "" {
+			return nil, errors.New("proof-enabled demand source requires a scale-set name")
+		}
 	}
 	if options.Logger == nil {
 		options.Logger = slog.New(slog.DiscardHandler)
@@ -348,6 +393,31 @@ func (h *demandHandler) HandleJobStarted(ctx context.Context, job *scaleset.JobS
 			"job_id",
 			job.JobID,
 		)
+		if h.options.JobStartedSink != nil {
+			event := provenance.JobStarted{
+				Owner:           job.OwnerName,
+				Repository:      job.RepositoryName,
+				WorkflowRef:     job.JobWorkflowRef,
+				WorkflowRunID:   job.WorkflowRunID,
+				JobID:           job.JobID,
+				RunnerRequestID: job.RunnerRequestID,
+				RunnerID:        int64(job.RunnerID),
+				RunnerName:      job.RunnerName,
+				EventName:       job.EventName,
+				ScaleSetID:      int64(h.options.ScaleSetID),
+				ScaleSetName:    h.options.ScaleSetName,
+			}
+			if err := h.options.JobStartedSink.TryEnqueue(event); err != nil {
+				h.options.Logger.ErrorContext(
+					ctx,
+					"GitHub Actions job proof event dropped",
+					"job_id", job.JobID,
+					"runner_id", job.RunnerID,
+					"runner_name", job.RunnerName,
+					"error", err,
+				)
+			}
+		}
 	}
 	return nil
 }

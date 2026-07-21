@@ -57,6 +57,29 @@ func TestApplicationPropagatesDemandSourceFailure(t *testing.T) {
 	assert.EqualError(t, err, "demand source: poll failed")
 }
 
+// TestApplicationSupervisesAdditionalComponents proves coordinator failures own application shutdown.
+func TestApplicationSupervisesAdditionalComponents(t *testing.T) {
+	t.Parallel()
+
+	application := newApplication(t, app.Options{
+		DemandSource: demandSourceFunc(func(ctx context.Context, _ func(controller.Demand)) error {
+			<-ctx.Done()
+			return ctx.Err()
+		}),
+		RunnerBackend: newFakeBackend(),
+		Components: []app.Component{{
+			Name: "job proof coordinator",
+			Runner: runnableFunc(func(context.Context) error {
+				return errors.New("coordinator failed")
+			}),
+		}},
+	})
+
+	err := application.Run(context.Background())
+
+	require.EqualError(t, err, "job proof coordinator: coordinator failed")
+}
+
 func TestApplicationBoundsShutdownWhenDemandSourceIgnoresCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -129,6 +152,14 @@ type demandSourceFunc func(context.Context, func(controller.Demand)) error
 // Run invokes the adapted demand-source function.
 func (f demandSourceFunc) Run(ctx context.Context, publish func(controller.Demand)) error {
 	return f(ctx, publish)
+}
+
+// runnableFunc adapts a function to an additional application component.
+type runnableFunc func(context.Context) error
+
+// Run invokes the adapted component function.
+func (f runnableFunc) Run(ctx context.Context) error {
+	return f(ctx)
 }
 
 // fencerFunc adapts a function to the controller registration-fence port.

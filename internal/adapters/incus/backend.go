@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"maps"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +38,11 @@ const (
 	imageKey               = "user.incus-gh-runner.image"
 	imageReferenceKey      = "user.incus-gh-runner.image-reference"
 	profilesKey            = "user.incus-gh-runner.profiles"
+	launchDigestKey        = "user.incus-gh-runner.launch-configuration-sha256"
+	jitRunnerIDKey         = "user.incus-gh-runner.jit-runner-id"
+	jitRunnerNameKey       = "user.incus-gh-runner.jit-runner-name"
+	jitScaleSetIDKey       = "user.incus-gh-runner.jit-scale-set-id"
+	boundInstanceUUIDKey   = "user.incus-gh-runner.instance-uuid"
 	instanceUUIDKey        = "volatile.uuid"
 	defaultProfileName     = "default"
 	maximumInstanceNameLen = 63
@@ -64,6 +70,8 @@ type runtimeIdentity struct {
 	config api.ConfigMap
 	// devices are the effective profile devices captured during preflight.
 	devices api.DevicesMap
+	// launchDigest identifies the exact pre-metadata instance request.
+	launchDigest string
 }
 
 // Payload is the versioned runtime input consumed by the one-shot guest.
@@ -72,6 +80,18 @@ type Payload struct {
 	Version int
 	// JITConfig is the opaque one-runner GitHub registration configuration.
 	JITConfig string
+	// Runner is the validated GitHub registration created with JITConfig.
+	Runner JITRunnerReference
+}
+
+// JITRunnerReference identifies the exact GitHub registration bound to one VM.
+type JITRunnerReference struct {
+	// ID is the positive GitHub runner registration identifier.
+	ID int
+	// Name is the exact controller-requested runner name.
+	Name string
+	// ScaleSetID is the positive resolved runner scale-set identifier.
+	ScaleSetID int
 }
 
 // PayloadSource supplies a fresh runtime payload for each new runner.
@@ -112,6 +132,8 @@ func (f DiagnosticsSinkFunc) Store(ctx context.Context, diagnostics Diagnostics)
 
 // Options configures the ownership-scoped Incus backend.
 type Options struct {
+	// Project is the configured Incus project used in signed machine identity.
+	Project string
 	// Image is an existing local image alias or fingerprint.
 	Image string
 	// Profiles are existing profile sources pinned and materialized into every runner VM.
@@ -124,6 +146,8 @@ type Options struct {
 	BootstrapTimeout time.Duration
 	// Payloads supplies the guest runtime contract for each new instance.
 	Payloads PayloadSource
+	// RunnerFencer removes the GitHub registration before failed provisioning or instance deletion.
+	RunnerFencer controller.Fencer
 	// Diagnostics receives serial-console evidence before deletion.
 	Diagnostics DiagnosticsSink
 	// Logger receives secret-safe lifecycle events.
@@ -165,6 +189,9 @@ func newBackend(client client, options Options) (*Backend, error) {
 	if strings.TrimSpace(options.Image) == "" {
 		return nil, errors.New("incus image is required")
 	}
+	if strings.TrimSpace(options.Project) == "" {
+		return nil, errors.New("incus project is required")
+	}
 	if strings.TrimSpace(options.Owner) == "" {
 		return nil, errors.New("incus ownership identity is required")
 	}
@@ -173,6 +200,9 @@ func newBackend(client client, options Options) (*Backend, error) {
 	}
 	if options.Payloads == nil {
 		return nil, errors.New("payload source is required")
+	}
+	if options.RunnerFencer == nil {
+		return nil, errors.New("runner fencer is required")
 	}
 	if len(options.NamePrefix)+36 > maximumInstanceNameLen {
 		return nil, fmt.Errorf("instance name prefix is too long: %q", options.NamePrefix)
@@ -236,6 +266,9 @@ func (b *Backend) Preflight(ctx context.Context) error {
 		if profileErr != nil {
 			return fmt.Errorf("resolve runner profile %q: %w", profileName, profileErr)
 		}
+		if reservedKey := reservedProfileKey(profile.Config); reservedKey != "" {
+			return fmt.Errorf("runner profile %q uses reserved config key %q", profileName, reservedKey)
+		}
 		digest, digestErr := profileDigest(profile)
 		if digestErr != nil {
 			return fmt.Errorf("digest runner profile %q: %w", profileName, digestErr)
@@ -251,6 +284,11 @@ func (b *Backend) Preflight(ctx context.Context) error {
 		return fmt.Errorf("encode runner profile identities: %w", err)
 	}
 	identity.profileMetadata = string(profileMetadata)
+	launchDigest, err := provenance.LaunchDigest(launchInput(identity))
+	if err != nil {
+		return fmt.Errorf("digest runner launch configuration: %w", err)
+	}
+	identity.launchDigest = launchDigest
 
 	b.mu.Lock()
 	b.identity = identity
@@ -264,6 +302,43 @@ func (b *Backend) Preflight(ctx context.Context) error {
 	)
 
 	return nil
+}
+
+// reservedProfileKey returns the first config key reserved for server or controller state.
+func reservedProfileKey(config api.ConfigMap) string {
+	keys := make([]string, 0, len(config))
+	for key := range config {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if strings.HasPrefix(key, "volatile.") || strings.HasPrefix(key, "user.incus-gh-runner.") {
+			return key
+		}
+	}
+
+	return ""
+}
+
+// launchInput projects the pinned pre-metadata request into the normative proof schema.
+func launchInput(identity *runtimeIdentity) provenance.LaunchInput {
+	profiles := make([]provenance.Profile, 0, len(identity.profiles))
+	for _, profile := range identity.profiles {
+		profiles = append(profiles, provenance.Profile{Name: profile.Name, SHA256: profile.SHA256})
+	}
+	devices := make(map[string]map[string]string, len(identity.devices))
+	for name, device := range identity.devices {
+		devices[name] = maps.Clone(device)
+	}
+
+	return provenance.LaunchInput{
+		Version:          provenance.Version,
+		InstanceType:     provenance.LaunchInstanceType,
+		ImageFingerprint: identity.imageFingerprint,
+		Profiles:         profiles,
+		Config:           maps.Clone(identity.config),
+		Devices:          devices,
+	}
 }
 
 // validateImageFingerprint requires a full SHA-256 image identity.
@@ -313,6 +388,7 @@ func (b *Backend) pinnedIdentity() (*runtimeIdentity, error) {
 		profileMetadata:  b.identity.profileMetadata,
 		config:           maps.Clone(b.identity.config),
 		devices:          make(api.DevicesMap, len(b.identity.devices)),
+		launchDigest:     b.identity.launchDigest,
 	}
 	for name, device := range b.identity.devices {
 		identity.devices[name] = maps.Clone(device)
@@ -378,6 +454,97 @@ func (b *Backend) ListOwned(ctx context.Context) ([]controller.Runner, error) {
 	return runners, nil
 }
 
+// Snapshot verifies one authenticated job against current owned VM and launch state.
+func (b *Backend) Snapshot(ctx context.Context, event provenance.JobStarted) (provenance.Machine, error) {
+	if err := event.Validate(); err != nil {
+		return provenance.Machine{}, fmt.Errorf("validate job event: %w", err)
+	}
+	instance, _, err := b.client.GetInstance(ctx, event.RunnerName)
+	if err != nil {
+		return provenance.Machine{}, fmt.Errorf("get proof candidate %q: %w", event.RunnerName, err)
+	}
+	instanceUUID, err := b.verifyInstanceIdentity(event.RunnerName, instance, "sign proof for")
+	if err != nil {
+		return provenance.Machine{}, err
+	}
+	if !strings.EqualFold(instance.Status, "running") {
+		return provenance.Machine{}, fmt.Errorf("refusing to sign proof for non-running instance %q", event.RunnerName)
+	}
+	if instance.Config[boundInstanceUUIDKey] != instanceUUID {
+		return provenance.Machine{}, fmt.Errorf("refusing to sign proof for replacement instance %q", event.RunnerName)
+	}
+	if instance.Config[jitRunnerIDKey] != strconv.FormatInt(event.RunnerID, 10) ||
+		instance.Config[jitRunnerNameKey] != event.RunnerName ||
+		instance.Config[jitScaleSetIDKey] != strconv.FormatInt(event.ScaleSetID, 10) {
+		return provenance.Machine{}, fmt.Errorf(
+			"JIT registration metadata does not match job event for %q",
+			event.RunnerName,
+		)
+	}
+
+	profiles, err := decodeProfileReferences(instance.Config[profilesKey])
+	if err != nil {
+		return provenance.Machine{}, fmt.Errorf("decode profile identity for %q: %w", event.RunnerName, err)
+	}
+	launchDigest, err := provenance.LaunchDigest(instanceLaunchInput(instance, profiles))
+	if err != nil {
+		return provenance.Machine{}, fmt.Errorf("reconstruct launch identity for %q: %w", event.RunnerName, err)
+	}
+	if launchDigest != instance.Config[launchDigestKey] {
+		return provenance.Machine{}, fmt.Errorf("launch configuration drift detected for %q", event.RunnerName)
+	}
+
+	return provenance.Machine{
+		IncusProject:              b.options.Project,
+		InstanceName:              event.RunnerName,
+		InstanceUUID:              instanceUUID,
+		ImageFingerprint:          instance.Config[imageKey],
+		LaunchConfigurationSHA256: launchDigest,
+		Profiles:                  profiles,
+	}, nil
+}
+
+// decodeProfileReferences reads the controller-owned ordered profile metadata.
+func decodeProfileReferences(encoded string) ([]provenance.Profile, error) {
+	var references []profileReference
+	if err := json.Unmarshal([]byte(encoded), &references); err != nil {
+		return nil, err
+	}
+	if references == nil {
+		return nil, errors.New("profile metadata must be an array")
+	}
+	profiles := make([]provenance.Profile, 0, len(references))
+	for _, reference := range references {
+		profiles = append(profiles, provenance.Profile{Name: reference.Name, SHA256: reference.SHA256})
+	}
+
+	return profiles, nil
+}
+
+// instanceLaunchInput removes server and controller audit metadata from the current VM.
+func instanceLaunchInput(instance *api.Instance, profiles []provenance.Profile) provenance.LaunchInput {
+	config := make(map[string]string)
+	for key, value := range instance.Config {
+		if strings.HasPrefix(key, "volatile.") || strings.HasPrefix(key, "user.incus-gh-runner.") {
+			continue
+		}
+		config[key] = value
+	}
+	devices := make(map[string]map[string]string, len(instance.Devices))
+	for name, device := range instance.Devices {
+		devices[name] = maps.Clone(device)
+	}
+
+	return provenance.LaunchInput{
+		Version:          provenance.Version,
+		InstanceType:     provenance.LaunchInstanceType,
+		ImageFingerprint: instance.Config[imageKey],
+		Profiles:         profiles,
+		Config:           config,
+		Devices:          devices,
+	}
+}
+
 // statusReadContext gives one runner a bounded, fair share of the inventory deadline.
 func (b *Backend) statusReadContext(ctx context.Context, remaining int) (context.Context, context.CancelFunc) {
 	budget := b.options.StatusReadTimeout
@@ -415,6 +582,7 @@ func (b *Backend) Create(ctx context.Context) (controller.Runner, error) {
 	config[imageKey] = identity.imageFingerprint
 	config[imageReferenceKey] = b.options.Image
 	config[profilesKey] = identity.profileMetadata
+	config[launchDigestKey] = identity.launchDigest
 	request := api.InstancesPost{
 		Name: name,
 		Type: api.InstanceTypeVM,
@@ -428,26 +596,32 @@ func (b *Backend) Create(ctx context.Context) (controller.Runner, error) {
 	if createErr := b.client.CreateInstance(ctx, request); createErr != nil {
 		return controller.Runner{}, fmt.Errorf("create owned instance %q: %w", name, createErr)
 	}
-	if startErr := b.client.StartInstance(ctx, name); startErr != nil {
-		return controller.Runner{}, fmt.Errorf("start owned instance %q: %w", name, startErr)
-	}
-
 	payload, err := b.options.Payloads.Payload(ctx, name)
 	if err != nil {
-		return controller.Runner{}, fmt.Errorf("obtain runtime payload for %q: %w", name, err)
+		provisionErr := fmt.Errorf("obtain runtime payload for %q: %w", name, err)
+		return controller.Runner{}, b.fenceProvisioningFailure(ctx, name, provisionErr)
 	}
-	if payload.Version != 1 || strings.TrimSpace(payload.JITConfig) == "" {
-		return controller.Runner{}, fmt.Errorf("runtime payload for %q is invalid", name)
+	if validationErr := validateRuntimePayload(name, payload); validationErr != nil {
+		provisionErr := fmt.Errorf("runtime payload for %q is invalid: %w", name, validationErr)
+		return controller.Runner{}, b.fenceProvisioningFailure(ctx, name, provisionErr)
+	}
+	if bindErr := b.bindJITRegistration(ctx, name, identity.launchDigest, payload.Runner); bindErr != nil {
+		return controller.Runner{}, b.fenceProvisioningFailure(ctx, name, bindErr)
+	}
+	if startErr := b.client.StartInstance(ctx, name); startErr != nil {
+		provisionErr := fmt.Errorf("start owned instance %q: %w", name, startErr)
+		return controller.Runner{}, b.fenceProvisioningFailure(ctx, name, provisionErr)
 	}
 	encoded, err := json.Marshal(map[string]any{
 		"version":    payload.Version,
 		"jit_config": payload.JITConfig,
 	})
 	if err != nil {
-		return controller.Runner{}, fmt.Errorf("encode runtime payload for %q: %w", name, err)
+		provisionErr := fmt.Errorf("encode runtime payload for %q: %w", name, err)
+		return controller.Runner{}, b.fenceProvisioningFailure(ctx, name, provisionErr)
 	}
 	if pushErr := b.pushPayload(ctx, name, encoded); pushErr != nil {
-		return controller.Runner{}, pushErr
+		return controller.Runner{}, b.fenceProvisioningFailure(ctx, name, pushErr)
 	}
 
 	b.options.Logger.InfoContext(
@@ -459,6 +633,82 @@ func (b *Backend) Create(ctx context.Context) (controller.Runner, error) {
 		"profiles", identity.profiles,
 	)
 	return controller.Runner{ID: name, State: controller.RunnerProvisioning}, nil
+}
+
+// fenceProvisioningFailure joins registration-fence failure without hiding the original error.
+func (b *Backend) fenceProvisioningFailure(ctx context.Context, runnerID string, provisionErr error) error {
+	if fenceErr := b.options.RunnerFencer.Fence(ctx, runnerID); fenceErr != nil {
+		return errors.Join(
+			provisionErr,
+			fmt.Errorf("fence GitHub registration for failed runner %q: %w", runnerID, fenceErr),
+		)
+	}
+
+	return provisionErr
+}
+
+// validateRuntimePayload checks the guest contract and validated JIT reference shape.
+func validateRuntimePayload(name string, payload Payload) error {
+	if payload.Version != 1 || strings.TrimSpace(payload.JITConfig) == "" ||
+		payload.Runner.ID <= 0 || payload.Runner.Name != name || payload.Runner.ScaleSetID <= 0 {
+		return errors.New("payload fields do not match the allocated runner")
+	}
+
+	return nil
+}
+
+// bindJITRegistration conditionally persists and confirms one JIT reference on a stopped VM.
+func (b *Backend) bindJITRegistration(
+	ctx context.Context,
+	name string,
+	launchDigest string,
+	runner JITRunnerReference,
+) error {
+	instance, etag, err := b.client.GetInstance(ctx, name)
+	if err != nil {
+		return fmt.Errorf("re-fetch owned instance %q before JIT bind: %w", name, err)
+	}
+	instanceUUID, err := b.verifyInstanceIdentity(name, instance, "bind JIT registration to")
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(instance.Status, guestStatusStopped) {
+		return fmt.Errorf("refusing to bind JIT registration to running Incus instance %q", name)
+	}
+	if strings.TrimSpace(etag) == "" {
+		return fmt.Errorf(
+			"refusing to bind JIT registration to Incus instance %q without an ETag",
+			name,
+		)
+	}
+	runnerID := strconv.Itoa(runner.ID)
+	scaleSetID := strconv.Itoa(runner.ScaleSetID)
+	update := instance.Writable()
+	update.Config = maps.Clone(update.Config)
+	update.Config[jitRunnerIDKey] = runnerID
+	update.Config[jitRunnerNameKey] = runner.Name
+	update.Config[jitScaleSetIDKey] = scaleSetID
+	update.Config[boundInstanceUUIDKey] = instanceUUID
+	if updateErr := b.client.UpdateInstance(ctx, name, update, etag); updateErr != nil {
+		return fmt.Errorf("bind JIT registration to owned instance %q: %w", name, updateErr)
+	}
+	bound, _, err := b.getVerifiedInstance(ctx, name, instanceUUID, "confirm JIT registration on")
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(bound.Status, guestStatusStopped) ||
+		bound.Config[jitRunnerIDKey] != runnerID ||
+		bound.Config[jitRunnerNameKey] != runner.Name ||
+		bound.Config[jitScaleSetIDKey] != scaleSetID ||
+		bound.Config[boundInstanceUUIDKey] != instanceUUID ||
+		bound.Config[launchDigestKey] != launchDigest {
+		return fmt.Errorf(
+			"confirm JIT registration on owned instance %q: metadata does not match",
+			name,
+		)
+	}
+
+	return nil
 }
 
 // pushPayload waits for the guest agent and commits the runtime input with the ready marker.
@@ -496,6 +746,9 @@ func (b *Backend) Delete(ctx context.Context, runnerID string) error {
 	instanceUUID, err := b.verifyInstanceIdentity(runnerID, instance, "delete candidate")
 	if err != nil {
 		return err
+	}
+	if fenceErr := b.options.RunnerFencer.Fence(ctx, runnerID); fenceErr != nil {
+		return fmt.Errorf("fence runner %q before instance delete: %w", runnerID, fenceErr)
 	}
 	if stopErr := b.stopInstance(ctx, runnerID, instanceUUID, instance); stopErr != nil {
 		return stopErr

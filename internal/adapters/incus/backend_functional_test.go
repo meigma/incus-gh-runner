@@ -35,13 +35,25 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 	probeSecret := "functional-probe-" + uuid.NewString()
 	diagnosticsObserved := make(chan Diagnostics, 1)
 	backend, err := NewBackend(server, Options{
+		Project:          project,
 		Image:            image,
 		Profiles:         splitProfiles(os.Getenv("INCUS_GH_RUNNER_TEST_PROFILES")),
 		Owner:            "functional-test-" + uuid.NewString(),
 		BootstrapTimeout: 5 * time.Minute,
 		Logger:           logger,
-		Payloads: PayloadSourceFunc(func(context.Context, string) (Payload, error) {
-			return Payload{Version: 1, JITConfig: probeSecret}, nil
+		RunnerFencer: testFencerFunc(func(context.Context, string) error {
+			return nil
+		}),
+		Payloads: PayloadSourceFunc(func(_ context.Context, runnerName string) (Payload, error) {
+			return Payload{
+				Version:   1,
+				JITConfig: probeSecret,
+				Runner: JITRunnerReference{
+					ID:         1,
+					Name:       runnerName,
+					ScaleSetID: 1,
+				},
+			}, nil
 		}),
 		Diagnostics: DiagnosticsSinkFunc(func(_ context.Context, observed Diagnostics) error {
 			mailbox.Publish(controller.Demand{})

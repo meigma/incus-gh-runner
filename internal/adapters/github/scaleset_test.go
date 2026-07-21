@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/meigma/incus-gh-runner/internal/controller"
+	"github.com/meigma/incus-gh-runner/internal/provenance"
 )
 
 func TestResolveScaleSetUsesExistingOrCreatesPersistentScaleSet(t *testing.T) {
@@ -235,18 +237,43 @@ func TestScaleSetJITConfigUsesRunnerIdentityAndRejectsEmptyResponse(t *testing.T
 		name        string
 		response    *scaleset.RunnerScaleSetJitRunnerConfig
 		responseErr error
-		want        string
+		want        JITConfig
 		wantErr     string
 	}{
 		{
-			name:     "returns a fresh encoded configuration",
-			response: &scaleset.RunnerScaleSetJitRunnerConfig{EncodedJITConfig: "opaque-jit"},
-			want:     "opaque-jit",
+			name: "returns a validated runner reference with the opaque configuration",
+			response: &scaleset.RunnerScaleSetJitRunnerConfig{
+				EncodedJITConfig: "opaque-jit",
+				Runner: &scaleset.RunnerReference{
+					ID: 41, Name: "runner-123", RunnerScaleSetID: 73,
+				},
+			},
+			want: JITConfig{Encoded: "opaque-jit", RunnerID: 41, RunnerName: "runner-123", ScaleSetID: 73},
 		},
 		{
 			name:     "rejects an empty configuration",
 			response: &scaleset.RunnerScaleSetJitRunnerConfig{},
-			wantErr:  "response is empty",
+			wantErr:  "response is incomplete",
+		},
+		{
+			name: "rejects a mismatched runner name",
+			response: &scaleset.RunnerScaleSetJitRunnerConfig{
+				EncodedJITConfig: "opaque-jit",
+				Runner: &scaleset.RunnerReference{
+					ID: 41, Name: "other-runner", RunnerScaleSetID: 73,
+				},
+			},
+			wantErr: "runner response name does not match",
+		},
+		{
+			name: "rejects a mismatched scale set",
+			response: &scaleset.RunnerScaleSetJitRunnerConfig{
+				EncodedJITConfig: "opaque-jit",
+				Runner: &scaleset.RunnerReference{
+					ID: 41, Name: "runner-123", RunnerScaleSetID: 74,
+				},
+			},
+			wantErr: "runner response scale set does not match",
 		},
 		{
 			name:        "wraps an upstream failure",
@@ -421,6 +448,87 @@ func TestDemandSourcePublishesAuthoritativeBusyRunnerSnapshot(t *testing.T) {
 		{AssignedJobs: 1, BusyRunners: []string{"runner-1"}},
 		{BusyRunners: []string{}},
 	}, observed)
+}
+
+// TestDemandHandlerQueuesValidatedJobProofEventsWithoutBlocking proves the synchronous callback boundary.
+func TestDemandHandlerQueuesValidatedJobProofEventsWithoutBlocking(t *testing.T) {
+	t.Parallel()
+
+	queue, err := provenance.NewJobStartedQueue(1)
+	require.NoError(t, err)
+	handler := demandHandler{
+		options: DemandSourceOptions{
+			ScaleSetID:     73,
+			ScaleSetName:   "incus-runners",
+			JobStartedSink: queue,
+			Logger:         slog.New(slog.DiscardHandler),
+		},
+		busy: make(map[string]struct{}),
+	}
+	job := &scaleset.JobStarted{
+		RunnerID:   41,
+		RunnerName: "runner-123",
+		JobMessageBase: scaleset.JobMessageBase{
+			OwnerName:       "meigma",
+			RepositoryName:  "incus-gh-runner",
+			JobWorkflowRef:  "meigma/incus-gh-runner/.github/workflows/test.yml@refs/heads/master",
+			WorkflowRunID:   101,
+			JobID:           "job-1",
+			RunnerRequestID: 202,
+			EventName:       "push",
+		},
+	}
+
+	require.NoError(t, handler.HandleJobStarted(context.Background(), job))
+	job.JobID = "job-2"
+	require.NoError(
+		t,
+		handler.HandleJobStarted(context.Background(), job),
+		"full proof queue must not fail the listener",
+	)
+
+	assert.Equal(t, provenance.JobStarted{
+		Owner:           "meigma",
+		Repository:      "incus-gh-runner",
+		WorkflowRef:     "meigma/incus-gh-runner/.github/workflows/test.yml@refs/heads/master",
+		WorkflowRunID:   101,
+		JobID:           "job-1",
+		RunnerRequestID: 202,
+		RunnerID:        41,
+		RunnerName:      "runner-123",
+		EventName:       "push",
+		ScaleSetID:      73,
+		ScaleSetName:    "incus-runners",
+	}, <-queue.Events())
+	assert.Contains(t, handler.busy, "runner-123", "busy tracking must remain independent from queue saturation")
+}
+
+// TestDemandHandlerDropsMalformedProofEventWithoutFailingBusyTracking proves fail-closed event validation.
+func TestDemandHandlerDropsMalformedProofEventWithoutFailingBusyTracking(t *testing.T) {
+	t.Parallel()
+
+	queue, err := provenance.NewJobStartedQueue(1)
+	require.NoError(t, err)
+	handler := demandHandler{
+		options: DemandSourceOptions{
+			ScaleSetID:     73,
+			ScaleSetName:   "incus-runners",
+			JobStartedSink: queue,
+			Logger:         slog.New(slog.DiscardHandler),
+		},
+		busy: make(map[string]struct{}),
+	}
+
+	require.NoError(t, handler.HandleJobStarted(context.Background(), &scaleset.JobStarted{
+		RunnerName: "runner-123",
+	}))
+
+	assert.Contains(t, handler.busy, "runner-123")
+	select {
+	case <-queue.Events():
+		t.Fatal("malformed GitHub event must not enter the proof queue")
+	default:
+	}
 }
 
 func TestResilientDemandSourceCapsReconnectBackoff(t *testing.T) {

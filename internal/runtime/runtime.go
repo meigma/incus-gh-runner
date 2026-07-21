@@ -3,6 +3,7 @@ package runtime
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"github.com/meigma/incus-gh-runner/internal/adapters/provenancefile"
 	"github.com/meigma/incus-gh-runner/internal/app"
 	"github.com/meigma/incus-gh-runner/internal/config"
+	"github.com/meigma/incus-gh-runner/internal/controller"
 	"github.com/meigma/incus-gh-runner/internal/provenance"
 )
 
@@ -38,12 +40,19 @@ type components struct {
 
 // jobProofRuntime contains optional proof components prepared during startup.
 type jobProofRuntime struct {
-	signer *provenance.Signer
+	signer   *provenance.Signer
+	verifier *provenance.EnvelopeVerifier
 }
 
 // jitPayloadSource binds Incus allocation identities to fresh GitHub JIT configurations.
 type jitPayloadSource struct {
 	scaleSet *githubadapter.ScaleSet
+}
+
+// runnerPayloadSource combines JIT acquisition with registration cleanup.
+type runnerPayloadSource interface {
+	incusadapter.PayloadSource
+	controller.Fencer
 }
 
 // Payload returns the versioned guest input for one allocated runner.
@@ -56,7 +65,24 @@ func (s *jitPayloadSource) Payload(ctx context.Context, runnerID string) (incusa
 		return incusadapter.Payload{}, jitErr
 	}
 
-	return incusadapter.Payload{Version: 1, JITConfig: jitConfig}, nil
+	return incusadapter.Payload{
+		Version:   1,
+		JITConfig: jitConfig.Encoded,
+		Runner: incusadapter.JITRunnerReference{
+			ID:         jitConfig.RunnerID,
+			Name:       jitConfig.RunnerName,
+			ScaleSetID: jitConfig.ScaleSetID,
+		},
+	}, nil
+}
+
+// Fence removes one runner registration through the resolved scale set.
+func (s *jitPayloadSource) Fence(ctx context.Context, runnerID string) error {
+	if s.scaleSet == nil {
+		return errors.New("GitHub runner scale set is not resolved")
+	}
+
+	return s.scaleSet.Fence(ctx, runnerID)
 }
 
 // Run validates configuration, preflights adapters, and runs the controller application.
@@ -93,7 +119,7 @@ func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *sl
 		return nil, clientErr
 	}
 	payloads := &jitPayloadSource{}
-	backend, backendErr := newIncusBackend(ctx, cfg, payloads, logger)
+	backend, proofSink, backendErr := newIncusBackend(ctx, cfg, payloads, jobProof.verifier, logger)
 	if backendErr != nil {
 		return nil, backendErr
 	}
@@ -108,32 +134,53 @@ func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *sl
 		return nil, resolveErr
 	}
 	payloads.scaleSet = resolved
+	var proofQueue *provenance.JobStartedQueue
+	var proofCoordinator *provenance.Coordinator
+	if jobProof.signer != nil {
+		proofQueue, proofErr = provenance.NewJobStartedQueue(max(1, cfg.Capacity.MaxRunners))
+		if proofErr != nil {
+			return nil, fmt.Errorf("construct job proof event queue: %w", proofErr)
+		}
+		proofCoordinator, proofErr = provenance.NewCoordinator(provenance.CoordinatorOptions{
+			Events:   proofQueue.Events(),
+			Machines: backend,
+			Signer:   jobProof.signer,
+			Sink:     proofSink,
+			Host: provenance.Host{
+				ID:                cfg.JobProof.HostID,
+				ControllerVersion: build.Version,
+				ControllerCommit:  build.Commit,
+			},
+			OperationTimeout: cfg.Timeouts.IncusOperation,
+			Logger:           logger.WithGroup("job_proof"),
+		})
+		if proofErr != nil {
+			return nil, fmt.Errorf("construct job proof coordinator: %w", proofErr)
+		}
+	}
 
 	sessionOwner := resolveSessionOwner(ctx, logger)
+	demandOptions := demandSourceOptions(cfg, resolved.ID(), logger, proofQueue)
 	demandSource, sourceErr := githubadapter.NewResilientDemandSource(
 		ctx,
 		githubClient,
 		sessionOwner,
-		githubadapter.DemandSourceOptions{
-			ScaleSetID:          resolved.ID(),
-			MinRunners:          cfg.Capacity.MinRunners,
-			MaxRunners:          cfg.Capacity.MaxRunners,
-			Logger:              logger.WithGroup("github_listener"),
-			ReconnectInitial:    cfg.Retry.Initial,
-			ReconnectMaximum:    cfg.Retry.Maximum,
-			SessionCloseTimeout: cfg.Timeouts.Shutdown,
-		},
+		demandOptions,
 	)
 	if sourceErr != nil {
 		return nil, sourceErr
 	}
-	application, applicationErr := app.New(app.Options{
+	applicationOptions := app.Options{
 		Config:        cfg,
 		DemandSource:  demandSource,
 		RunnerBackend: backend,
 		RunnerFencer:  resolved,
 		Logger:        logger.WithGroup("controller"),
-	})
+	}
+	if proofCoordinator != nil {
+		applicationOptions.Components = []app.Component{{Name: "job proof coordinator", Runner: proofCoordinator}}
+	}
+	application, applicationErr := app.New(applicationOptions)
 	if applicationErr != nil {
 		closePreparedDemandSource(demandSource, cfg.Timeouts.Shutdown, logger)
 		return nil, fmt.Errorf("construct application: %w", applicationErr)
@@ -144,6 +191,30 @@ func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *sl
 		scaleSetID:     resolved.ID(),
 		jobProofSigner: jobProof.signer,
 	}, nil
+}
+
+// demandSourceOptions wires the optional proof queue without converting a nil pointer into a non-nil interface.
+func demandSourceOptions(
+	cfg config.Config,
+	scaleSetID int,
+	logger *slog.Logger,
+	proofQueue *provenance.JobStartedQueue,
+) githubadapter.DemandSourceOptions {
+	options := githubadapter.DemandSourceOptions{
+		ScaleSetID:          scaleSetID,
+		ScaleSetName:        cfg.GitHub.ScaleSet,
+		MinRunners:          cfg.Capacity.MinRunners,
+		MaxRunners:          cfg.Capacity.MaxRunners,
+		Logger:              logger.WithGroup("github_listener"),
+		ReconnectInitial:    cfg.Retry.Initial,
+		ReconnectMaximum:    cfg.Retry.Maximum,
+		SessionCloseTimeout: cfg.Timeouts.Shutdown,
+	}
+	if proofQueue != nil {
+		options.JobStartedSink = proofQueue
+	}
+
+	return options
 }
 
 // prepareJobProofSigner loads the optional signing credential exactly once during startup.
@@ -160,44 +231,63 @@ func prepareJobProofSigner(settings config.JobProof) (jobProofRuntime, error) {
 		return jobProofRuntime{}, fmt.Errorf("configure job proof signer: %w", err)
 	}
 
-	return jobProofRuntime{signer: signer}, nil
+	publicKey, ok := privateKey.Public().(ed25519.PublicKey)
+	if !ok {
+		return jobProofRuntime{}, errors.New("derive job proof public key")
+	}
+	verifier, err := provenance.NewEnvelopeVerifier(publicKey, settings.HostID)
+	if err != nil {
+		return jobProofRuntime{}, fmt.Errorf("configure job proof verifier: %w", err)
+	}
+
+	return jobProofRuntime{signer: signer, verifier: verifier}, nil
 }
 
 // newIncusBackend constructs and preflights the ownership-scoped VM lifecycle adapter.
 func newIncusBackend(
 	ctx context.Context,
 	cfg config.Config,
-	payloads incusadapter.PayloadSource,
+	payloads runnerPayloadSource,
+	proofVerifier provenance.ProofVerifier,
 	logger *slog.Logger,
-) (*incusadapter.Backend, error) {
+) (*incusadapter.Backend, *incusadapter.ProofSink, error) {
 	incusServer, connectErr := incusadapter.ConnectUnix(ctx, cfg.Incus.Socket, cfg.Incus.Project)
 	if connectErr != nil {
-		return nil, fmt.Errorf("connect to Incus project %q: %w", cfg.Incus.Project, connectErr)
+		return nil, nil, fmt.Errorf("connect to Incus project %q: %w", cfg.Incus.Project, connectErr)
 	}
 	diagnostics, diagnosticsErr := newDiagnosticsSink(cfg.Incus.DiagnosticsDir)
 	if diagnosticsErr != nil {
-		return nil, diagnosticsErr
+		return nil, nil, diagnosticsErr
 	}
 	backend, backendErr := incusadapter.NewBackend(incusServer, incusadapter.Options{
+		Project:          cfg.Incus.Project,
 		Image:            cfg.Incus.Image,
 		Profiles:         cfg.Incus.Profiles,
 		Owner:            cfg.Incus.Owner,
 		BootstrapTimeout: cfg.Incus.BootstrapTimeout,
 		Payloads:         payloads,
+		RunnerFencer:     payloads,
 		Diagnostics:      diagnostics,
 		Logger:           logger.WithGroup("incus"),
 	})
 	if backendErr != nil {
-		return nil, fmt.Errorf("construct Incus backend: %w", backendErr)
+		return nil, nil, fmt.Errorf("construct Incus backend: %w", backendErr)
 	}
 	preflightContext, cancelPreflight := context.WithTimeout(ctx, cfg.Timeouts.IncusOperation)
 	preflightErr := backend.Preflight(preflightContext)
 	cancelPreflight()
 	if preflightErr != nil {
-		return nil, fmt.Errorf("preflight Incus backend: %w", preflightErr)
+		return nil, nil, fmt.Errorf("preflight Incus backend: %w", preflightErr)
+	}
+	var proofSink *incusadapter.ProofSink
+	if proofVerifier != nil {
+		proofSink, backendErr = incusadapter.NewProofSink(incusServer, cfg.Incus.Owner, proofVerifier)
+		if backendErr != nil {
+			return nil, nil, fmt.Errorf("construct Incus proof sink: %w", backendErr)
+		}
 	}
 
-	return backend, nil
+	return backend, proofSink, nil
 }
 
 // newDiagnosticsSink constructs optional protected terminal-evidence storage.
