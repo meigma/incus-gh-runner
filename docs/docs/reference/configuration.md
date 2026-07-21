@@ -179,11 +179,13 @@ alongside, not instead of, the selected GitHub credential drop-in:
   `root:root` mode `0600`.
 
 The TPM-bound option requires systemd 250 or newer, a TPM 2.0 device, and the
-distribution's TSS2 runtime libraries. Minimal Ubuntu 24.04 installations may
-need `tpm2-tools` to supply those dynamically loaded libraries even though
-`systemd --version` reports `+TPM2`; the encryption attempt remains the
-authoritative capability check. The mode encrypts the same software key to the
-target TPM with an empty PCR set. It changes storage only:
+distribution's TSS2 runtime libraries. Minimal Ubuntu installations may need
+`tpm2-tools` to supply those dynamically loaded libraries even though `systemd
+--version` reports `+TPM2`; the encryption attempt remains the authoritative
+capability check. If systemd suggests AES-128-CFB is missing, use
+`SYSTEMD_LOG_LEVEL=debug` to distinguish a missing TSS2 library from a real TPM
+capability failure. The mode encrypts the same software key to the target TPM
+with an empty PCR set. It changes storage only:
 the plaintext still exists in systemd's runtime credential store and the
 controller's memory, and the controller retains `PrivateDevices=yes` without
 opening a TPM device. It is not TPM-native signing, measured boot, or remote TPM

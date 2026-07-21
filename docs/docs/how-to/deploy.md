@@ -332,9 +332,9 @@ host's TPM. The encryption attempt is the capability check; do not gate this
 procedure on `systemd-creds has-tpm2`, which is unavailable on older supported
 systemd versions.
 
-Install the distribution's TPM2 userspace stack first. On minimal Ubuntu 24.04
-systems, `systemd` reports `+TPM2` but the dynamically loaded TSS2 libraries are
-not necessarily installed; the `tpm2-tools` package supplies them:
+Install the distribution's TPM2 userspace stack first. On minimal Ubuntu
+systems, `systemd` can report `+TPM2` while some dynamically loaded TSS2
+libraries are absent; the `tpm2-tools` package supplies them:
 
 ```sh
 sudo apt-get update
@@ -342,7 +342,9 @@ sudo apt-get install tpm2-tools
 ```
 
 Treat a failed encryption attempt as authoritative even when `systemd
---version` reports `+TPM2`.
+--version` reports `+TPM2`. If systemd reports that AES-128-CFB may be missing,
+rerun with `SYSTEMD_LOG_LEVEL=debug`; a failed TSS2 library load must be fixed
+before treating that message as a TPM firmware limitation.
 
 Create the encrypted credential directory explicitly and stage the plaintext
 key only on the root-owned `/run` temporary filesystem:
