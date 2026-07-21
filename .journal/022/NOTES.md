@@ -36,3 +36,25 @@ Findings (investigation only, no changes):
 - Adjacent habit: large inline bash in `release.yml` (581 lines, six 17–35
   line blocks) and `release-dry-run.yml` (one 46-line block).
 Next: user to decide remediation scope.
+
+## 2026-07-21 16:05 — Removal implemented, PR #44 open
+The maintainer directed removal of everything except product code
+(`image/guest/*`, `image/build.sh`, `image/validate-incus.sh`), explicitly
+declining long-term maintenance of the harnesses; the CUE test-case file
+`deploy/incus/cue/tests/cases.cue` goes too per their answer.
+Done on branch `chore/remove-bash-test-debt` (worktree
+`.wt/chore-remove-bash-test-debt`, commit `fa64f2e`, 13 files, -2,288 lines):
+- Deleted `scripts/live/` (4 harnesses), `image/tests/` (2 contract tests),
+  `deploy/systemd/verify.sh`, `deploy/incus/cue/tests/`.
+- `moon.yml`: removed tasks `image-contract-test`,
+  `incus-isolation-contract-test`, `systemd-unit-test`, their `check` deps,
+  and file groups `imageSources`/`systemdSources`/`incusIsolationSources`.
+- Docs: deploy.md lost the hostile-harness preflight block, both
+  `verify.sh --installed-job-proof` steps, and old step 7 "Validate the
+  unit" (step 8 renumbered to 7); README.md and deploy/incus/cue/README.md
+  harness mentions removed.
+Verified: repo-wide grep for removed basenames returns nothing;
+`moon run root:check` passes (graph resolves, strict docs build green);
+`git ls-files .journal` empty on the branch.
+Coverage intentionally dropped without replacement, recorded in PR #44's
+body. Next: hosted CI on PR #44, then maintainer squash-merge.
