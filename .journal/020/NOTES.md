@@ -15,3 +15,6 @@ Reviewed Session 014's design and five-phase plan against the Phase 4 implementa
 Created `feat/job-proof-phase-5-tpm` from fetched `origin/master` and committed `143b940` (`feat(provenance): add TPM-bound proof key storage`). The slice adds the `LoadCredentialEncrypted=` drop-in, exercises all four GitHub App/PAT with file/TPM proof-key combinations, adds installed-host ownership/mode/presence checks, and documents encryption, empty-PCR policy, origin and cross-host checks, rotation, escrow, replacement, reboot, and external proof verification.
 
 Verification passed: Ubuntu 24.04 sandbox matrix; installed file and TPM verifier modes; full serial `root:check`; and explicit docs build. The first parallel full check hit a stale golangci-lint cache referencing a deleted Worktrunk path plus a concurrently killed isolation fixture; cleaning the linter cache and rerunning the affected checks serially passed. The live TPM host reboot, genuine proof, rotation, and optional second-host binding gates remain open.
+
+## 2026-07-20 20:07 — Draft review gate
+Pushed `feat/job-proof-phase-5-tpm` and opened draft PR #41: https://github.com/meigma/incus-gh-runner/pull/41. The PR explicitly remains draft until the enrolled-TPM host, reboot, genuine proof, rotation, and optional second-host binding evidence is complete.
