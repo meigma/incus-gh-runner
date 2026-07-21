@@ -1,6 +1,6 @@
 # How to operate and troubleshoot incus-gh-runner
 
-Read logs, collect VM diagnostics, change capacity and configuration safely, upgrade the binary and reference image, and diagnose common failures on a running deployment.
+Read logs, collect VM diagnostics, change capacity and configuration safely, upgrade the binary and runner image, and diagnose common failures on a running deployment.
 
 ## Prerequisites
 
@@ -101,13 +101,13 @@ For the full set of timeout and capacity keys, see [Configuration reference](../
 
 The same busy-VM survival and shutdown-budget behavior described above applies during a binary upgrade.
 
-### Upgrade the reference image
+### Upgrade the runner image
 
 1. Import the new image into Incus under a new alias or fingerprint.
 2. Update `incus.image` in `config.yaml` to point at it.
 3. Restart the unit.
 
-Existing runner VMs built from the old image are left running until they finish their job and are recycled; new VMs are created from the image now referenced by `incus.image`. See [Obtain, build, and validate runner images](./runner-images.md) for how to fetch, verify, and validate a released image before importing it.
+Existing runner VMs built from the old image are left running until they finish their job and are recycled; new VMs are created from the image now referenced by `incus.image`. See [Build a hardened runner image](./build-runner-images.md) for building and boot-testing an image before importing it.
 
 ## Troubleshooting
 
@@ -115,7 +115,7 @@ Existing runner VMs built from the old image are left running until they finish 
 |---|---|---|
 | Unit exits immediately at start | Invalid config, a bad credential, or the startup preflight failed to resolve the configured Incus image or a profile | Read the error on stderr / `journalctl -u incus-gh-runner`; the process fails fast and reports the specific validation or preflight error. |
 | Repeated `GitHub message session disconnected; reconnecting` | A GitHub-side outage, or the App/PAT credential was revoked mid-run | Backoff is capped and automatic; no restart is needed for a transient outage. If it persists, verify the credential is still valid. |
-| Runner stays `provisioning`, then goes `terminal` after a while | Image doesn't implement the guest contract, the wrong image is configured, or the VM has no network reachability to GitHub | Check `incus.image` and `incus.bootstrap_timeout`; validate the image with [`image/validate-incus.sh`](./runner-images.md); confirm the VM's network path. |
+| Runner stays `provisioning`, then goes `terminal` after a while | Image doesn't implement the guest contract, the wrong image is configured, or the VM has no network reachability to GitHub | Check `incus.image` and `incus.bootstrap_timeout`; boot-test the image against the [guest contract](./build-runner-images.md#10-boot-test-against-the-guest-contract); confirm the VM's network path. |
 | `runner operation failed` repeats with growing `retry_after` | An Incus-side failure (API, storage, hypervisor) put that operation into cooldown | Creates share one cooldown; each runner's delete has its own. A fresh successful inventory list (`operation: list`) must land before further mutation is attempted — check Incus itself for the underlying error reported in the `error` field. |
 | A runner VM refuses deletion | The controller's cleanup selector on the instance doesn't match `incus.owner` | Expected behavior — the controller refuses deletion outside its exact selector. Confirm the VM's `user.incus-gh-runner.owner` metadata and your configured `incus.owner`, and delete manually via Incus if it is genuinely orphaned. The selector prevents accidental cleanup; another project writer can forge it. |
 | `job proof delivery failed` or `GitHub Actions job proof event dropped` errors while jobs run | The proof could not be signed, delivered to the runner VM, or enqueued before the job's helper timeout | Read the `error` field for the failing stage. The affected job fails closed through the guest helper timeout; no other jobs are affected. See the `job_proof` keys in [Configuration reference](../reference/configuration.md#job_proof). |
@@ -123,7 +123,7 @@ Existing runner VMs built from the old image are left running until they finish 
 ## Related
 
 - [Deploy incus-gh-runner](./deploy.md)
-- [Obtain, build, and validate runner images](./runner-images.md)
+- [Build a hardened runner image](./build-runner-images.md)
 - [Configuration reference](../reference/configuration.md)
 - [Guest contract reference](../reference/guest-contract.md)
 - [How incus-gh-runner works](../explanation/how-it-works.md)

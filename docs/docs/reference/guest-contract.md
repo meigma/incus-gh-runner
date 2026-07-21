@@ -1,6 +1,6 @@
 # Guest Contract Reference
 
-The controller pushes a runtime payload into a booted VM over the Incus agent; the guest runs exactly one GitHub Actions job, reports its status through a well-known file and the serial console, and powers itself off. This page documents that interface — the filesystem, JSON schemas, console output, and instance metadata that anything auditing the reference image, or replacing it with a custom one, must reproduce.
+The controller pushes a runtime payload into a booted VM over the Incus agent; the guest runs exactly one GitHub Actions job, reports its status through a well-known file and the serial console, and powers itself off. This page documents that interface — the filesystem, JSON schemas, console output, and instance metadata that every runner image must reproduce.
 
 ## Filesystem contract
 
@@ -168,26 +168,27 @@ Guest status observations are capped at 64 KiB. Because partial JSON is not auth
 !!! warning "Console diagnostics may contain sensitive output"
     Captured console content may include sensitive workload output. Diagnostics files must be handled with the same care as other job-adjacent artifacts.
 
-## Reference image
+## Shipped guest components
 
-| Property | Value |
-|---|---|
-| Base distribution | Ubuntu 24.04 LTS (`noble`), built with debootstrap |
-| Architecture | x86_64 |
-| Image format | Incus unified VM tarball |
-| Virtual disk | 8 GiB (8589934592 bytes), ext4 |
-| Actions Runner version | 2.335.1, SHA-256 pinned at build time |
-| Actions Runner install path | `/opt/actions-runner` |
-| Runner OS user | `actions-runner`, system account, `nologin` shell |
-| `/etc/machine-id` | Set to the literal string `uninitialized` at build time |
-| Kernel console | GRUB configures `console=tty1 console=ttyS0` |
-| Guest bootstrap trigger | `incus-gh-runner-guest.path`, enabled at build time, watching for `payload.ready` |
+The repository ships the guest side of this contract as installable files
+under [`guest/`](https://github.com/meigma/incus-gh-runner/tree/master/guest).
+They are the canonical implementation; a custom image may install them
+verbatim or reimplement the same behavior.
 
-For obtaining, verifying, importing, or building this image, see [Runner images](../how-to/runner-images.md).
+| File | Installed as | Role |
+|---|---|---|
+| `incus-gh-runner-guest` | `/usr/local/libexec/incus-gh-runner-guest` (`0755`) | One-shot guest entrypoint: validates and consumes the payload, runs the Actions Runner as the unprivileged runner user, publishes status, powers off |
+| `incus-gh-runner-proof` | `/usr/local/bin/incus-gh-runner-proof` (`0755`) | Unprivileged machine-proof retrieval helper |
+| `incus-gh-runner-guest.service` | `/usr/lib/systemd/system/incus-gh-runner-guest.service` (`0644`) | Oneshot service unit for the entrypoint (`UMask=0077`, runner self-update disabled) |
+| `incus-gh-runner-guest.path` | `/usr/lib/systemd/system/incus-gh-runner-guest.path` (`0644`) | Guest bootstrap trigger, watching for `payload.ready`; enabled at image build time |
+| `incus-gh-runner.conf` | `/usr/lib/tmpfiles.d/incus-gh-runner.conf` (`0644`) | Creates `/run/incus-gh-runner` (`0700`) and `/run/incus-gh-runner-proof` (`0755`) at boot |
+
+For building an image around these components, see
+[Build a hardened runner image](../how-to/build-runner-images.md).
 
 ## See also
 
 - [Configuration Reference](configuration.md) — `incus.owner`, `incus.image`, `incus.bootstrap_timeout`, `incus.diagnostics_dir`
 - [Job Proofs Reference](job-proofs.md) — the DSSE envelope and payload schema behind `job-proof.dsse.json`
-- [Runner images](../how-to/runner-images.md) — obtaining, verifying, building, and validating images against this contract
+- [Build a hardened runner image](../how-to/build-runner-images.md) — building and boot-testing an image against this contract
 - [How incus-gh-runner works](../explanation/how-it-works.md) — runner lifecycle states and the cleanup boundary

@@ -196,21 +196,6 @@ url = "https://dl.google.com/go/go1.26.5.darwin-arm64.tar.gz"
 checksum = "sha256:6231d8d3b8f5552ec6cbf6d685bdd5482e1e703214b120e89b3bf0d7bf1ef725"
 url = "https://dl.google.com/go/go1.26.5.darwin-amd64.tar.gz"
 
-[[tools."http:distrobuilder"]]
-version = "3.3.1"
-backend = "http:distrobuilder"
-
-[tools."http:distrobuilder".options]
-strip_components = "1"
-
-[tools."http:distrobuilder"."platforms.linux-arm64"]
-checksum = "sha256:6c411af7178bb55ef649c708f4f38fc3c30e6ecce901c08d8a389448a900a73a"
-url = "https://github.com/lxc/distrobuilder/releases/download/v3.3.1/distrobuilder-3.3.1.tar.gz"
-
-[tools."http:distrobuilder"."platforms.linux-x64"]
-checksum = "sha256:6c411af7178bb55ef649c708f4f38fc3c30e6ecce901c08d8a389448a900a73a"
-url = "https://github.com/lxc/distrobuilder/releases/download/v3.3.1/distrobuilder-3.3.1.tar.gz"
-
 [[tools.python]]
 version = "3.14.3"
 backend = "core:python"
