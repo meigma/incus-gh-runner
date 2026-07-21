@@ -21,4 +21,4 @@
 | 017 | 2026-07-20 | Implement job machine proof phase 2 | complete | Landed and proved the ownership-fenced host-to-VM proof channel through PR #37 on Incus 7.2. |
 | 018 | 2026-07-20 | Implement job machine proof phase 3 | complete | Landed GitHub job/JIT-to-VM correlation and supervised proof signing and delivery through PR #38, with the Phase 4 live proof deferred. |
 | 019 | 2026-07-20 | Implement job machine proof phase 4 | complete | Landed and proved genuine file-backed machine-proof consumption through PRs #39 and #40, including live contract corrections and fail-closed evidence. |
-| 020 | 2026-07-20 | Implement job machine proof phase 5 | in-progress | Review the Session 014 plan and begin TPM-bound credential validation for job machine proofs. |
+| 020 | 2026-07-20 | Implement job machine proof phase 5 | complete | Landed and proved TPM-bound job-proof key storage through PR #41 on the upgraded Hetzner host. |
