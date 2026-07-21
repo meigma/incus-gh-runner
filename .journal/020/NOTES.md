@@ -31,3 +31,12 @@ Updated the operator docs with the discovered TSS2 runtime prerequisite and push
 
 ## 2026-07-20 21:59 — Experiment follow-up checks
 Updated draft PR #41 with the Hetzner TPM evidence and exact remaining gate. Confirmed hosted CI, CodeQL for Go and Actions, GitHub Pages, and Kusari Inspector pass at head `4d8d345ff3496457b9f7404fa1f8bb18be5ae2b4`; release dry-run jobs remain skipped as expected.
+
+## 2026-07-21 13:12 — Bare-metal PID 1 acceptance
+After the maintainer upgraded `sre@ci`, re-fingerprinted the host as Ubuntu 26.04 with systemd 259, systemd-creds present, TPM 2.0, Incus 7.0.1, no runner instances, and no installed runner controller or credentials. The first direct encryption failed with systemd's generic `AES-128-CFB missing?` message. Debug logging identified the actual cause: `libtss2-esys.so.0` loaded but `libtss2-rc.so.0` was absent. Removed the temporary private/public key artifacts; no encrypted credential had been created.
+
+Installed the documented `tpm2-tools` dependency, which supplied the missing TSS2 runtime. A fresh disposable Ed25519 key then sealed and unsealed through the physical TPM using the required empty PCR set, and its derived public keys matched. Removed both plaintext copies immediately after the check.
+
+Created a runtime systemd probe and installed the repository's exact `credentials-job-proof-tpm.conf` as its drop-in. PID 1 expanded `%d`, loaded the encrypted credential, exposed a readable PKCS#8 key, reproduced the enrolled public key, and reported `PrivateDevices=yes`, `Result=success`, and `ExecMainStatus=0`. The encrypted disposable test credential and public key remain only to support the pending reboot-and-retry gate; the runtime unit itself will disappear on reboot. No controller or GitHub credential was installed.
+
+Generalized the Ubuntu TSS2 dependency guidance and documented how to distinguish the misleading AES error from a missing library. Docs build passed and commit `98d3015` (`docs(provenance): clarify TPM library failures`) was pushed to draft PR #41. Remaining gates are reboot-and-retry, a genuine GitHub job proof, rotation, and optional second-host binding.
