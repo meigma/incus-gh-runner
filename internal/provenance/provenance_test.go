@@ -56,6 +56,28 @@ func TestSignAndVerifyFixedReceipt(t *testing.T) {
 	assert.Contains(t, string(verified), `"claim":"`+Claim+`"`)
 }
 
+// TestSignAndVerifyUnreportedRunnerRequestID fixes the live JobStarted payload contract.
+func TestSignAndVerifyUnreportedRunnerRequestID(t *testing.T) {
+	t.Parallel()
+
+	privateKey := fixedPrivateKey(t, 0)
+	signer, err := NewSigner(privateKey)
+	require.NoError(t, err)
+	payload := fixedPayload()
+	payload.GitHub.RunnerRequestID = 0
+
+	envelope, err := signer.Sign(context.Background(), payload)
+	require.NoError(t, err)
+	verified, err := Verify(
+		context.Background(),
+		envelope,
+		privateKey.Public().(ed25519.PublicKey),
+		"builder-host-01",
+	)
+	require.NoError(t, err)
+	assert.Contains(t, string(verified), `"runner_request_id":0`)
+}
+
 // TestVerifyRejectsUntrustedOrMalformedProofs proves verification fails closed.
 func TestVerifyRejectsUntrustedOrMalformedProofs(t *testing.T) {
 	t.Parallel()
@@ -150,6 +172,18 @@ func TestVerifyRejectsUntrustedOrMalformedProofs(t *testing.T) {
 				return signRawEnvelope(t, privateKey, PayloadType, body), publicKey, "builder-host-01"
 			},
 			wantErrContain: "workflow_run_id must be positive",
+		},
+		{
+			name: "negative runner request ID",
+			prepare: func(t *testing.T) ([]byte, ed25519.PublicKey, string) {
+				t.Helper()
+				payload := fixedPayload()
+				payload.GitHub.RunnerRequestID = -1
+				body, marshalErr := json.Marshal(payload)
+				require.NoError(t, marshalErr)
+				return signRawEnvelope(t, privateKey, PayloadType, body), publicKey, "builder-host-01"
+			},
+			wantErrContain: "runner_request_id must not be negative",
 		},
 		{
 			name: "unknown payload field",
