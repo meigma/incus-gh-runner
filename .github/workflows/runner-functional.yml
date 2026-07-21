@@ -18,6 +18,11 @@ on:
         required: false
         default: 0
         type: number
+      require_job_proof:
+        description: Retrieve and preserve the signed job machine proof before other work
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -32,6 +37,25 @@ jobs:
     timeout-minutes: 10
     permissions: {}
     steps:
+      - name: Retrieve the required job machine proof
+        if: ${{ inputs.require_job_proof }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          proof_path="${RUNNER_TEMP}/job-proof.dsse.json"
+          incus-gh-runner-proof --output "$proof_path"
+          test "$(stat -c '%a' "$proof_path")" = 600
+
+      - name: Preserve the job machine proof
+        if: ${{ inputs.require_job_proof }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: job-machine-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/job-proof.dsse.json
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Verify the disposable Linux runner
         shell: bash
         env:

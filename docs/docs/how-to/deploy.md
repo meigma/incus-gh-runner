@@ -263,7 +263,7 @@ When using a PAT, do not add the `app` block. The selected systemd drop-in suppl
 
 See [Configuration reference](../reference/configuration.md) for every key, default, environment variable, and credential validation rule.
 
-## 5. Install one credential drop-in
+## 5. Install one GitHub credential drop-in
 
 Install exactly one credential file and its matching drop-in as `credentials.conf`.
 
@@ -287,7 +287,34 @@ sudo install -m 0644 deploy/systemd/credentials-personal-access-token.conf \
 
 Do not place the App private key or PAT value in `config.yaml`. The drop-ins load the root-owned source file and point the controller at the protected runtime copy. To change methods, replace `credentials.conf`, add or remove the `github.app` identifiers in `config.yaml`, then reload and restart the service.
 
-## 6. Validate the unit (optional)
+## 6. Enable file-backed job proofs (optional)
+
+Generate and enroll the host's Ed25519 proof key as described in the
+[configuration reference](../reference/configuration.md#job-proof-key-enrollment-and-rotation).
+Install the private source key as `root:root` mode `0600`, then install the
+independent proof credential drop-in alongside the selected GitHub credential:
+
+```sh
+sudo install -o root -g root -m 0600 machine-provenance-key.pem \
+  /etc/incus-gh-runner/machine-provenance-key.pem
+sudo install -m 0644 deploy/systemd/credentials-job-proof-file.conf \
+  /etc/systemd/system/incus-gh-runner.service.d/job-proof.conf
+sudo stat -c '%U:%G %a' /etc/incus-gh-runner/machine-provenance-key.pem
+```
+
+The final command must print `root:root 600`. Add the enrolled host identity to
+`config.yaml`; the drop-in supplies `job_proof.signing_key_file` through the
+protected systemd runtime credential:
+
+```yaml
+job_proof:
+  host_id: builder-host-01
+```
+
+The proof drop-in does not replace `credentials.conf`. It composes with either
+GitHub credential method and leaves proofs disabled when it is absent.
+
+## 7. Validate the unit (optional)
 
 From a checkout of the repository, run the bundled sandboxed check before deploying:
 
@@ -297,7 +324,7 @@ deploy/systemd/verify.sh
 
 This requires Linux and `systemd-analyze`; it verifies the base unit and both credential variants, then checks the systemd security exposure score against a fixed threshold without touching your live system.
 
-## 7. Start and enable the service
+## 8. Start and enable the service
 
 ```sh
 sudo systemctl daemon-reload

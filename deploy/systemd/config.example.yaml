@@ -25,3 +25,6 @@ timeouts:
 retry:
   initial: 1s
   maximum: 30s
+# Uncomment with credentials-job-proof-file.conf after enrolling the host public key.
+# job_proof:
+#   host_id: builder-host-01
