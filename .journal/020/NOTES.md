@@ -21,3 +21,10 @@ Pushed `feat/job-proof-phase-5-tpm` and opened draft PR #41: https://github.com/
 
 ## 2026-07-20 20:09 — Hosted checks
 Confirmed draft PR #41 at exact head `143b9409ac9ec95c2341510d2c00ae5b4a36ff1f`. Hosted CI, CodeQL for Go and Actions, GitHub Pages, and Kusari Inspector passed; release dry-run jobs skipped by the draft/non-release path as expected.
+
+## 2026-07-20 21:57 — Hetzner TPM experiment
+The maintainer supplied `sre@ci` as the preferred bare-metal TPM target. Read-only preflight found Ubuntu 22.04, TPM 2.0 at `/dev/tpm0` and `/dev/tpmrm0`, passwordless sudo, Incus 7.0.1, an inactive/uninstalled `incus-gh-runner.service`, and no existing proof credential. The blocking fact is systemd 249: `systemd-creds` is absent, the installed PID 1 lacks `LoadCredentialEncrypted=`, and apt offers no newer systemd on this release.
+
+Used Docker only for a disposable physical-TPM experiment without mounting host files. Ubuntu 24.04 systemd 255 reported `+TPM2` but initially failed because the optional TSS2 runtime was absent; installing `tpm2-tools` supplied it. The real TPM then encrypted and decrypted the same temporary PKCS#8 Ed25519 key with `--with-key=tpm2 --tpm2-device=/dev/tpmrm0 --tpm2-pcrs=`, mode `0600`, and the derived public keys matched. A nested systemd-container service also reached successful TPM unsealing with the packaged drop-in, but Docker's mount namespace hid the generated `/run/credentials/...` path, so this is not service or reboot acceptance evidence. Removed the exact test container, derived image, and pulled Ubuntu test image; the pre-existing Earthly containers were unchanged.
+
+Updated the operator docs with the discovered TSS2 runtime prerequisite and pushed commit `4d8d345` to draft PR #41. The full Phase 5 gate still requires bare-metal systemd 250+; either `ci` must receive an explicitly approved Ubuntu 24.04 upgrade or another compatible TPM host must be selected.
