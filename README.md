@@ -144,9 +144,8 @@ coalescing mailbox while Incus work runs in a bounded worker pool.
 Unit tests run without Incus or GitHub access. Opt-in functional tests
 (`INCUS_GH_RUNNER_TEST_*` environment variables) exercise the real GitHub
 scale-set session and the destructive Incus VM lifecycle against explicitly
-disposable projects, and the `scripts/live/` harnesses drive a full
-hot-standby lifecycle against real hardware. See the comments in those
-scripts and test files for the required inputs.
+disposable projects. See the comments in those test files for the required
+inputs.
 
 ## Contributing and security
 

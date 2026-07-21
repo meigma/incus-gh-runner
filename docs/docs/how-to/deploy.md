@@ -15,7 +15,7 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 
 - A systemd version supporting `LoadCredential=` and the `%d` credentials-directory specifier the unit relies on, along with `DynamicUser=` and the unit's other sandboxing directives. Ubuntu 24.04 is the validated reference host. TPM-bound proof keys additionally require systemd 250 or newer, an enrolled TPM 2.0 device, and the distribution's TPM2 userspace runtime libraries.
 - Administrative access to the target GitHub organization or repository.
-- The `incus-gh-runner` binary for your platform, and a checkout of this repository: the steps below use files from `deploy/systemd/`, `deploy/incus/`, and `scripts/live/`.
+- The `incus-gh-runner` binary for your platform, and a checkout of this repository: the steps below use files from `deploy/systemd/` and `deploy/incus/`.
 
 ## 1. Prepare and validate Incus
 
@@ -112,36 +112,6 @@ building one locally, and importing it into Incus. Configure only the validated
 devices or relax limits outside the checked baseline. The controller pins and
 materializes the validated profile snapshot into each VM, so later profile
 edits do not alter an approved runner environment.
-
-The hostile-runner harness exports effective configuration without mutation by
-default. Run that preflight against the production project, using only
-credential-free HTTP(S) origins:
-
-```sh
-scripts/live/live-incus-hostile-isolation.sh \
-  --project github-runners \
-  --profile github-runner \
-  --image incus-gh-runner-v0.1.0 \
-  --allowed-url https://github.com/ \
-  --allowed-url https://approved-dependency.example/ \
-  --forbidden-url http://169.254.169.254/ \
-  --forbidden-url "$INCUS_HOST_CANARY_ORIGIN" \
-  --egress-proxy "$RUNNER_PROXY_ORIGIN" \
-  --evidence-directory incus-isolation-preflight
-```
-
-Make the host canary reachable in the absence of the runner policy; otherwise
-a failed request does not prove the ACL blocked it. Exercise the mutating
-`--execute` path only on a separate KVM-capable project that reproduces the
-production baseline, sets `user.incus-gh-runner.disposable=true`, and contains
-no retained workloads. The script also requires the exact
-`INCUS_GH_RUNNER_LIVE_MUTATION` opt-in it prints. Never mark the production
-project disposable.
-
-The bounded `--execute` harness proves concurrent-VM L2/L3 isolation,
-allowed and forbidden egress, and MAC and IPv4 spoof rejection on a disposable
-copy of the production configuration. It does not prove IPv6 enforcement,
-Secure Boot trust, aggregate runtime throttling, or NIC and ZFS throughput.
 
 ## 2. Choose the GitHub scope and credential
 
@@ -357,12 +327,6 @@ job_proof:
 The proof drop-in does not replace `credentials.conf`. It composes with either
 GitHub credential method and leaves proofs disabled when it is absent.
 
-Verify the installed file-backed source and drop-in from the same checkout:
-
-```sh
-sudo deploy/systemd/verify.sh --installed-job-proof=file
-```
-
 ### Option B: TPM-bound proof key
 
 Use systemd 250 or newer to encrypt the same PKCS#8 Ed25519 key to the target
@@ -422,13 +386,11 @@ If the public-key comparison fails, the plaintext files remain under the
 root-only `/run` paths for diagnosis and must not be treated as successfully
 enrolled.
 
-Install the TPM-bound drop-in and verify the deployed credential, directory,
-unit sandbox, and drop-in:
+Install the TPM-bound drop-in:
 
 ```sh
 sudo install -m 0644 deploy/systemd/credentials-job-proof-tpm.conf \
   /etc/systemd/system/incus-gh-runner.service.d/job-proof.conf
-sudo deploy/systemd/verify.sh --installed-job-proof=tpm
 ```
 
 The empty PCR set is deliberate: normal firmware, kernel, and bootloader
@@ -471,21 +433,7 @@ replacement TPM, following the escrow guidance in
 [Option B](#option-b-tpm-bound-proof-key); without one, generate a new key
 and enroll its public key and key ID before restarting.
 
-## 7. Validate the unit (optional)
-
-From a checkout of the repository, run the bundled sandboxed check before deploying:
-
-```sh
-deploy/systemd/verify.sh
-```
-
-This requires Linux and `systemd-analyze`; it verifies the base unit and all
-four GitHub App/PAT with file-backed/TPM-bound proof-credential combinations,
-then checks the systemd security exposure score against a fixed threshold
-without touching your live system. The `--installed-job-proof` checks in step 6
-add exact ownership, mode, presence, and drop-in validation for a target host.
-
-## 8. Start and enable the service
+## 7. Start and enable the service
 
 ```sh
 sudo systemctl daemon-reload
