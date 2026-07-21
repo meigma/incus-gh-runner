@@ -58,3 +58,11 @@ Verified: repo-wide grep for removed basenames returns nothing;
 `git ls-files .journal` empty on the branch.
 Coverage intentionally dropped without replacement, recorded in PR #44's
 body. Next: hosted CI on PR #44, then maintainer squash-merge.
+
+## 2026-07-21 16:22 — Close
+PR #44 was approved by the maintainer, squash-merged as `635097d`, and the
+`chore/remove-bash-test-debt` branch and worktree were removed; local
+`master` fast-forwarded to the merge commit. Wrote `SUMMARY.md`, marked the
+INDEX row complete, and updated `TECH_NOTES.md`: the stale live-harness
+pointer is gone and a durable note records the removal decision and the
+kept product scripts. No open work remains for this session.
