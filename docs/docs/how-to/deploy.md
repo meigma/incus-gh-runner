@@ -105,9 +105,10 @@ Resolve every failure; do not weaken or bypass it to continue deployment. See
 for the manifest contract, controlled-egress model, compatibility residuals,
 and the official Incus references behind each setting.
 
-Import a runner image into the validated project. See [Obtain, build, and
-validate runner images](./runner-images.md) for downloading a released image,
-building one locally, and importing it into Incus. Configure only the validated
+Import a runner image into the validated project. Any image that implements
+the [guest contract](../reference/guest-contract.md) works; see [Build a
+hardened runner image](./build-runner-images.md) for building and boot-testing
+one. Configure only the validated
 `github-runner` profile; adding the `default` or a second profile can add
 devices or relax limits outside the checked baseline. The controller pins and
 materializes the validated profile snapshot into each VM, so later profile
@@ -493,6 +494,6 @@ cannot be configured and verified, deploy at repository scope instead.
 ## Related
 
 - [Operate and troubleshoot incus-gh-runner](./operate.md) — running the deployed controller, log fields, and recovering from failures.
-- [Obtain, build, and validate runner images](./runner-images.md) — image acquisition, verification, and validation.
+- [Build a hardened runner image](./build-runner-images.md) — building and boot-testing a contract-conforming guest image.
 - [Configuration reference](../reference/configuration.md) — every config key, environment variable, CLI flag, and credential rule.
 - [How incus-gh-runner works](../explanation/how-it-works.md) — capacity model, runner lifecycle, and the security model behind the credential and cleanup rules used above.

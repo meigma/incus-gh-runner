@@ -17,9 +17,9 @@ deletes the VM when its one job finishes.
   authorization boundary.
 - Unattended operation: GitHub session recovery with capped backoff, bounded
   shutdown escalation, and a hardened systemd unit with credential isolation.
-- Reference VM image: a network-built Ubuntu 24.04 image with a checksum-pinned
-  Actions Runner, published with checksums and build attestations that identify
-  the exact released archive.
+- Bring your own image: any VM image that implements the documented guest
+  contract works. The repository ships the guest-side components and a
+  hardening guide for building one.
 
 ## Requirements
 
@@ -34,9 +34,8 @@ deletes the VM when its one job finishes.
 ## Installation
 
 Each GitHub release provides `incus-gh-runner_<version>_<os>_<arch>` binaries
-for Linux and macOS (amd64 and arm64), a multi-architecture controller OCI
-image, and a versioned Incus reference VM image, all with checksums and build
-attestations.
+for Linux and macOS (amd64 and arm64) and a multi-architecture controller OCI
+image, all with checksums and build attestations.
 
 Download a binary from the [releases page](https://github.com/meigma/incus-gh-runner/releases)
 and install it:
@@ -51,8 +50,8 @@ To build from source instead:
 go build ./cmd/incus-gh-runner
 ```
 
-See [Runner images](docs/docs/how-to/runner-images.md) for downloading and
-verifying the reference VM image.
+See [Build runner images](docs/docs/how-to/build-runner-images.md) for
+building the guest VM image the controller boots for each job.
 
 ## Usage
 
@@ -116,12 +115,12 @@ read-only drift tooling in
   or PAT setup, and the systemd installation.
 - [Operate and troubleshoot](docs/docs/how-to/operate.md) — logs, VM
   diagnostics, safe configuration changes, and upgrades.
-- [Runner images](docs/docs/how-to/runner-images.md) — obtaining, verifying,
-  building, and validating runner images.
+- [Build runner images](docs/docs/how-to/build-runner-images.md) — building
+  and boot-testing a hardened, contract-conforming runner image.
 - [Configuration reference](docs/docs/reference/configuration.md) — every
   configuration key, environment variable, and CLI flag.
 - [Guest contract reference](docs/docs/reference/guest-contract.md) — the
-  controller-guest interface for auditing or replacing the reference image.
+  controller-guest interface every runner image must implement.
 - [How incus-gh-runner works](docs/docs/explanation/how-it-works.md) — the
   capacity model, runner lifecycle, cleanup boundary, and security model.
 
