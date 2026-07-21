@@ -57,3 +57,13 @@ the repository-settings.toml dry-run contexts were never applied live, and
 both managed rulesets). Do not run `apply` casually; it would change more
 than one context. PR body corrected to reflect this.
 Next: wait for PR checks; merge is the maintainer's call.
+
+## 2026-07-21 17:05 — PR #45 merged
+Maintainer approved; squash-merged as master `0b7a4b6`. Implementation
+worktree and local branch removed; `git ls-files .journal` clean on master.
+The reference image, distrobuilder toolchain, and all related CI are gone;
+`guest/` is the shipped contract implementation and
+docs/docs/how-to/build-runner-images.md is the replacement hardening guide.
+Reminder for close: repository-settings.toml drift vs live rulesets remains
+an open observation (plan would create both managed rulesets); left for a
+deliberate maintainer decision.
