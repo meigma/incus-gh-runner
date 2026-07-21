@@ -18,3 +18,6 @@ Verification passed: Ubuntu 24.04 sandbox matrix; installed file and TPM verifie
 
 ## 2026-07-20 20:07 — Draft review gate
 Pushed `feat/job-proof-phase-5-tpm` and opened draft PR #41: https://github.com/meigma/incus-gh-runner/pull/41. The PR explicitly remains draft until the enrolled-TPM host, reboot, genuine proof, rotation, and optional second-host binding evidence is complete.
+
+## 2026-07-20 20:09 — Hosted checks
+Confirmed draft PR #41 at exact head `143b9409ac9ec95c2341510d2c00ae5b4a36ff1f`. Hosted CI, CodeQL for Go and Actions, GitHub Pages, and Kusari Inspector passed; release dry-run jobs skipped by the draft/non-release path as expected.
