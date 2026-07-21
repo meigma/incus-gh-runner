@@ -31,6 +31,8 @@ The helper waits for readiness, rejects a missing, empty, or malformed
 DSSE-shaped document, and copies the envelope to the selected path with mode
 `0600`. It does not verify the signature; external verification uses the
 enrolled host public key. A timeout or malformed committed proof exits non-zero.
+The envelope and payload schema are documented in the
+[job proofs reference](job-proofs.md).
 
 ## Payload schema (`payload.json`)
 
@@ -123,7 +125,11 @@ being hidden from the job that receives it.
 
 ## Instance metadata
 
-The controller sets these keys on every instance it creates:
+The controller sets these keys on every instance it creates. The first group
+is written with the create request; the JIT-binding group is written to the
+still-stopped instance during creation and re-verified before the VM starts.
+
+With the create request:
 
 | Key | Value | Purpose |
 |---|---|---|
@@ -133,6 +139,16 @@ The controller sets these keys on every instance it creates:
 | `user.incus-gh-runner.image` | Resolved full image fingerprint | Immutable image identity used to create the instance |
 | `user.incus-gh-runner.image-reference` | Configured `incus.image` value | Operator-friendly alias or fingerprint supplied to the controller |
 | `user.incus-gh-runner.profiles` | JSON array of profile names and SHA-256 digests | Audit identity for the effective profile configuration and devices materialized at create time |
+| `user.incus-gh-runner.launch-configuration-sha256` | SHA-256 digest over the exact version 1 launch inputs | Launch-identity anchor; re-checked for drift before JIT binding and recorded in the [job proof](job-proofs.md) as `machine.launch_configuration_sha256` |
+
+During JIT binding, before the VM starts:
+
+| Key | Value | Purpose |
+|---|---|---|
+| `user.incus-gh-runner.jit-runner-id` | JIT runner registration identifier | Binds the instance to its exact GitHub JIT registration |
+| `user.incus-gh-runner.jit-runner-name` | JIT runner name | The runner name GitHub assigned; equals the instance name |
+| `user.incus-gh-runner.jit-scale-set-id` | Resolved runner scale-set identifier | Records which scale set the registration belongs to |
+| `user.incus-gh-runner.instance-uuid` | Copy of the server-generated `volatile.uuid` | Fences proof delivery and job-to-machine binding to this exact instance; distinct from the Incus-native `volatile.uuid` key it mirrors |
 
 Image aliases are resolved once during controller preflight. The controller
 creates each VM by the resulting fingerprint. Effective profile configuration
@@ -172,5 +188,6 @@ For obtaining, verifying, importing, or building this image, see [Runner images]
 ## See also
 
 - [Configuration Reference](configuration.md) — `incus.owner`, `incus.image`, `incus.bootstrap_timeout`, `incus.diagnostics_dir`
+- [Job Proofs Reference](job-proofs.md) — the DSSE envelope and payload schema behind `job-proof.dsse.json`
 - [Runner images](../how-to/runner-images.md) — obtaining, verifying, building, and validating images against this contract
 - [How incus-gh-runner works](../explanation/how-it-works.md) — runner lifecycle states and the cleanup boundary

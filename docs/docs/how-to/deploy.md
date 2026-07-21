@@ -15,7 +15,7 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 
 - A systemd version supporting `LoadCredential=` and the `%d` credentials-directory specifier the unit relies on, along with `DynamicUser=` and the unit's other sandboxing directives. Ubuntu 24.04 is the validated reference host. TPM-bound proof keys additionally require systemd 250 or newer, an enrolled TPM 2.0 device, and the distribution's TPM2 userspace runtime libraries.
 - Administrative access to the target GitHub organization or repository.
-- The `incus-gh-runner` binary for your platform, and a checked-out or downloaded copy of `deploy/systemd/` from the repository.
+- The `incus-gh-runner` binary for your platform, and a checkout of this repository: the steps below use files from `deploy/systemd/`, `deploy/incus/`, and `scripts/live/`.
 
 ## 1. Prepare and validate Incus
 
@@ -209,14 +209,20 @@ sudo install -m 0755 incus-gh-runner /usr/bin/incus-gh-runner
 sudo install -m 0644 deploy/systemd/incus-gh-runner.service /etc/systemd/system/incus-gh-runner.service
 sudo install -m 0644 deploy/systemd/incus-gh-runner.tmpfiles.conf /usr/lib/tmpfiles.d/incus-gh-runner.conf
 sudo install -d -m 0755 /etc/incus-gh-runner
-sudo install -m 0644 config.yaml /etc/incus-gh-runner/config.yaml
+sudo install -m 0644 deploy/systemd/config.example.yaml /etc/incus-gh-runner/config.yaml
 ```
 
 The unit runs under `DynamicUser=yes`, so `config.yaml` must remain readable by the dynamically allocated service user. Credential files remain root-only and are exposed to the service through systemd's protected credential directory. The tmpfiles policy does not enable diagnostics persistence; it expires files from the recommended diagnostics directory if you opt in later.
 
 ## 4. Write the configuration
 
-Write `/etc/incus-gh-runner/config.yaml`. This common configuration works with either credential method:
+Edit the installed `/etc/incus-gh-runner/config.yaml`. The shipped example
+already matches this walkthrough's Incus and capacity values; set
+`github.config_url` to the exact destination chosen in step 2 and change
+`github.scale_set` from the example's `incus-linux-x64` to the label your
+workflows will target — this guide uses `incus-gh-runner-prod` throughout. The
+example's remaining keys ship at the built-in defaults and can stay unchanged.
+The result works with either credential method:
 
 ```yaml
 github:
