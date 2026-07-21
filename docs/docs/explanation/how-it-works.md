@@ -112,7 +112,21 @@ finishes naturally.
 
 The most consequential fact about how incus-gh-runner runs is one line: the local Incus socket it talks to is root-equivalent. Membership in the `incus-admin` group — which the controller's systemd unit grants via a supplementary group — gives full control over every instance, project, and storage pool the Incus daemon manages, not just the ones incus-gh-runner created. The exact owner check narrows the controller's intended behavior, but it does not narrow this credential. A dedicated, single-purpose host is therefore a requirement for the current production deployment, not optional defense in depth.
 
-Two credentials matter. The controller's renewable GitHub credential is either an App private key or a PAT; the selected systemd drop-in delivers it through `LoadCredential=` and the process reads the protected runtime file once at startup. That credential remains on the dedicated host, is never injected into a runner VM, and is never written to controller logs. GitHub-side, each VM gets a fresh JIT runner configuration generated at creation time rather than a long-lived registration token, and the controller does not log it.
+Two GitHub credential boundaries always matter. The controller's renewable
+credential is either an App private key or a PAT; the selected systemd drop-in
+delivers it through `LoadCredential=` and the process reads the protected
+runtime file once at startup. That credential remains on the dedicated host,
+is never injected into a runner VM, and is never written to controller logs.
+GitHub-side, each VM gets a fresh JIT runner configuration generated at
+creation time rather than a long-lived registration token, and the controller
+does not log it.
+
+Job proofs add an optional Ed25519 signing credential. The file-backed and
+TPM-bound systemd drop-ins expose the same protected runtime file, so storage
+mode does not change the controller or receipt. TPM binding protects the
+encrypted key at rest against offline use on another host; it does not make
+signing TPM-native, attest the boot state, or keep plaintext out of systemd and
+controller memory while the service runs.
 
 The JIT configuration is not secret from the job that it launches. The guest deletes the root-owned runtime payload before starting Actions Runner, which removes that staging copy, but the stock runner receives the same value on `Runner.Listener`'s command line and materializes its session files under `/opt/actions-runner`. `Runner.Listener` then launches `Runner.Worker` under the same `actions-runner` UID. A job can therefore read its listener's command line and runner-owned JIT/session files, and can disrupt or impersonate its own in-progress runner session. The current design does not claim an OS-user boundary between the job and its JIT material; adding one would require a privileged launcher or a maintained runner fork rather than a supported stock-runner setting.
 
