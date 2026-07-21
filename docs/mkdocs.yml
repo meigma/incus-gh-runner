@@ -42,6 +42,7 @@ nav:
   - Reference:
       - Configuration: reference/configuration.md
       - Guest contract: reference/guest-contract.md
+      - Job proofs: reference/job-proofs.md
   - Explanation:
       - How it works: explanation/how-it-works.md
 
