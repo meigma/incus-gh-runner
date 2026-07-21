@@ -1,8 +1,7 @@
 name: GitHub Pages
 
-# Private-repository Pages requires a supported GitHub plan. Keep the docs build
-# active everywhere, but only configure/upload/deploy after the repository
-# variable PAGES_ENABLED is explicitly set to true.
+# Pull requests build the docs strictly; pushes to the default branch also
+# deploy them to GitHub Pages.
 
 on:
   pull_request:
@@ -59,18 +58,18 @@ jobs:
         run: moon run docs:build --summary minimal
 
       - name: Configure Pages
-        if: ${{ github.event_name != 'pull_request' && vars.PAGES_ENABLED == 'true' }}
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
       - name: Upload Pages artifact
-        if: ${{ github.event_name != 'pull_request' && vars.PAGES_ENABLED == 'true' }}
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: docs/build
 
   deploy:
     name: Deploy GitHub Pages
-    if: ${{ github.event_name != 'pull_request' && vars.PAGES_ENABLED == 'true' }}
+    if: ${{ github.event_name != 'pull_request' }}
     needs:
       - build
     runs-on: ubuntu-latest
