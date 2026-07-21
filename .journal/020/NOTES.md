@@ -43,3 +43,10 @@ Generalized the Ubuntu TSS2 dependency guidance and documented how to distinguis
 
 ## 2026-07-21 13:16 — TPM credential rotation
 Rotated the disposable proof key in place: generated a distinct Ed25519 key under root-only `/run`, sealed it to the same physical TPM and empty PCR set, decrypted it once to verify the enrolled public key, atomically replaced the encrypted credential, and restarted the PID 1 probe. The restarted service reproduced the new public key and the new key was confirmed distinct from the previous enrollment. Removed every plaintext key/check file and the superseded public key. Only the current encrypted credential (`root:root` `0600`) and public key (`root:root` `0644`) remain persistently for the reboot gate. Storage rotation is now accepted; external consumer overlap still belongs to the genuine-proof rollout.
+
+## 2026-07-21 13:22 — Reboot acceptance
+With explicit maintainer approval, rebooted `sre@ci`. The boot ID changed from `1c04e845-f99a-4920-85e3-617db59af4a5` to `6962f057-43b4-40af-9ddc-bfd8c68d9aa2`; Incus returned active with no runner instances, the complete TSS2 runtime remained available, the runtime probe correctly disappeared, and the encrypted credential plus enrolled public key persisted with their expected ownership and modes.
+
+Recreated the runtime service and installed the repository's exact TPM proof-key drop-in. On the fresh PID 1, the service again expanded `%d`, unsealed the TPM credential, reproduced the enrolled public key, retained `PrivateDevices=yes`, and completed with `Result=success` and `ExecMainStatus=0`. Reboot-and-retry is accepted.
+
+Stopped and removed the runtime service, encrypted disposable credential, public key, and derived public output. No test enrollment or plaintext key remains on the host. Kept `tpm2-tools` and its TSS2 runtime dependencies because they are the documented prerequisite for the eventual production enrollment. The remaining required Phase 5 gate is a genuine externally verified GitHub job proof; second-host binding remains optional.
