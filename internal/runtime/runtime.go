@@ -160,21 +160,12 @@ func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *sl
 	}
 
 	sessionOwner := resolveSessionOwner(ctx, logger)
+	demandOptions := demandSourceOptions(cfg, resolved.ID(), logger, proofQueue)
 	demandSource, sourceErr := githubadapter.NewResilientDemandSource(
 		ctx,
 		githubClient,
 		sessionOwner,
-		githubadapter.DemandSourceOptions{
-			ScaleSetID:          resolved.ID(),
-			ScaleSetName:        cfg.GitHub.ScaleSet,
-			MinRunners:          cfg.Capacity.MinRunners,
-			MaxRunners:          cfg.Capacity.MaxRunners,
-			Logger:              logger.WithGroup("github_listener"),
-			ReconnectInitial:    cfg.Retry.Initial,
-			ReconnectMaximum:    cfg.Retry.Maximum,
-			SessionCloseTimeout: cfg.Timeouts.Shutdown,
-			JobStartedSink:      proofQueue,
-		},
+		demandOptions,
 	)
 	if sourceErr != nil {
 		return nil, sourceErr
@@ -200,6 +191,30 @@ func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *sl
 		scaleSetID:     resolved.ID(),
 		jobProofSigner: jobProof.signer,
 	}, nil
+}
+
+// demandSourceOptions wires the optional proof queue without converting a nil pointer into a non-nil interface.
+func demandSourceOptions(
+	cfg config.Config,
+	scaleSetID int,
+	logger *slog.Logger,
+	proofQueue *provenance.JobStartedQueue,
+) githubadapter.DemandSourceOptions {
+	options := githubadapter.DemandSourceOptions{
+		ScaleSetID:          scaleSetID,
+		ScaleSetName:        cfg.GitHub.ScaleSet,
+		MinRunners:          cfg.Capacity.MinRunners,
+		MaxRunners:          cfg.Capacity.MaxRunners,
+		Logger:              logger.WithGroup("github_listener"),
+		ReconnectInitial:    cfg.Retry.Initial,
+		ReconnectMaximum:    cfg.Retry.Maximum,
+		SessionCloseTimeout: cfg.Timeouts.Shutdown,
+	}
+	if proofQueue != nil {
+		options.JobStartedSink = proofQueue
+	}
+
+	return options
 }
 
 // prepareJobProofSigner loads the optional signing credential exactly once during startup.

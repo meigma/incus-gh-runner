@@ -1,18 +1,25 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/actions/scaleset"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	githubadapter "github.com/meigma/incus-gh-runner/internal/adapters/github"
 	"github.com/meigma/incus-gh-runner/internal/config"
+	"github.com/meigma/incus-gh-runner/internal/controller"
 )
 
 func TestRunRejectsInvalidConfigurationBeforeConstructingAdapters(t *testing.T) {
@@ -102,6 +109,27 @@ func TestPrepareJobProofSigner(t *testing.T) {
 	}
 }
 
+// TestDemandSourceOptionsLeaveDisabledJobProofSinkNil exercises the job callback with proofs disabled.
+func TestDemandSourceOptionsLeaveDisabledJobProofSinkNil(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	cfg := config.Defaults()
+	cfg.GitHub.ScaleSet = "incus-runners"
+	options := demandSourceOptions(cfg, 73, logger, nil)
+	require.Nil(t, options.JobStartedSink)
+	session := &jobStartedMessageSession{}
+	source, err := githubadapter.NewDemandSource(session, options)
+	require.NoError(t, err)
+
+	err = source.Run(context.Background(), func(_ controller.Demand) {})
+
+	require.ErrorContains(t, err, "test message stream complete")
+	assert.Contains(t, logs.String(), "GitHub Actions job started")
+	assert.NotContains(t, logs.String(), "GitHub Actions job proof event dropped")
+}
+
 func TestResolvePersonalAccessToken(t *testing.T) {
 	t.Parallel()
 
@@ -163,5 +191,51 @@ func TestResolvePersonalAccessToken(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 		})
+	}
+}
+
+// jobStartedMessageSession emits one job-start event through the upstream GitHub listener.
+type jobStartedMessageSession struct {
+	emitted bool
+}
+
+// GetMessage returns one job-start message before ending the test stream.
+func (s *jobStartedMessageSession) GetMessage(
+	context.Context,
+	int,
+	int,
+) (*scaleset.RunnerScaleSetMessage, error) {
+	if s.emitted {
+		return nil, errors.New("test message stream complete")
+	}
+	s.emitted = true
+	return &scaleset.RunnerScaleSetMessage{
+		MessageID:  1,
+		Statistics: &scaleset.RunnerScaleSetStatistic{},
+		JobStartedMessages: []*scaleset.JobStarted{{
+			RunnerID:   41,
+			RunnerName: "runner-123",
+			JobMessageBase: scaleset.JobMessageBase{
+				JobID: "job-1",
+			},
+		}},
+	}, nil
+}
+
+// DeleteMessage accepts the job-start message acknowledgement.
+func (*jobStartedMessageSession) DeleteMessage(context.Context, int) error {
+	return nil
+}
+
+// AcquireJobs accepts any unexpected job acquisition request.
+func (*jobStartedMessageSession) AcquireJobs(_ context.Context, requestIDs []int64) ([]int64, error) {
+	return requestIDs, nil
+}
+
+// Session returns valid initial statistics for the upstream listener.
+func (*jobStartedMessageSession) Session() scaleset.RunnerScaleSetSession {
+	return scaleset.RunnerScaleSetSession{
+		SessionID:  uuid.New(),
+		Statistics: &scaleset.RunnerScaleSetStatistic{},
 	}
 }
