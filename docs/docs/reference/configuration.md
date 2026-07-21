@@ -165,13 +165,28 @@ openssl pkey \
 ```
 
 Install the private key through a protected runtime credential path and set
-`job_proof.signing_key_file` to that path. Source-file ownership and mode are
-deployment checks; for a normal file-backed systemd credential, install the
-source as `root:root` mode `0600`. The shipped
-`deploy/systemd/credentials-job-proof-file.conf` drop-in loads
-`/etc/incus-gh-runner/machine-provenance-key.pem` and sets the runtime path; it
-is installed alongside, not instead of, the selected GitHub credential
-drop-in. Enroll three values with each consumer:
+`job_proof.signing_key_file` to that path. The two shipped proof-key drop-ins
+both expose the credential as `%d/machine-provenance-key` and are installed
+alongside, not instead of, the selected GitHub credential drop-in:
+
+- `deploy/systemd/credentials-job-proof-file.conf` uses `LoadCredential=` with
+  `/etc/incus-gh-runner/machine-provenance-key.pem`; install that source as
+  `root:root` mode `0600`.
+- `deploy/systemd/credentials-job-proof-tpm.conf` uses
+  `LoadCredentialEncrypted=` with
+  `/etc/credstore.encrypted/incus-gh-runner-machine-provenance-key.cred`; create
+  the directory as `root:root` mode `0700` and the encrypted credential as
+  `root:root` mode `0600`.
+
+The TPM-bound option requires systemd 250 or newer and encrypts the same
+software key to the target TPM with an empty PCR set. It changes storage only:
+the plaintext still exists in systemd's runtime credential store and the
+controller's memory, and the controller retains `PrivateDevices=yes` without
+opening a TPM device. It is not TPM-native signing, measured boot, or remote TPM
+attestation. See [Deploy](../how-to/deploy.md#option-b-tpm-bound-proof-key) for
+the exact encryption and origin-host validation procedure.
+
+Enroll three values with each consumer:
 
 - the stable `job_proof.host_id`;
 - `machine-provenance-key.pub.pem`; and
@@ -192,10 +207,18 @@ The key ID is a lookup hint over the public key's DER encoding, not a host
 identity by itself. A consumer must select the enrolled public key and require
 the matching host ID.
 
-Rotate with overlap: distribute and trust the new public key first, then restart
-the controller with the new private credential. Retain the old public key for as
-long as existing proofs must remain verifiable. Automatic key distribution and
-fleet PKI are not provided.
+Rotate with overlap: distribute and trust the new public key first, replace the
+file-backed source or encrypt and install a new TPM-bound credential, then
+restart the controller. Retain the old public key for as long as existing
+proofs must remain verifiable. The proof format and workflow do not change
+between storage modes.
+
+TPM clearing or motherboard replacement makes the encrypted credential
+unusable. With an offline escrow, seal the same private key to the replacement
+TPM; without one, generate a new key and enroll its public key and key ID before
+restarting. Keeping an escrow is an explicit availability tradeoff that weakens
+the assurance that the TPM-bound blob is the only recoverable private-key copy.
+Automatic key distribution and fleet PKI are not provided.
 
 !!! warning "Root-equivalent socket access"
     The controller's Incus client uses the account's `incus-admin` group membership, which grants root-equivalent control over the host. This applies regardless of which GitHub credential type is configured. The `incus.owner` value limits the controller's intended cleanup scope but is forgeable by another project writer; it is not authorization. Run the current production deployment only on a dedicated, single-purpose Incus host.
@@ -301,6 +324,17 @@ The packaged base unit is `deploy/systemd/incus-gh-runner.service`. It deliberat
 
 - `credentials-github-app.conf` loads `/etc/incus-gh-runner/github-app-private-key.pem` and sets `INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE`.
 - `credentials-personal-access-token.conf` loads `/etc/incus-gh-runner/github-token` and sets `INCUS_GH_RUNNER_GITHUB_TOKEN_FILE`.
+
+When job proofs are enabled, install exactly one independent proof-key drop-in
+as `job-proof.conf`:
+
+- `credentials-job-proof-file.conf` loads the root-only plaintext source with
+  `LoadCredential=`.
+- `credentials-job-proof-tpm.conf` decrypts the TPM-bound source with
+  `LoadCredentialEncrypted=`.
+
+Both set `INCUS_GH_RUNNER_JOB_PROOF_SIGNING_KEY_FILE` to the same protected
+runtime file, so they compose with either GitHub credential method.
 
 | Directive | Value |
 |---|---|

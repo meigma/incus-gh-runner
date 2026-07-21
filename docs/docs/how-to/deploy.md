@@ -13,7 +13,7 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
     !!! warning "Root-equivalent socket access"
         `SupplementaryGroups=incus-admin` in the unit file gives the controller the same host access as a user in `incus-admin`. Run the controller on a host dedicated to this workload, not one shared with unrelated services.
 
-- A systemd version supporting `LoadCredential=` and the `%d` credentials-directory specifier the unit relies on, along with `DynamicUser=` and the unit's other sandboxing directives. Ubuntu 24.04 is the validated reference host.
+- A systemd version supporting `LoadCredential=` and the `%d` credentials-directory specifier the unit relies on, along with `DynamicUser=` and the unit's other sandboxing directives. Ubuntu 24.04 is the validated reference host. TPM-bound proof keys additionally require systemd 250 or newer and an enrolled TPM 2.0 device.
 - Administrative access to the target GitHub organization or repository.
 - The `incus-gh-runner` binary for your platform, and a checked-out or downloaded copy of `deploy/systemd/` from the repository.
 
@@ -287,12 +287,17 @@ sudo install -m 0644 deploy/systemd/credentials-personal-access-token.conf \
 
 Do not place the App private key or PAT value in `config.yaml`. The drop-ins load the root-owned source file and point the controller at the protected runtime copy. To change methods, replace `credentials.conf`, add or remove the `github.app` identifiers in `config.yaml`, then reload and restart the service.
 
-## 6. Enable file-backed job proofs (optional)
+## 6. Enable job proofs (optional)
 
 Generate and enroll the host's Ed25519 proof key as described in the
 [configuration reference](../reference/configuration.md#job-proof-key-enrollment-and-rotation).
+Choose one proof-key storage mode. Both modes expose the same runtime credential
+to the unchanged controller and compose with either GitHub credential drop-in.
+
+### Option A: file-backed proof key
+
 Install the private source key as `root:root` mode `0600`, then install the
-independent proof credential drop-in alongside the selected GitHub credential:
+file-backed proof credential drop-in:
 
 ```sh
 sudo install -o root -g root -m 0600 machine-provenance-key.pem \
@@ -314,6 +319,93 @@ job_proof:
 The proof drop-in does not replace `credentials.conf`. It composes with either
 GitHub credential method and leaves proofs disabled when it is absent.
 
+Verify the installed file-backed source and drop-in from the same checkout:
+
+```sh
+sudo deploy/systemd/verify.sh --installed-job-proof=file
+```
+
+### Option B: TPM-bound proof key
+
+Use systemd 250 or newer to encrypt the same PKCS#8 Ed25519 key to the target
+host's TPM. The encryption attempt is the capability check; do not gate this
+procedure on `systemd-creds has-tpm2`, which is unavailable on older supported
+systemd versions.
+
+Create the encrypted credential directory explicitly and stage the plaintext
+key only on the root-owned `/run` temporary filesystem:
+
+```sh
+sudo install -d -o root -g root -m 0700 /etc/credstore.encrypted
+sudo install -o root -g root -m 0600 machine-provenance-key.pem \
+  /run/incus-gh-runner-machine-provenance-key.pem
+sudo systemd-creds encrypt \
+  --name=machine-provenance-key \
+  --with-key=tpm2 \
+  --tpm2-device=auto \
+  --tpm2-pcrs= \
+  /run/incus-gh-runner-machine-provenance-key.pem \
+  /etc/credstore.encrypted/incus-gh-runner-machine-provenance-key.cred
+sudo chmod 0600 \
+  /etc/credstore.encrypted/incus-gh-runner-machine-provenance-key.cred
+```
+
+Before removing the plaintext, decrypt once on the origin host and confirm that
+it derives the public key already enrolled for this `job_proof.host_id`:
+
+```sh
+sudo systemd-creds decrypt \
+  --name=machine-provenance-key \
+  /etc/credstore.encrypted/incus-gh-runner-machine-provenance-key.cred \
+  /run/incus-gh-runner-machine-provenance-key.check.pem
+sudo openssl pkey \
+  -in /run/incus-gh-runner-machine-provenance-key.check.pem \
+  -pubout | cmp - machine-provenance-key.pub.pem && \
+  sudo rm -f \
+    /run/incus-gh-runner-machine-provenance-key.pem \
+    /run/incus-gh-runner-machine-provenance-key.check.pem
+```
+
+If the public-key comparison fails, the plaintext files remain under the
+root-only `/run` paths for diagnosis and must not be treated as successfully
+enrolled.
+
+Install the TPM-bound drop-in and verify the deployed credential, directory,
+unit sandbox, and drop-in:
+
+```sh
+sudo install -m 0644 deploy/systemd/credentials-job-proof-tpm.conf \
+  /etc/systemd/system/incus-gh-runner.service.d/job-proof.conf
+sudo deploy/systemd/verify.sh --installed-job-proof=tpm
+```
+
+The empty PCR set is deliberate: normal firmware, kernel, and bootloader
+updates must not lock out the service. `PrivateDevices=yes` remains enabled;
+systemd decrypts the credential during service activation, before the
+controller enters its device namespace. The controller never opens a TPM
+device.
+
+Delete any remaining plaintext transfer copy after successful encryption, or
+move it into an explicit offline recovery escrow. Escrow permits the same key
+to be sealed again after TPM or motherboard replacement, but weakens the
+assurance that the encrypted credential is the only recoverable private-key
+copy. Without escrow, replacement requires a new key and consumer enrollment.
+
+If a second TPM host is available, copy only the encrypted credential there
+and run this same name-aware check; it must fail after origin-host decryption
+succeeded:
+
+```sh
+sudo systemd-creds decrypt \
+  --name=machine-provenance-key \
+  incus-gh-runner-machine-provenance-key.cred \
+  /run/incus-gh-runner-machine-provenance-key.cross-host.pem
+```
+
+Remove the temporary output if the command unexpectedly creates it. Without a
+second host, record cross-host binding as an untested evidence gap rather than
+claiming it.
+
 ## 7. Validate the unit (optional)
 
 From a checkout of the repository, run the bundled sandboxed check before deploying:
@@ -322,7 +414,11 @@ From a checkout of the repository, run the bundled sandboxed check before deploy
 deploy/systemd/verify.sh
 ```
 
-This requires Linux and `systemd-analyze`; it verifies the base unit and both credential variants, then checks the systemd security exposure score against a fixed threshold without touching your live system.
+This requires Linux and `systemd-analyze`; it verifies the base unit and all
+four GitHub App/PAT with file-backed/TPM-bound proof-credential combinations,
+then checks the systemd security exposure score against a fixed threshold
+without touching your live system. The `--installed-job-proof` checks in step 6
+add exact ownership, mode, presence, and drop-in validation for a target host.
 
 ## 8. Start and enable the service
 
@@ -340,6 +436,13 @@ sudo journalctl -u incus-gh-runner -n 50 --no-pager
 ```
 
 Look for a JSON log line with `msg="incus-gh-runner started"`, carrying `scale_set`, `scale_set_id`, and `incus_project` fields. Its absence, or a repeating restart loop, means startup failed — check the preceding log lines for the specific error before continuing.
+
+For TPM-bound job proofs, reboot the host normally and confirm the service
+starts again before accepting the deployment. Retrieve a proof in a real job,
+verify it externally with the enrolled public key, and compare it with a
+file-backed proof. The storage modes must produce the same schema, key-ID rule,
+verifier behavior, and workflow experience; the receipt cannot attest which
+storage mode was used.
 
 Validate a repository-scoped deployment end to end by running a real workflow
 job in the configured repository:
