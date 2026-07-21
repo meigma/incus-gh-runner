@@ -18,3 +18,7 @@ Plan: Process the PRs sequentially, ask Dependabot to rebase each branch, verify
 Resolved all six open Dependabot pull requests after sequential Dependabot-owned rebases, verified signatures, exact current-`master` parents, fresh hosted checks, and head-SHA-pinned squash merges: #1 `4c6555c`, #2 `4599562`, #3 `ae7c457`, #4 `675e568`, #5 `609e6b3`, and #6 `ae53f0e`.
 Local and remote `master` now agree at `ae53f0ef9a49df01dd63e13db71abf70223c0f3a`, the working tree is clean, and the open Dependabot PR query returns an empty list.
 Post-merge CI, GitHub Pages, Release Please, Dependency Graph, and both CodeQL analyses all passed on the final commit. Dependabot also reported that configured `dependencies` and `github-actions` labels do not exist; this did not block the updates but remains a small repository-hygiene follow-up.
+
+## 2026-07-21 14:34 — Release rehearsal passed
+Because Dependabot pull requests intentionally skip the expensive release jobs, manually dispatched `Release Dry Run` run `29869902836` on final `master` commit `ae53f0e`.
+All five jobs passed: binary/SBOM/checksum rehearsal, native amd64 and arm64 Melange package builds, container assembly and smoke test, and reference Incus image construction and inspection.
