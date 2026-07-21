@@ -56,10 +56,23 @@ Each capture is limited to 1 MiB and the directory sink retains at most 256 capt
 Job machine proofs are disabled when this section is absent. The two settings
 must be configured together; setting only one fails controller startup.
 
+When enabled, the controller attempts one signed proof for every valid GitHub
+`JobStarted` event on its resolved scale set. Events enter a non-blocking queue
+whose capacity is `max(1, capacity.max_runners)`; malformed events or a full
+queue produce no proof and do not interrupt runner demand tracking. The guest
+helper therefore remains the fail-closed boundary for proof-dependent work: it
+times out when no committed proof arrives.
+
 | Key | Type | Default | Required / validation |
 |---|---|---|---|
 | `job_proof.host_id` | string | `""` | Stable host identity recorded in every proof and enrolled beside the public key. Required when `job_proof.signing_key_file` is set. |
 | `job_proof.signing_key_file` | string | `""` | Regular file no larger than 16 KiB containing exactly one PKCS#8 PEM Ed25519 private key. Read once during startup. Required when `job_proof.host_id` is set. |
+
+The upstream listener acknowledges a queue message before invoking the job
+callback. A controller crash in that interval or before proof delivery can
+leave a running job without a proof; version 1 does not persist or reconstruct
+events after restart. Proof-required workflows must treat helper timeout as a
+hard failure.
 
 ### `capacity`
 

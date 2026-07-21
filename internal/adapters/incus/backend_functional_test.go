@@ -35,6 +35,7 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 	probeSecret := "functional-probe-" + uuid.NewString()
 	diagnosticsObserved := make(chan Diagnostics, 1)
 	backend, err := NewBackend(server, Options{
+		Project:          project,
 		Image:            image,
 		Profiles:         splitProfiles(os.Getenv("INCUS_GH_RUNNER_TEST_PROFILES")),
 		Owner:            "functional-test-" + uuid.NewString(),

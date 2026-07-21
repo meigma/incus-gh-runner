@@ -13,6 +13,7 @@ import (
 	"github.com/actions/scaleset/listener"
 
 	"github.com/meigma/incus-gh-runner/internal/controller"
+	"github.com/meigma/incus-gh-runner/internal/provenance"
 )
 
 const (
@@ -267,6 +268,8 @@ type scaleSetClient interface {
 type DemandSourceOptions struct {
 	// ScaleSetID is the resolved runner scale-set ID.
 	ScaleSetID int
+	// ScaleSetName is the controller-resolved scale-set name used in proof events.
+	ScaleSetName string
 	// MinRunners is the idle runner floor used for desired-count reporting.
 	MinRunners int
 	// MaxRunners is the maximum capacity reported while polling.
@@ -279,6 +282,8 @@ type DemandSourceOptions struct {
 	ReconnectMaximum time.Duration
 	// SessionCloseTimeout bounds cleanup of each replaced GitHub message session.
 	SessionCloseTimeout time.Duration
+	// JobStartedSink receives validated proof events without blocking callbacks when configured.
+	JobStartedSink provenance.JobStartedSink
 }
 
 // DemandSource publishes coalescible demand from one GitHub message session.
@@ -312,6 +317,14 @@ func newDemandSource(upstream demandListener, options DemandSourceOptions) (*Dem
 	}
 	if options.MaxRunners < options.MinRunners {
 		return nil, errors.New("maximum runners must be at least minimum runners")
+	}
+	if options.JobStartedSink != nil {
+		if options.ScaleSetID <= 0 {
+			return nil, errors.New("proof-enabled demand source requires a positive scale-set ID")
+		}
+		if strings.TrimSpace(options.ScaleSetName) == "" {
+			return nil, errors.New("proof-enabled demand source requires a scale-set name")
+		}
 	}
 	if options.Logger == nil {
 		options.Logger = slog.New(slog.DiscardHandler)
@@ -380,6 +393,31 @@ func (h *demandHandler) HandleJobStarted(ctx context.Context, job *scaleset.JobS
 			"job_id",
 			job.JobID,
 		)
+		if h.options.JobStartedSink != nil {
+			event := provenance.JobStarted{
+				Owner:           job.OwnerName,
+				Repository:      job.RepositoryName,
+				WorkflowRef:     job.JobWorkflowRef,
+				WorkflowRunID:   job.WorkflowRunID,
+				JobID:           job.JobID,
+				RunnerRequestID: job.RunnerRequestID,
+				RunnerID:        int64(job.RunnerID),
+				RunnerName:      job.RunnerName,
+				EventName:       job.EventName,
+				ScaleSetID:      int64(h.options.ScaleSetID),
+				ScaleSetName:    h.options.ScaleSetName,
+			}
+			if err := h.options.JobStartedSink.TryEnqueue(event); err != nil {
+				h.options.Logger.ErrorContext(
+					ctx,
+					"GitHub Actions job proof event dropped",
+					"job_id", job.JobID,
+					"runner_id", job.RunnerID,
+					"runner_name", job.RunnerName,
+					"error", err,
+				)
+			}
+		}
 	}
 	return nil
 }

@@ -93,8 +93,10 @@ func TestPrepareJobProofSigner(t *testing.T) {
 			require.NoError(t, prepareErr)
 			if tt.wantSigner {
 				assert.NotNil(t, prepared.signer)
+				assert.NotNil(t, prepared.verifier)
 			} else {
 				assert.Nil(t, prepared.signer)
+				assert.Nil(t, prepared.verifier)
 			}
 		})
 	}

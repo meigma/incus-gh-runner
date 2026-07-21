@@ -635,6 +635,7 @@ func TestBackendCreateOwnsStartsAndCommitsPayload(t *testing.T) {
 	assert.Equal(t, "41", client.updatedRequest.Config[jitRunnerIDKey])
 	assert.Equal(t, "incus-gh-runner-runner-id", client.updatedRequest.Config[jitRunnerNameKey])
 	assert.Equal(t, "73", client.updatedRequest.Config[jitScaleSetIDKey])
+	assert.Equal(t, stableTestUUID("incus-gh-runner-runner-id"), client.updatedRequest.Config[boundInstanceUUIDKey])
 	assert.Equal(t, expectedLaunchDigest, client.updatedRequest.Config[launchDigestKey])
 	assert.Equal(t, "etag-incus-gh-runner-runner-id", client.updateETag)
 	assert.Equal(t, []string{"incus-gh-runner-runner-id"}, client.started)
@@ -648,6 +649,126 @@ func TestBackendCreateOwnsStartsAndCommitsPayload(t *testing.T) {
 	require.NoError(t, json.Unmarshal(client.fileWrites[0].content, &payload))
 	assert.InDelta(t, 1, payload["version"], 0)
 	assert.Equal(t, "secret-jit-config", payload["jit_config"])
+}
+
+// TestBackendSnapshotCorrelatesJobAndReconstructsLaunchIdentity proves signed machine authority.
+func TestBackendSnapshotCorrelatesJobAndReconstructsLaunchIdentity(t *testing.T) {
+	t.Parallel()
+
+	backend, client, event := newProofSnapshotBackend(t)
+	instance := client.instances[event.RunnerName]
+	instance.Config["volatile.last_state.power"] = "RUNNING"
+	client.instances[event.RunnerName] = instance
+
+	machine, err := backend.Snapshot(context.Background(), event)
+
+	require.NoError(t, err)
+	assert.Equal(t, provenance.Machine{
+		IncusProject:              "test-project",
+		InstanceName:              event.RunnerName,
+		InstanceUUID:              stableTestUUID(event.RunnerName),
+		ImageFingerprint:          testFingerprintA,
+		LaunchConfigurationSHA256: client.instances[event.RunnerName].Config[launchDigestKey],
+		Profiles:                  []provenance.Profile{},
+	}, machine)
+}
+
+// TestBackendSnapshotRejectsCorrelationAndLaunchDrift proves every signed machine field is host-authoritative.
+func TestBackendSnapshotRejectsCorrelationAndLaunchDrift(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		mutate  func(*api.Instance, *provenance.JobStarted)
+		wantErr string
+	}{
+		{
+			name: "runner ID mismatch",
+			mutate: func(_ *api.Instance, event *provenance.JobStarted) {
+				event.RunnerID++
+			},
+			wantErr: "JIT registration metadata does not match",
+		},
+		{
+			name: "scale set mismatch",
+			mutate: func(_ *api.Instance, event *provenance.JobStarted) {
+				event.ScaleSetID++
+			},
+			wantErr: "JIT registration metadata does not match",
+		},
+		{
+			name: "stopped machine",
+			mutate: func(instance *api.Instance, _ *provenance.JobStarted) {
+				instance.Status = "Stopped"
+			},
+			wantErr: "non-running instance",
+		},
+		{
+			name: "same-name replacement",
+			mutate: func(instance *api.Instance, _ *provenance.JobStarted) {
+				instance.Config[instanceUUIDKey] = stableTestUUID("replacement")
+			},
+			wantErr: "replacement instance",
+		},
+		{
+			name: "config drift",
+			mutate: func(instance *api.Instance, _ *provenance.JobStarted) {
+				instance.Config["limits.cpu"] = "8"
+			},
+			wantErr: "launch configuration drift detected",
+		},
+		{
+			name: "device drift",
+			mutate: func(instance *api.Instance, _ *provenance.JobStarted) {
+				instance.Devices["extra"] = map[string]string{"type": "disk", "path": "/extra"}
+			},
+			wantErr: "launch configuration drift detected",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			backend, client, event := newProofSnapshotBackend(t)
+			instance := client.instances[event.RunnerName]
+			instance.Config = maps.Clone(instance.Config)
+			instance.Devices = maps.Clone(instance.Devices)
+			tt.mutate(&instance, &event)
+			client.instances[event.RunnerName] = instance
+
+			_, err := backend.Snapshot(context.Background(), event)
+
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+// newProofSnapshotBackend creates one running runner with a durable JIT binding.
+func newProofSnapshotBackend(t *testing.T) (*Backend, *fakeClient, provenance.JobStarted) {
+	t.Helper()
+	client := newFakeClient()
+	client.images["runner-image"] = api.Image{
+		Fingerprint: testFingerprintA,
+		ImagePut:    api.ImagePut{Profiles: []string{}},
+	}
+	backend := newTestBackend(t, client, Options{NewID: func() string { return "runner-id" }})
+	require.NoError(t, backend.Preflight(context.Background()))
+	runner, err := backend.Create(context.Background())
+	require.NoError(t, err)
+
+	return backend, client, provenance.JobStarted{
+		Owner:           "meigma",
+		Repository:      "incus-gh-runner",
+		WorkflowRef:     "meigma/incus-gh-runner/.github/workflows/test.yml@refs/heads/master",
+		WorkflowRunID:   101,
+		JobID:           "job-1",
+		RunnerRequestID: 202,
+		RunnerID:        41,
+		RunnerName:      runner.ID,
+		EventName:       "push",
+		ScaleSetID:      73,
+		ScaleSetName:    "incus-runners",
+	}
 }
 
 // TestBackendCreateDoesNotBootWithoutDurableJITBinding proves every failed binding leaves the VM stopped.
@@ -844,6 +965,52 @@ func TestBackendDeleteStopsBeforeMutationWhenRegistrationFenceFails(t *testing.T
 	assert.Empty(t, client.deleted)
 }
 
+// TestBackendDeleteFencesRecoveredProvisioningCrashPoints closes every JIT allocation window.
+func TestBackendDeleteFencesRecoveredProvisioningCrashPoints(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		status   string
+		metadata bool
+	}{
+		{name: "after JIT allocation", status: "Stopped"},
+		{name: "after metadata persistence", status: "Stopped", metadata: true},
+		{name: "after VM start", status: "Running", metadata: true},
+		{name: "after partial payload delivery", status: "Running", metadata: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client := newFakeClient()
+			instance := ownedInstance("runner", tt.status, time.Now())
+			if tt.metadata {
+				instance.Config[jitRunnerIDKey] = "41"
+				instance.Config[jitRunnerNameKey] = "runner"
+				instance.Config[jitScaleSetIDKey] = "73"
+			}
+			client.instances["runner"] = instance
+			client.instanceETags["runner"] = "runner-etag"
+			var fenced []string
+			backend := newTestBackend(t, client, Options{
+				RunnerFencer: testFencerFunc(func(_ context.Context, runnerID string) error {
+					assert.Empty(t, client.stopped)
+					assert.Empty(t, client.deleted)
+					fenced = append(fenced, runnerID)
+					return nil
+				}),
+			})
+
+			err := backend.Delete(context.Background(), "runner")
+
+			require.NoError(t, err)
+			assert.Equal(t, []string{"runner"}, fenced)
+			assert.Equal(t, []string{"runner"}, client.deleted)
+		})
+	}
+}
+
 func TestBackendDeleteRequiresETagBeforeStop(t *testing.T) {
 	t.Parallel()
 
@@ -931,6 +1098,7 @@ func newTestBackend(t *testing.T, client client, overrides Options) *Backend {
 	t.Helper()
 
 	options := Options{
+		Project:          "test-project",
 		Image:            "runner-image",
 		Owner:            "test-owner",
 		BootstrapTimeout: time.Minute,

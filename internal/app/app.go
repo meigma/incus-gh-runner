@@ -6,16 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/meigma/incus-gh-runner/internal/config"
 	"github.com/meigma/incus-gh-runner/internal/controller"
 )
 
-const (
-	componentCount      = 2
-	shutdownWindowCount = 2
-)
+const shutdownWindowCount = 2
 
 // ErrShutdownTimeout reports that an application component ignored cancellation.
 var ErrShutdownTimeout = errors.New("application shutdown timed out")
@@ -24,6 +22,20 @@ var ErrShutdownTimeout = errors.New("application shutdown timed out")
 type DemandSource interface {
 	// Run blocks while publishing demand and returns when polling stops.
 	Run(ctx context.Context, publish func(controller.Demand)) error
+}
+
+// Runnable is one independently supervised application component.
+type Runnable interface {
+	// Run blocks until cancellation or component failure.
+	Run(ctx context.Context) error
+}
+
+// Component names one additional supervised runtime component.
+type Component struct {
+	// Name identifies component failures in operator-visible errors.
+	Name string
+	// Runner owns the component's blocking lifecycle.
+	Runner Runnable
 }
 
 // Options contains the application ports and immutable configuration.
@@ -36,14 +48,15 @@ type Options struct {
 	RunnerBackend controller.Backend
 	// RunnerFencer removes GitHub registration before idle scale-down.
 	RunnerFencer controller.Fencer
+	// Components are additional independently supervised runtime services.
+	Components []Component
 	// Logger receives structured, secret-safe lifecycle events.
 	Logger *slog.Logger
 }
 
 // Application supervises the demand source and controller core.
 type Application struct {
-	demandSource   demandSource
-	controller     *controller.Controller
+	components     []Component
 	shutdownBudget time.Duration
 }
 
@@ -75,9 +88,27 @@ func New(options Options) (*Application, error) {
 		return nil, fmt.Errorf("construct controller: %w", err)
 	}
 
+	components := []Component{
+		{Name: "demand source", Runner: demandSource{source: options.DemandSource, publish: mailbox.Publish}},
+		{Name: "controller", Runner: ctrl},
+	}
+	names := map[string]struct{}{"demand source": {}, "controller": {}}
+	for _, component := range options.Components {
+		if strings.TrimSpace(component.Name) == "" {
+			return nil, errors.New("component name is required")
+		}
+		if component.Runner == nil {
+			return nil, fmt.Errorf("component %q runner is required", component.Name)
+		}
+		if _, exists := names[component.Name]; exists {
+			return nil, fmt.Errorf("component name %q is duplicated", component.Name)
+		}
+		names[component.Name] = struct{}{}
+		components = append(components, component)
+	}
+
 	return &Application{
-		demandSource:   demandSource{source: options.DemandSource, publish: mailbox.Publish},
-		controller:     ctrl,
+		components:     components,
 		shutdownBudget: shutdownWindowCount * options.Config.Timeouts.Shutdown,
 	}, nil
 }
@@ -87,17 +118,16 @@ func (a *Application) Run(ctx context.Context) error {
 	runContext, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	results := make(chan componentResult, componentCount)
-	go func() {
-		results <- componentResult{name: "demand source", err: a.demandSource.Run(runContext)}
-	}()
-	go func() {
-		results <- componentResult{name: "controller", err: a.controller.Run(runContext)}
-	}()
+	results := make(chan componentResult, len(a.components))
+	for _, component := range a.components {
+		go func(component Component) {
+			results <- componentResult{name: component.Name, err: component.Runner.Run(runContext)}
+		}(component)
+	}
 
 	first := <-results
 	cancel()
-	second, waitErr := a.waitForPeer(results)
+	peers, waitErr := a.waitForPeers(results, len(a.components)-1)
 	if waitErr != nil {
 		if ctx.Err() != nil {
 			return waitErr
@@ -106,29 +136,32 @@ func (a *Application) Run(ctx context.Context) error {
 	}
 
 	if ctx.Err() != nil {
-		if err := meaningfulError(first); err != nil {
-			return err
-		}
-		return meaningfulError(second)
+		return joinMeaningful(first, peers)
 	}
-	if err := componentError(first); err != nil {
-		return err
+	joined := []error{componentError(first)}
+	for _, peer := range peers {
+		joined = append(joined, meaningfulError(peer))
 	}
 
-	return meaningfulError(second)
+	return errors.Join(joined...)
 }
 
-// waitForPeer bounds shutdown across the controller's graceful and cancellation windows.
-func (a *Application) waitForPeer(results <-chan componentResult) (componentResult, error) {
+// waitForPeers bounds shutdown across all remaining supervised components.
+func (a *Application) waitForPeers(results <-chan componentResult, count int) ([]componentResult, error) {
 	timer := time.NewTimer(a.shutdownBudget)
 	defer timer.Stop()
 
-	select {
-	case result := <-results:
-		return result, nil
-	case <-timer.C:
-		return componentResult{}, fmt.Errorf("after %s: %w", a.shutdownBudget, ErrShutdownTimeout)
+	peers := make([]componentResult, 0, count)
+	for range count {
+		select {
+		case result := <-results:
+			peers = append(peers, result)
+		case <-timer.C:
+			return nil, fmt.Errorf("after %s: %w", a.shutdownBudget, ErrShutdownTimeout)
+		}
 	}
+
+	return peers, nil
 }
 
 // demandSource binds a source port to the controller's publish callback.
@@ -167,4 +200,14 @@ func meaningfulError(result componentResult) error {
 	}
 
 	return fmt.Errorf("%s: %w", result.name, result.err)
+}
+
+// joinMeaningful returns only non-cancellation component failures during requested shutdown.
+func joinMeaningful(first componentResult, peers []componentResult) error {
+	errs := []error{meaningfulError(first)}
+	for _, peer := range peers {
+		errs = append(errs, meaningfulError(peer))
+	}
+
+	return errors.Join(errs...)
 }

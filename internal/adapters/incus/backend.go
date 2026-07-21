@@ -42,6 +42,7 @@ const (
 	jitRunnerIDKey         = "user.incus-gh-runner.jit-runner-id"
 	jitRunnerNameKey       = "user.incus-gh-runner.jit-runner-name"
 	jitScaleSetIDKey       = "user.incus-gh-runner.jit-scale-set-id"
+	boundInstanceUUIDKey   = "user.incus-gh-runner.instance-uuid"
 	instanceUUIDKey        = "volatile.uuid"
 	defaultProfileName     = "default"
 	maximumInstanceNameLen = 63
@@ -131,6 +132,8 @@ func (f DiagnosticsSinkFunc) Store(ctx context.Context, diagnostics Diagnostics)
 
 // Options configures the ownership-scoped Incus backend.
 type Options struct {
+	// Project is the configured Incus project used in signed machine identity.
+	Project string
 	// Image is an existing local image alias or fingerprint.
 	Image string
 	// Profiles are existing profile sources pinned and materialized into every runner VM.
@@ -185,6 +188,9 @@ func newBackend(client client, options Options) (*Backend, error) {
 	options = options.withDefaults()
 	if strings.TrimSpace(options.Image) == "" {
 		return nil, errors.New("incus image is required")
+	}
+	if strings.TrimSpace(options.Project) == "" {
+		return nil, errors.New("incus project is required")
 	}
 	if strings.TrimSpace(options.Owner) == "" {
 		return nil, errors.New("incus ownership identity is required")
@@ -448,6 +454,97 @@ func (b *Backend) ListOwned(ctx context.Context) ([]controller.Runner, error) {
 	return runners, nil
 }
 
+// Snapshot verifies one authenticated job against current owned VM and launch state.
+func (b *Backend) Snapshot(ctx context.Context, event provenance.JobStarted) (provenance.Machine, error) {
+	if err := event.Validate(); err != nil {
+		return provenance.Machine{}, fmt.Errorf("validate job event: %w", err)
+	}
+	instance, _, err := b.client.GetInstance(ctx, event.RunnerName)
+	if err != nil {
+		return provenance.Machine{}, fmt.Errorf("get proof candidate %q: %w", event.RunnerName, err)
+	}
+	instanceUUID, err := b.verifyInstanceIdentity(event.RunnerName, instance, "sign proof for")
+	if err != nil {
+		return provenance.Machine{}, err
+	}
+	if !strings.EqualFold(instance.Status, "running") {
+		return provenance.Machine{}, fmt.Errorf("refusing to sign proof for non-running instance %q", event.RunnerName)
+	}
+	if instance.Config[boundInstanceUUIDKey] != instanceUUID {
+		return provenance.Machine{}, fmt.Errorf("refusing to sign proof for replacement instance %q", event.RunnerName)
+	}
+	if instance.Config[jitRunnerIDKey] != strconv.FormatInt(event.RunnerID, 10) ||
+		instance.Config[jitRunnerNameKey] != event.RunnerName ||
+		instance.Config[jitScaleSetIDKey] != strconv.FormatInt(event.ScaleSetID, 10) {
+		return provenance.Machine{}, fmt.Errorf(
+			"JIT registration metadata does not match job event for %q",
+			event.RunnerName,
+		)
+	}
+
+	profiles, err := decodeProfileReferences(instance.Config[profilesKey])
+	if err != nil {
+		return provenance.Machine{}, fmt.Errorf("decode profile identity for %q: %w", event.RunnerName, err)
+	}
+	launchDigest, err := provenance.LaunchDigest(instanceLaunchInput(instance, profiles))
+	if err != nil {
+		return provenance.Machine{}, fmt.Errorf("reconstruct launch identity for %q: %w", event.RunnerName, err)
+	}
+	if launchDigest != instance.Config[launchDigestKey] {
+		return provenance.Machine{}, fmt.Errorf("launch configuration drift detected for %q", event.RunnerName)
+	}
+
+	return provenance.Machine{
+		IncusProject:              b.options.Project,
+		InstanceName:              event.RunnerName,
+		InstanceUUID:              instanceUUID,
+		ImageFingerprint:          instance.Config[imageKey],
+		LaunchConfigurationSHA256: launchDigest,
+		Profiles:                  profiles,
+	}, nil
+}
+
+// decodeProfileReferences reads the controller-owned ordered profile metadata.
+func decodeProfileReferences(encoded string) ([]provenance.Profile, error) {
+	var references []profileReference
+	if err := json.Unmarshal([]byte(encoded), &references); err != nil {
+		return nil, err
+	}
+	if references == nil {
+		return nil, errors.New("profile metadata must be an array")
+	}
+	profiles := make([]provenance.Profile, 0, len(references))
+	for _, reference := range references {
+		profiles = append(profiles, provenance.Profile{Name: reference.Name, SHA256: reference.SHA256})
+	}
+
+	return profiles, nil
+}
+
+// instanceLaunchInput removes server and controller audit metadata from the current VM.
+func instanceLaunchInput(instance *api.Instance, profiles []provenance.Profile) provenance.LaunchInput {
+	config := make(map[string]string)
+	for key, value := range instance.Config {
+		if strings.HasPrefix(key, "volatile.") || strings.HasPrefix(key, "user.incus-gh-runner.") {
+			continue
+		}
+		config[key] = value
+	}
+	devices := make(map[string]map[string]string, len(instance.Devices))
+	for name, device := range instance.Devices {
+		devices[name] = maps.Clone(device)
+	}
+
+	return provenance.LaunchInput{
+		Version:          provenance.Version,
+		InstanceType:     provenance.LaunchInstanceType,
+		ImageFingerprint: instance.Config[imageKey],
+		Profiles:         profiles,
+		Config:           config,
+		Devices:          devices,
+	}
+}
+
 // statusReadContext gives one runner a bounded, fair share of the inventory deadline.
 func (b *Backend) statusReadContext(ctx context.Context, remaining int) (context.Context, context.CancelFunc) {
 	budget := b.options.StatusReadTimeout
@@ -591,6 +688,7 @@ func (b *Backend) bindJITRegistration(
 	update.Config[jitRunnerIDKey] = runnerID
 	update.Config[jitRunnerNameKey] = runner.Name
 	update.Config[jitScaleSetIDKey] = scaleSetID
+	update.Config[boundInstanceUUIDKey] = instanceUUID
 	if updateErr := b.client.UpdateInstance(ctx, name, update, etag); updateErr != nil {
 		return fmt.Errorf("bind JIT registration to owned instance %q: %w", name, updateErr)
 	}
@@ -602,6 +700,7 @@ func (b *Backend) bindJITRegistration(
 		bound.Config[jitRunnerIDKey] != runnerID ||
 		bound.Config[jitRunnerNameKey] != runner.Name ||
 		bound.Config[jitScaleSetIDKey] != scaleSetID ||
+		bound.Config[boundInstanceUUIDKey] != instanceUUID ||
 		bound.Config[launchDigestKey] != launchDigest {
 		return fmt.Errorf(
 			"confirm JIT registration on owned instance %q: metadata does not match",
