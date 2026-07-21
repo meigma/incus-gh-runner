@@ -167,7 +167,11 @@ openssl pkey \
 Install the private key through a protected runtime credential path and set
 `job_proof.signing_key_file` to that path. Source-file ownership and mode are
 deployment checks; for a normal file-backed systemd credential, install the
-source as `root:root` mode `0600`. Enroll three values with each consumer:
+source as `root:root` mode `0600`. The shipped
+`deploy/systemd/credentials-job-proof-file.conf` drop-in loads
+`/etc/incus-gh-runner/machine-provenance-key.pem` and sets the runtime path; it
+is installed alongside, not instead of, the selected GitHub credential
+drop-in. Enroll three values with each consumer:
 
 - the stable `job_proof.host_id`;
 - `machine-provenance-key.pub.pem`; and
