@@ -146,7 +146,7 @@ The signing key is one PKCS#8 PEM Ed25519 private key; its public half is enroll
 
 Two storage modes exist for the private key on the controller host — a file-backed systemd credential and a TPM-bound encrypted systemd credential. Both expose the same protected runtime file to the controller, and the proof format, key-ID rule, verifier behavior, and workflow are identical across modes; a receipt cannot attest which storage mode produced it. TPM binding protects the encrypted key at rest against offline use on another host. It is not TPM-native signing, measured boot, or remote attestation: the plaintext key exists in systemd's runtime credential store and in controller memory while the service runs.
 
-Rotation is overlapping: a consumer that trusts both the old and new public keys can verify proofs issued before and after a key replacement. Existing proofs remain verifiable for as long as the consumer retains the old public key. The generation, installation, encryption, and rotation procedures are in [Deploy to production](../how-to/deploy.md#6-enable-job-proofs-optional).
+Rotation is overlapping: a consumer that trusts both the old and new public keys can verify proofs issued before and after a key replacement. Existing proofs remain verifiable for as long as the consumer retains the old public key. Automatic key distribution and fleet PKI are not provided. The generation, installation, encryption, and rotation procedures are in [Deploy to production](../how-to/deploy.md#6-enable-job-proofs-optional).
 
 ## See also
 

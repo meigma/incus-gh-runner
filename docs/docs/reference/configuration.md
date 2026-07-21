@@ -28,7 +28,7 @@ Duration values use Go duration syntax (for example `30s`, `5m`).
 |---|---|---|---|
 | `github.config_url` | string | — | Required. Absolute HTTPS GitHub or GHES organization or repository URL. GitHub-hosted domains may not specify a port; GHES ports must be valid. Enterprise URLs, trailing DNS dots, userinfo, query strings, fragments, escaped paths, and other path shapes are rejected. |
 | `github.scale_set` | string | — | Required. Non-empty and exactly representable by the GitHub client without query decoding. Also used as the sole runner label. A pre-existing scale set must have that exact label and runner self-update disabled. |
-| `github.runner_group` | string | `default` | Controller validation requires a non-empty, exactly representable value, `default` at repository scope, and an explicit non-default name at organization scope. Operators must separately restrict that organization group to selected repositories and commit-pinned workflows. |
+| `github.runner_group` | string | `default` | Controller validation requires a non-empty, exactly representable value, `default` at repository scope, and an explicit non-default name at organization scope. The controller does not enforce the group's repository or workflow policy; restricting the organization group to selected repositories and commit-pinned workflows is a separate GitHub-side control (see [Deploy](../how-to/deploy.md#2-choose-the-github-scope-and-credential)). |
 | `github.token_file` | string | — | PAT file read once at startup. Mutually exclusive with `github.app` and `INCUS_GH_RUNNER_GITHUB_TOKEN`. |
 | `github.app.client_id` | string | — | Required if GitHub App credentials are configured. |
 | `github.app.installation_id` | int64 | — | Required if GitHub App credentials are configured. Must be greater than `0`. |
@@ -57,11 +57,11 @@ Job machine proofs are disabled when this section is absent. The two settings
 must be configured together; setting only one fails controller startup.
 
 When enabled, the controller attempts one signed proof for every valid GitHub
-`JobStarted` event on its resolved scale set. Events enter a non-blocking queue
-whose capacity is `max(1, capacity.max_runners)`; malformed events or a full
-queue produce no proof and do not interrupt runner demand tracking. The guest
-helper therefore remains the fail-closed boundary for proof-dependent work: it
-times out when no committed proof arrives.
+`JobStarted` event on its resolved scale set; the
+[job proofs reference](job-proofs.md) documents the proof format. Events enter
+a non-blocking queue whose capacity is `max(1, capacity.max_runners)`;
+malformed events or a full queue produce no proof and do not interrupt runner
+demand tracking. The guest helper times out when no committed proof arrives.
 
 | Key | Type | Default | Required / validation |
 |---|---|---|---|
@@ -71,8 +71,8 @@ times out when no committed proof arrives.
 The upstream listener acknowledges a queue message before invoking the job
 callback. A controller crash in that interval or before proof delivery can
 leave a running job without a proof; version 1 does not persist or reconstruct
-events after restart. Proof-required workflows must treat helper timeout as a
-hard failure.
+events after restart, and the guest helper's timeout is the only signal a job
+receives that no proof was committed.
 
 ### `capacity`
 
@@ -134,7 +134,7 @@ Environment-only GitHub personal access token. This variable:
 - Has no corresponding CLI flag.
 - Is trimmed of surrounding whitespace before use.
 
-For production systemd deployments, prefer `github.token_file` through the packaged PAT credential drop-in. A raw environment value is useful for local or externally supervised execution where the environment is already the credential boundary.
+The packaged systemd deployment supplies the PAT through `github.token_file` via the PAT credential drop-in. A raw environment value serves local or externally supervised execution where the environment is already the credential boundary.
 
 ### `github.token_file`
 
@@ -149,82 +149,6 @@ Exactly one credential source must be configured:
 - **Personal access token value** — `INCUS_GH_RUNNER_GITHUB_TOKEN` must be set.
 
 Configuring more than one method is an error, including setting both PAT sources. Configuring no credential is also an error.
-
-## Job proof key enrollment and rotation
-
-Generate the Ed25519 signing key and its SubjectPublicKeyInfo public key without
-loosening the process umask:
-
-```sh
-umask 077
-openssl genpkey -algorithm Ed25519 -out machine-provenance-key.pem
-openssl pkey \
-  -in machine-provenance-key.pem \
-  -pubout \
-  -out machine-provenance-key.pub.pem
-```
-
-Install the private key through a protected runtime credential path and set
-`job_proof.signing_key_file` to that path. The two shipped proof-key drop-ins
-both expose the credential as `%d/machine-provenance-key` and are installed
-alongside, not instead of, the selected GitHub credential drop-in:
-
-- `deploy/systemd/credentials-job-proof-file.conf` uses `LoadCredential=` with
-  `/etc/incus-gh-runner/machine-provenance-key.pem`; install that source as
-  `root:root` mode `0600`.
-- `deploy/systemd/credentials-job-proof-tpm.conf` uses
-  `LoadCredentialEncrypted=` with
-  `/etc/credstore.encrypted/incus-gh-runner-machine-provenance-key.cred`; create
-  the directory as `root:root` mode `0700` and the encrypted credential as
-  `root:root` mode `0600`.
-
-The TPM-bound option requires systemd 250 or newer, a TPM 2.0 device, and the
-distribution's TSS2 runtime libraries. Minimal Ubuntu installations may need
-`tpm2-tools` to supply those dynamically loaded libraries even though `systemd
---version` reports `+TPM2`; the encryption attempt remains the authoritative
-capability check. If systemd suggests AES-128-CFB is missing, use
-`SYSTEMD_LOG_LEVEL=debug` to distinguish a missing TSS2 library from a real TPM
-capability failure. The mode encrypts the same software key to the target TPM
-with an empty PCR set. It changes storage only:
-the plaintext still exists in systemd's runtime credential store and the
-controller's memory, and the controller retains `PrivateDevices=yes` without
-opening a TPM device. It is not TPM-native signing, measured boot, or remote TPM
-attestation. See [Deploy](../how-to/deploy.md#option-b-tpm-bound-proof-key) for
-the exact encryption and origin-host validation procedure.
-
-Enroll three values with each consumer:
-
-- the stable `job_proof.host_id`;
-- `machine-provenance-key.pub.pem`; and
-- its `sha256:<hex>` key ID over the public key's DER form.
-
-Derive the enrolled key ID with OpenSSL:
-
-```sh
-key_hex="$(
-  openssl pkey -pubin -in machine-provenance-key.pub.pem -outform DER |
-    openssl dgst -sha256 -r |
-    awk '{print $1}'
-)"
-printf 'sha256:%s\n' "$key_hex"
-```
-
-The key ID is a lookup hint over the public key's DER encoding, not a host
-identity by itself. A consumer must select the enrolled public key and require
-the matching host ID.
-
-Rotate with overlap: distribute and trust the new public key first, replace the
-file-backed source or encrypt and install a new TPM-bound credential, then
-restart the controller. Retain the old public key for as long as existing
-proofs must remain verifiable. The proof format and workflow do not change
-between storage modes.
-
-TPM clearing or motherboard replacement makes the encrypted credential
-unusable. With an offline escrow, seal the same private key to the replacement
-TPM; without one, generate a new key and enroll its public key and key ID before
-restarting. Keeping an escrow is an explicit availability tradeoff that weakens
-the assurance that the TPM-bound blob is the only recoverable private-key copy.
-Automatic key distribution and fleet PKI are not provided.
 
 !!! warning "Root-equivalent socket access"
     The controller's Incus client uses the account's `incus-admin` group membership, which grants root-equivalent control over the host. This applies regardless of which GitHub credential type is configured. The `incus.owner` value limits the controller's intended cleanup scope but is forgeable by another project writer; it is not authorization. Run the current production deployment only on a dedicated, single-purpose Incus host.
@@ -313,7 +237,9 @@ It limits the envelope and decoded payload to 64 KiB, requires the exact version
 1 payload type and one signature, rejects unknown payload fields, and prints
 only verified payload JSON to stdout. Repository, workflow, image, and freshness
 policy are deliberately left to the caller. Any parse, signature, key, schema,
-or host mismatch exits non-zero without printing unverified payload bytes.
+or host mismatch exits non-zero without printing unverified payload bytes. The
+[job proofs reference](job-proofs.md) documents the envelope, the version 1
+payload fields, and the key-ID rule the command enforces.
 
 ### Exit behavior
 
@@ -340,7 +266,8 @@ as `job-proof.conf`:
   `LoadCredentialEncrypted=`.
 
 Both set `INCUS_GH_RUNNER_JOB_PROOF_SIGNING_KEY_FILE` to the same protected
-runtime file, so they compose with either GitHub credential method.
+runtime file (`%d/machine-provenance-key`), so they compose with either GitHub
+credential method.
 
 | Directive | Value |
 |---|---|
@@ -369,3 +296,4 @@ The unit sets the following sandboxing directives: `NoNewPrivileges`, `ProtectSy
 - [Deploy](../how-to/deploy.md) — end-to-end production deployment using this configuration surface.
 - [Operate](../how-to/operate.md) — day-2 operational use of these settings.
 - [Guest contract](guest-contract.md) — schemas and metadata keys not covered by this page.
+- [Job proofs](job-proofs.md) — the proof envelope, payload schema, key-ID rule, and enrollment facts.

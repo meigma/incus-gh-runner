@@ -289,10 +289,42 @@ Do not place the App private key or PAT value in `config.yaml`. The drop-ins loa
 
 ## 6. Enable job proofs (optional)
 
-Generate and enroll the host's Ed25519 proof key as described in the
-[configuration reference](../reference/configuration.md#job-proof-key-enrollment-and-rotation).
-Choose one proof-key storage mode. Both modes expose the same runtime credential
-to the unchanged controller and compose with either GitHub credential drop-in.
+Job proofs bind each GitHub Actions job to the Incus VM that ran it; the
+[job proofs reference](../reference/job-proofs.md) documents the proof
+envelope, payload schema, and key-ID rule. Generate and enroll the host's
+Ed25519 proof key, then choose one proof-key storage mode. Both modes expose
+the same runtime credential to the unchanged controller and compose with
+either GitHub credential drop-in.
+
+### Generate and enroll the proof key
+
+Generate the Ed25519 signing key and its SubjectPublicKeyInfo public key
+without loosening the process umask:
+
+```sh
+umask 077
+openssl genpkey -algorithm Ed25519 -out machine-provenance-key.pem
+openssl pkey \
+  -in machine-provenance-key.pem \
+  -pubout \
+  -out machine-provenance-key.pub.pem
+```
+
+Derive the enrolled key ID with OpenSSL:
+
+```sh
+key_hex="$(
+  openssl pkey -pubin -in machine-provenance-key.pub.pem -outform DER |
+    openssl dgst -sha256 -r |
+    awk '{print $1}'
+)"
+printf 'sha256:%s\n' "$key_hex"
+```
+
+Enroll three values with each proof consumer: the stable `job_proof.host_id`,
+`machine-provenance-key.pub.pem`, and the derived `sha256:<hex>` key ID. See
+the [key-ID rule](../reference/job-proofs.md#key-id) for what the key ID does
+and does not identify.
 
 ### Option A: file-backed proof key
 
@@ -419,6 +451,19 @@ sudo systemd-creds decrypt \
 Remove the temporary output if the command unexpectedly creates it. Without a
 second host, record cross-host binding as an untested evidence gap rather than
 claiming it.
+
+### Rotate and recover proof keys
+
+Rotate with overlap: distribute and trust the new public key first, replace
+the file-backed source or encrypt and install a new TPM-bound credential,
+then restart the controller. Retain the old public key for as long as
+existing proofs must remain verifiable.
+
+TPM clearing or motherboard replacement makes the encrypted credential
+unusable. With an offline escrow, seal the same private key to the
+replacement TPM, following the escrow guidance in
+[Option B](#option-b-tpm-bound-proof-key); without one, generate a new key
+and enroll its public key and key ID before restarting.
 
 ## 7. Validate the unit (optional)
 
