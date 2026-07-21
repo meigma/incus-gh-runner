@@ -300,6 +300,7 @@ func TestBackendPreflightRejectsReservedProfileMetadata(t *testing.T) {
 		key  string
 	}{
 		{name: "Incus volatile namespace", key: "volatile.last_state.idmap"},
+		{name: "Incus image metadata namespace", key: "image.os"},
 		{name: "controller audit namespace", key: "user.incus-gh-runner.owner"},
 	}
 
@@ -658,6 +659,7 @@ func TestBackendSnapshotCorrelatesJobAndReconstructsLaunchIdentity(t *testing.T)
 	backend, client, event := newProofSnapshotBackend(t)
 	instance := client.instances[event.RunnerName]
 	instance.Config["volatile.last_state.power"] = "RUNNING"
+	instance.Config["image.os"] = "Ubuntu"
 	client.instances[event.RunnerName] = instance
 
 	machine, err := backend.Snapshot(context.Background(), event)

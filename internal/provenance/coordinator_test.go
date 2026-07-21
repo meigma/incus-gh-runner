@@ -45,6 +45,22 @@ func TestJobStartedQueueValidatesAndNeverBlocks(t *testing.T) {
 	assert.Equal(t, first, <-queue.Events(), "queue saturation must preserve the already accepted event")
 }
 
+// TestJobStartedQueueAcceptsUnreportedRunnerRequestID fixes the live JobStarted contract.
+func TestJobStartedQueueAcceptsUnreportedRunnerRequestID(t *testing.T) {
+	t.Parallel()
+
+	queue, err := NewJobStartedQueue(1)
+	require.NoError(t, err)
+	event := fixedJobStarted()
+	event.RunnerRequestID = 0
+
+	require.NoError(t, queue.TryEnqueue(event))
+	assert.Equal(t, event, <-queue.Events())
+
+	event.RunnerRequestID = -1
+	require.ErrorContains(t, queue.TryEnqueue(event), "github.runner_request_id must not be negative")
+}
+
 // TestCoordinatorSignsAndDeliversVerifiedEvent proves the complete asynchronous core behavior.
 func TestCoordinatorSignsAndDeliversVerifiedEvent(t *testing.T) {
 	t.Parallel()

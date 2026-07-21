@@ -23,7 +23,8 @@ type JobStarted struct {
 	WorkflowRunID int64
 	// JobID is the opaque job identifier.
 	JobID string
-	// RunnerRequestID is the positive runner request identifier.
+	// RunnerRequestID is the runner request identifier reported by GitHub.
+	// GitHub may report zero for JobStarted messages in live scale-set sessions.
 	RunnerRequestID int64
 	// RunnerID is the positive JIT runner registration identifier.
 	RunnerID int64
@@ -61,9 +62,11 @@ func (e JobStarted) Validate() error {
 		value int64
 	}{
 		{name: "github.workflow_run_id", value: e.WorkflowRunID},
-		{name: "github.runner_request_id", value: e.RunnerRequestID},
 		{name: "github.runner_id", value: e.RunnerID},
 		{name: "github.scale_set_id", value: e.ScaleSetID},
+	}
+	if e.RunnerRequestID < 0 {
+		return errors.New("github.runner_request_id must not be negative")
 	}
 	for _, field := range positiveIDs {
 		if field.value <= 0 {

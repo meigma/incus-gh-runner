@@ -312,12 +312,19 @@ func reservedProfileKey(config api.ConfigMap) string {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		if strings.HasPrefix(key, "volatile.") || strings.HasPrefix(key, "user.incus-gh-runner.") {
+		if isLaunchMetadataKey(key) {
 			return key
 		}
 	}
 
 	return ""
+}
+
+// isLaunchMetadataKey identifies config added by Incus or this controller after the launch request.
+func isLaunchMetadataKey(key string) bool {
+	return strings.HasPrefix(key, "volatile.") ||
+		strings.HasPrefix(key, "image.") ||
+		strings.HasPrefix(key, "user.incus-gh-runner.")
 }
 
 // launchInput projects the pinned pre-metadata request into the normative proof schema.
@@ -525,7 +532,7 @@ func decodeProfileReferences(encoded string) ([]provenance.Profile, error) {
 func instanceLaunchInput(instance *api.Instance, profiles []provenance.Profile) provenance.LaunchInput {
 	config := make(map[string]string)
 	for key, value := range instance.Config {
-		if strings.HasPrefix(key, "volatile.") || strings.HasPrefix(key, "user.incus-gh-runner.") {
+		if isLaunchMetadataKey(key) {
 			continue
 		}
 		config[key] = value
