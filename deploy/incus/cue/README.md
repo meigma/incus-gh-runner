@@ -39,8 +39,7 @@ mise exec -- cue export ./examples/default -e controller --out yaml
 ```
 
 The example uses non-routable documentation endpoints and renders the exact
-contents of `../baseline.example.json`. The contract test compares the two as
-normalized JSON, so the CUE policy and validator fixture cannot drift silently.
+contents of `../baseline.example.json`.
 The controller export is intentionally partial: merge it into the full
 controller configuration alongside environment-specific GitHub, image, owner,
 and minimum-runner settings.
@@ -53,18 +52,6 @@ physical-host headroom at runtime. Re-render after host capacity or reservation
 changes. The derived project CPU and memory ceilings are admission budgets
 based on the declared per-runner limits; they are not aggregate runtime
 throttles for already-running VMs.
-
-## Validate the module
-
-From the repository root:
-
-```console
-mise exec -- bash deploy/incus/cue/tests/render-test.sh
-```
-
-The test runs formatting, module tidiness, concrete vetting, the golden export,
-a non-default sizing/port example, and negative weakening cases. The CUE binary
-is checksum-pinned for all supported development platforms through `mise`.
 
 ## Deferred publication boundary
 
