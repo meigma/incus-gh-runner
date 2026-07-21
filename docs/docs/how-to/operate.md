@@ -16,10 +16,10 @@ The process writes structured JSON logs (Go `slog`) to stdout. Under systemd thi
 journalctl -u incus-gh-runner -f
 ```
 
-Add `-o json-pretty` to inspect individual fields, or `-o cat` to print the raw JSON line emitted by the process:
+journald stores each JSON line as its `MESSAGE` field, so `-o json-pretty` shows journal metadata with the process's line embedded as one escaped string. To inspect the process's own fields, print the raw line with `-o cat` and pipe it to a JSON tool:
 
 ```console
-journalctl -u incus-gh-runner -o cat -n 200
+journalctl -u incus-gh-runner -o cat -n 200 | jq .
 ```
 
 There is no log-level or verbosity flag. The process always logs at its built-in level; you cannot quiet or increase it via configuration.
@@ -34,6 +34,8 @@ The following events carry the fields you need for day-2 monitoring. All other f
 | `runner operation failed` | `operation`, `operation_id`, `runner_id`, `retry_after`, `error` | The operation failed and entered cooldown; see [Troubleshooting](#troubleshooting) below. |
 | `GitHub Actions job started` | `runner_name`, `job_id` | A queued job was assigned to a runner. |
 | `GitHub Actions job completed` | `runner_name`, `job_id`, `result` | The job finished on that runner. |
+| `job proof delivery failed` | `job_id`, `runner_id`, `runner_name`, `error` | Signing or delivering the job's machine proof failed; that job's guest proof helper times out. Emitted only when `job_proof` is enabled. |
+| `GitHub Actions job proof event dropped` | `job_id`, `runner_id`, `runner_name`, `error` | A malformed `JobStarted` event or a full proof queue produced no proof for that job. Emitted only when `job_proof` is enabled. |
 | `GitHub message session disconnected; reconnecting` | `error`, `retry_after` | The GitHub Actions long-poll session dropped; see [Troubleshooting](#troubleshooting) below. |
 | `owned Incus runner started` | `runner_id`, `correlation_id` | A VM the controller owns was created, started, and handed its job payload; it is provisioning until the guest reports in. |
 | `owned Incus runner deleted` | `runner_id` | A VM the controller owns was deleted. |
@@ -51,7 +53,7 @@ incus:
   diagnostics_dir: /var/log/incus-gh-runner/diagnostics
 ```
 
-1. Create the directory (or let the unit's `LogsDirectory` machinery own it) so it is writable by the service's `DynamicUser`.
+1. Create the directory with mode `0700`, or let the unit's `LogsDirectory` machinery own it (it produces `0700`). The controller refuses any other mode: every capture then fails with a `failed to store runner diagnostics` warning in the journal while runner deletion proceeds, and no file appears.
 2. Restart the unit for the new value to take effect:
    ```console
    systemctl restart incus-gh-runner
@@ -116,6 +118,7 @@ Existing runner VMs built from the old image are left running until they finish 
 | Runner stays `provisioning`, then goes `terminal` after a while | Image doesn't implement the guest contract, the wrong image is configured, or the VM has no network reachability to GitHub | Check `incus.image` and `incus.bootstrap_timeout`; validate the image with [`image/validate-incus.sh`](./runner-images.md); confirm the VM's network path. |
 | `runner operation failed` repeats with growing `retry_after` | An Incus-side failure (API, storage, hypervisor) put that operation into cooldown | Creates share one cooldown; each runner's delete has its own. A fresh successful inventory list (`operation: list`) must land before further mutation is attempted — check Incus itself for the underlying error reported in the `error` field. |
 | A runner VM refuses deletion | The controller's cleanup selector on the instance doesn't match `incus.owner` | Expected behavior — the controller refuses deletion outside its exact selector. Confirm the VM's `user.incus-gh-runner.owner` metadata and your configured `incus.owner`, and delete manually via Incus if it is genuinely orphaned. The selector prevents accidental cleanup; another project writer can forge it. |
+| `job proof delivery failed` or `GitHub Actions job proof event dropped` errors while jobs run | The proof could not be signed, delivered to the runner VM, or enqueued before the job's helper timeout | Read the `error` field for the failing stage. The affected job fails closed through the guest helper timeout; no other jobs are affected. See the `job_proof` keys in [Configuration reference](../reference/configuration.md#job_proof). |
 
 ## Related
 

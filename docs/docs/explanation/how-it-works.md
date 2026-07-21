@@ -23,7 +23,7 @@ The reconciler itself is event-driven rather than polling GitHub on a fixed cade
 Every runner is a single Incus VM that exists to run exactly one GitHub Actions job, then disappears. It moves through four states:
 
 - **provisioning** — the VM has been created and started, but has not yet reported that its runner process is live.
-- **idle** — the runner is connected to GitHub and waiting for a job (this is what satisfies `min_runners`).
+- **ready** — the runner is connected to GitHub and waiting for a job (this is what satisfies `min_runners`).
 - **busy** — the runner has picked up a job and is executing it.
 - **terminal** — the job is done, or the VM failed, or it never came up in time. It is waiting to be deleted.
 
@@ -126,7 +126,8 @@ TPM-bound systemd drop-ins expose the same protected runtime file, so storage
 mode does not change the controller or receipt. TPM binding protects the
 encrypted key at rest against offline use on another host; it does not make
 signing TPM-native, attest the boot state, or keep plaintext out of systemd and
-controller memory while the service runs.
+controller memory while the service runs. The receipt format itself lives in
+the [job proofs reference](../reference/job-proofs.md).
 
 The JIT configuration is not secret from the job that it launches. The guest deletes the root-owned runtime payload before starting Actions Runner, which removes that staging copy, but the stock runner receives the same value on `Runner.Listener`'s command line and materializes its session files under `/opt/actions-runner`. `Runner.Listener` then launches `Runner.Worker` under the same `actions-runner` UID. A job can therefore read its listener's command line and runner-owned JIT/session files, and can disrupt or impersonate its own in-progress runner session. The current design does not claim an OS-user boundary between the job and its JIT material; adding one would require a privileged launcher or a maintained runner fork rather than a supported stock-runner setting.
 

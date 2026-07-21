@@ -15,7 +15,7 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 
 - A systemd version supporting `LoadCredential=` and the `%d` credentials-directory specifier the unit relies on, along with `DynamicUser=` and the unit's other sandboxing directives. Ubuntu 24.04 is the validated reference host. TPM-bound proof keys additionally require systemd 250 or newer, an enrolled TPM 2.0 device, and the distribution's TPM2 userspace runtime libraries.
 - Administrative access to the target GitHub organization or repository.
-- The `incus-gh-runner` binary for your platform, and a checked-out or downloaded copy of `deploy/systemd/` from the repository.
+- The `incus-gh-runner` binary for your platform, and a checkout of this repository: the steps below use files from `deploy/systemd/`, `deploy/incus/`, and `scripts/live/`.
 
 ## 1. Prepare and validate Incus
 
@@ -209,14 +209,20 @@ sudo install -m 0755 incus-gh-runner /usr/bin/incus-gh-runner
 sudo install -m 0644 deploy/systemd/incus-gh-runner.service /etc/systemd/system/incus-gh-runner.service
 sudo install -m 0644 deploy/systemd/incus-gh-runner.tmpfiles.conf /usr/lib/tmpfiles.d/incus-gh-runner.conf
 sudo install -d -m 0755 /etc/incus-gh-runner
-sudo install -m 0644 config.yaml /etc/incus-gh-runner/config.yaml
+sudo install -m 0644 deploy/systemd/config.example.yaml /etc/incus-gh-runner/config.yaml
 ```
 
 The unit runs under `DynamicUser=yes`, so `config.yaml` must remain readable by the dynamically allocated service user. Credential files remain root-only and are exposed to the service through systemd's protected credential directory. The tmpfiles policy does not enable diagnostics persistence; it expires files from the recommended diagnostics directory if you opt in later.
 
 ## 4. Write the configuration
 
-Write `/etc/incus-gh-runner/config.yaml`. This common configuration works with either credential method:
+Edit the installed `/etc/incus-gh-runner/config.yaml`. The shipped example
+already matches this walkthrough's Incus and capacity values; set
+`github.config_url` to the exact destination chosen in step 2 and change
+`github.scale_set` from the example's `incus-linux-x64` to the label your
+workflows will target — this guide uses `incus-gh-runner-prod` throughout. The
+example's remaining keys ship at the built-in defaults and can stay unchanged.
+The result works with either credential method:
 
 ```yaml
 github:
@@ -289,10 +295,42 @@ Do not place the App private key or PAT value in `config.yaml`. The drop-ins loa
 
 ## 6. Enable job proofs (optional)
 
-Generate and enroll the host's Ed25519 proof key as described in the
-[configuration reference](../reference/configuration.md#job-proof-key-enrollment-and-rotation).
-Choose one proof-key storage mode. Both modes expose the same runtime credential
-to the unchanged controller and compose with either GitHub credential drop-in.
+Job proofs bind each GitHub Actions job to the Incus VM that ran it; the
+[job proofs reference](../reference/job-proofs.md) documents the proof
+envelope, payload schema, and key-ID rule. Generate and enroll the host's
+Ed25519 proof key, then choose one proof-key storage mode. Both modes expose
+the same runtime credential to the unchanged controller and compose with
+either GitHub credential drop-in.
+
+### Generate and enroll the proof key
+
+Generate the Ed25519 signing key and its SubjectPublicKeyInfo public key
+without loosening the process umask:
+
+```sh
+umask 077
+openssl genpkey -algorithm Ed25519 -out machine-provenance-key.pem
+openssl pkey \
+  -in machine-provenance-key.pem \
+  -pubout \
+  -out machine-provenance-key.pub.pem
+```
+
+Derive the enrolled key ID with OpenSSL:
+
+```sh
+key_hex="$(
+  openssl pkey -pubin -in machine-provenance-key.pub.pem -outform DER |
+    openssl dgst -sha256 -r |
+    awk '{print $1}'
+)"
+printf 'sha256:%s\n' "$key_hex"
+```
+
+Enroll three values with each proof consumer: the stable `job_proof.host_id`,
+`machine-provenance-key.pub.pem`, and the derived `sha256:<hex>` key ID. See
+the [key-ID rule](../reference/job-proofs.md#key-id) for what the key ID does
+and does not identify.
 
 ### Option A: file-backed proof key
 
@@ -419,6 +457,19 @@ sudo systemd-creds decrypt \
 Remove the temporary output if the command unexpectedly creates it. Without a
 second host, record cross-host binding as an untested evidence gap rather than
 claiming it.
+
+### Rotate and recover proof keys
+
+Rotate with overlap: distribute and trust the new public key first, replace
+the file-backed source or encrypt and install a new TPM-bound credential,
+then restart the controller. Retain the old public key for as long as
+existing proofs must remain verifiable.
+
+TPM clearing or motherboard replacement makes the encrypted credential
+unusable. With an offline escrow, seal the same private key to the
+replacement TPM, following the escrow guidance in
+[Option B](#option-b-tpm-bound-proof-key); without one, generate a new key
+and enroll its public key and key ID before restarting.
 
 ## 7. Validate the unit (optional)
 

@@ -28,3 +28,4 @@ See [Deploy to production](how-to/deploy.md) for the full host and GitHub prereq
 
 - [Configuration reference](reference/configuration.md) — every config key, environment variable, CLI flag, and how they take precedence over each other.
 - [Guest contract reference](reference/guest-contract.md) — the controller-guest interface: payload and status file schemas, serial console lines, and instance metadata keys.
+- [Job proofs reference](reference/job-proofs.md) — the version 1 job machine proof: DSSE envelope, payload schema, size limits, and the key-ID rule.

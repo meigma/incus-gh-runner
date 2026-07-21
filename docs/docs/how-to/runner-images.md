@@ -7,8 +7,8 @@ Get a unified Incus VM image ready for `incus-gh-runner`: download and verify a 
 - `gh` (GitHub CLI), authenticated against GitHub
 - `incus` client access to the target Incus project
 - Incus 7.0 or newer
-- For local builds: a Linux host with passwordless `sudo`
-- For validation: `jq`, plus an existing, disposable, non-`default` Incus project
+- For local builds: a Linux host with passwordless `sudo` and the distrobuilder host packages listed under [Build a reference image locally](#build-a-reference-image-locally)
+- For validation: `jq`, plus an existing, disposable, non-`default` Incus project on an Incus host able to launch virtual machines
 
 ## Use a released reference image
 
@@ -65,6 +65,14 @@ Requires a Linux host, passwordless `sudo`, and this repository's mise-pinned to
 mise install
 ```
 
+`distrobuilder` shells out to host tools that mise does not manage. Install the same system packages the release workflow uses before building (Debian/Ubuntu names; use your distribution's equivalents):
+
+```bash
+sudo apt-get install --yes \
+  btrfs-progs build-essential debootstrap dosfstools genisoimage gpg \
+  libwin-hivex-perl qemu-kvm rsync squashfs-tools wimtools
+```
+
 Build the image into an empty output directory:
 
 ```bash
@@ -87,32 +95,23 @@ Import the resulting archive the same way as a released image (see above), or va
 
 ### Build integrity and reproducibility
 
-The reference-image build is networked and non-hermetic. It resolves Ubuntu
-packages from the configured live `noble` repositories and downloads the
-Actions Runner archive while the build is running. The repository pins the
-Actions Runner version and archive checksum, and mise pins `distrobuilder`, but
-the Ubuntu repository snapshot and complete resolved package set are not yet
-pinned or recorded. Building without network access is not supported.
-
-Consequently, two builds from the same source commit may contain different
-Ubuntu package revisions and are not expected to produce byte-identical image
-archives. A release checksum and GitHub build attestation bind an operator to
-the exact archive produced by the release workflow; they do not establish a
-reproducible or offline build. Retain that checksum, attestation, and archive as
-one set when promoting an image.
+The build is networked and non-hermetic: it resolves Ubuntu packages from the
+live `noble` repositories and downloads the pinned Actions Runner archive
+while running. Building without network access is not supported, and two
+builds from the same commit are not expected to produce byte-identical
+archives. Retain the release checksum, GitHub build attestation, and archive
+together as one set when promoting an image — they bind you to the exact
+archive produced by the release workflow, not to a reproducible build.
 
 ### Root disk growth
 
-The reference archive starts with an 8 GiB virtual disk. On first boot,
-`cloud-initramfs-growroot` expands its root partition to the Incus root-device
-size, and the `x-systemd.growfs` mount option expands the ext4 filesystem. This
-makes the CUE module's `inputs.runners.rootDiskGiB` setting effective inside
-the guest instead of exposing only a larger virtual block device.
-
-Custom images must provide an equivalent, fail-closed partition and filesystem
-growth path when their baked disk is smaller than the configured Incus root
-device. Boot a disposable VM with the intended root-device size and verify the
-resulting filesystem before deploying a custom image.
+The reference archive ships an 8 GiB virtual disk and grows its root
+partition (`cloud-initramfs-growroot`) and ext4 filesystem
+(`x-systemd.growfs`) to the Incus root-device size on first boot. Custom
+images whose baked disk is smaller than the configured Incus root device must
+provide an equivalent, fail-closed partition and filesystem growth path. Boot
+a disposable VM with the intended root-device size and verify the resulting
+filesystem before deploying a custom image.
 
 ## Validate any image
 
@@ -127,6 +126,8 @@ Requires Incus 7.0 or newer and an existing, disposable, non-`default` Incus pro
 The script imports the archive under a generated alias, launches one VM, and drives it through the full guest contract: payload delivery, status-file transitions, serial console lifecycle lines, absence of secrets on the console, and clean poweroff. It then deletes exactly the instance, alias, and image it created — nothing else in the project is touched.
 
 This validates the guest protocol and lifecycle only. It does not validate
+machine-proof delivery (the probe never exercises the `incus-gh-runner-proof`
+helper — see the [guest contract reference](../reference/guest-contract.md#filesystem-contract)),
 larger-root growth, Secure Boot enforcement, host or network isolation, or
 resource ceilings.
 
