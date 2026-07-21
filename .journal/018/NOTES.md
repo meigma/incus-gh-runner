@@ -27,3 +27,8 @@ Verification passed: full `mise exec -- moon run root:check`; race-enabled tests
 Addressed the review finding that assigning a nil `*JobStartedQueue` to the `JobStartedSink` interface made the interface non-nil. Runtime now assigns the sink only when the proof queue exists, in commit `9079942` on draft PR #38. A disabled-mode wiring test sends a real job-start message through the upstream listener and verifies normal job logging continues without a proof-drop error.
 
 Verification passed: `mise exec -- go test -race ./internal/runtime ./internal/adapters/github ./internal/provenance ./internal/app` and full `mise exec -- moon run root:check`. The updated PR head is `907994237cdfbf9d74acc3b344868196565bda8b`; hosted CI run `29790841627`, CodeQL run `29790839655`, GitHub Pages, and Kusari all passed.
+
+## 2026-07-20 17:49 — Close
+PR #38 was approved and squash-merged as `c32e134a3cbba57e3aaea1add095fec356d8bb13` after re-verifying the reviewed head `907994237cdfbf9d74acc3b344868196565bda8b` and all hosted checks. Local `master` was fast-forwarded to the merge commit, and the `feat/job-proof-phase-3` Worktrunk, local branch, and remote branch were removed.
+
+Session 018 met its Phase 3 goal. The repository now has fail-closed JIT-to-VM binding, authenticated nonblocking job event capture, exact machine-snapshot verification, and supervised proof signing/delivery. Phase 4 live proof consumption and Phase 5 TPM-bound credential validation remain intentionally deferred.
