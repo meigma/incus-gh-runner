@@ -22,3 +22,8 @@ Completed the remaining Phase 3 implementation as `9f66c51` and published draft 
 The new single-owner coordinator is a supervised application component. It re-fetches the exact owned running VM, checks the durable JIT ID/name/scale-set binding and saved UUID, reconstructs the launch digest after excluding Incus/controller metadata, signs the version 1 payload, and delivers through the Phase 2 immutable proof sink. Per-event failures are isolated; application shutdown remains bounded. Configuration reference now records saturation and the intentional acknowledged-event crash limitation.
 
 Verification passed: full `mise exec -- moon run root:check`; race-enabled tests for `internal/provenance`, `internal/adapters/github`, and `internal/app`; hosted CI run `29789714059`; hosted CodeQL actions run `29789712983`; hosted CodeQL Go run `29789712824`; GitHub Pages and Kusari checks. Release/image packaging jobs skipped by path policy. No Phase 4 live GitHub/Incus proof was attempted, and PR #38 remains draft for human review.
+
+## 2026-07-20 17:38 — Disabled-proof callback fix
+Addressed the review finding that assigning a nil `*JobStartedQueue` to the `JobStartedSink` interface made the interface non-nil. Runtime now assigns the sink only when the proof queue exists, in commit `9079942` on draft PR #38. A disabled-mode wiring test sends a real job-start message through the upstream listener and verifies normal job logging continues without a proof-drop error.
+
+Verification passed: `mise exec -- go test -race ./internal/runtime ./internal/adapters/github ./internal/provenance ./internal/app` and full `mise exec -- moon run root:check`. The updated PR head is `907994237cdfbf9d74acc3b344868196565bda8b`; hosted checks were queued after the push.
