@@ -22,3 +22,8 @@ Post-merge CI, GitHub Pages, Release Please, Dependency Graph, and both CodeQL a
 ## 2026-07-21 14:34 — Release rehearsal passed
 Because Dependabot pull requests intentionally skip the expensive release jobs, manually dispatched `Release Dry Run` run `29869902836` on final `master` commit `ae53f0e`.
 All five jobs passed: binary/SBOM/checksum rehearsal, native amd64 and arm64 Melange package builds, container assembly and smoke test, and reference Incus image construction and inspection.
+
+## 2026-07-21 19:01 — Release 1.0.0 merge gate
+User authorized merging Release Please PR #24 and monitoring the first release end to end.
+Verified the exact PR head `ec89ebe61a0e889e647d3edd1b26f150dc79b24d`: it is GitHub-verified, has current `master` commit `e69fd1c2c2d1e9175b9a3022330eff2c72bbdb2c` as its parent, changes only the manifest, changelog, and Melange/apko version markers, and all CI, CodeQL, Pages, Kusari, binary, native-package install, and container rehearsal checks passed.
+No `v1.0.0` tag or GitHub release exists before the merge. The expected flow is Release Please creating a protected tag and draft release, followed by the tag-triggered publish workflow; after artifacts, packages, image, signatures, SBOMs, and attestations verify, publish the inspected draft as the user-authorized first release.
