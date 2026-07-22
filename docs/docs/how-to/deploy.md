@@ -15,7 +15,9 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 
 - A systemd version supporting `LoadCredential=` and the `%d` credentials-directory specifier the unit relies on, along with `DynamicUser=` and the unit's other sandboxing directives. Ubuntu 24.04 is the validated reference host. TPM-bound proof keys additionally require systemd 250 or newer, an enrolled TPM 2.0 device, and the distribution's TPM2 userspace runtime libraries.
 - Administrative access to the target GitHub organization or repository.
-- The `incus-gh-runner` package or binary for your platform, and a checkout of this repository: the steps below use the desired-state files from `deploy/incus/`.
+- `curl` and GnuPG (`gpg`) to verify and add the package repository.
+- A checkout of this repository: the steps below use the desired-state files
+  from `deploy/incus/`.
 
 ## 1. Prepare and validate Incus
 
@@ -173,19 +175,57 @@ A classic PAT also works, but requires the broader `repo` scope for repository r
 
 ## 3. Install the controller
 
-Prefer the native package from the GitHub release. It installs the binary, base
-unit, tmpfiles policy, editable example configuration, license files, and
-credential drop-in examples without enabling or starting the service:
+Download the Meigma repository key and verify its full primary fingerprint:
 
 ```sh
-sudo apt-get install ./incus-gh-runner_<version>_amd64.deb
-# or
-sudo dnf install ./incus-gh-runner-<version>-1.x86_64.rpm
+key_file="$(mktemp)"
+curl -fsSL https://pkgs.meigma.dev/meigma.asc -o "$key_file"
+fingerprint="$(gpg --show-keys --with-colons "$key_file" \
+  | awk -F: '$1 == "fpr" { print $10; exit }')"
+test "$fingerprint" = 9C74476A669465EEB8D46AD8B0E68773B6E259F6
 ```
 
-Use `arm64.deb` or `aarch64.rpm` on ARM64 hosts. Packaged credential examples
-are under `/usr/share/doc/incus-gh-runner/systemd/`; select and install exactly
-one GitHub credential method later in this guide.
+Stop if the final command fails. On Debian or Ubuntu, install the verified key,
+add the APT source, and install the controller:
+
+```sh
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo install -m 0644 "$key_file" /etc/apt/keyrings/meigma.asc
+sudo tee /etc/apt/sources.list.d/meigma.sources >/dev/null <<'EOF'
+Types: deb
+URIs: https://pkgs.meigma.dev/apt
+Suites: stable
+Components: incus-gh-runner
+Signed-By: /etc/apt/keyrings/meigma.asc
+EOF
+sudo apt update
+sudo apt install incus-gh-runner
+```
+
+On Fedora, install the published repository definition and the controller:
+
+```sh
+sudo curl -fsSL \
+  https://pkgs.meigma.dev/rpm/incus-gh-runner/meigma.repo \
+  -o /etc/yum.repos.d/meigma.repo
+sudo dnf --refresh install incus-gh-runner
+```
+
+Remove the temporary key after either path:
+
+```sh
+rm "$key_file"
+```
+
+The package installs the binary, base unit, tmpfiles policy, editable example
+configuration, license files, and credential drop-in examples without enabling
+or starting the service. Packaged credential examples are under
+`/usr/share/doc/incus-gh-runner/systemd/`; select and install exactly one GitHub
+credential method later in this guide.
+
+Versioned DEB and RPM files remain available from the
+[GitHub releases page](https://github.com/meigma/incus-gh-runner/releases) for
+direct or offline installation.
 
 For a raw-binary installation, install the same files manually:
 
