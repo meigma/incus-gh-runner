@@ -1,0 +1,82 @@
+# Required package-publishing app settings:
+# - vars.MEIGMA_PACKAGES_APP_CLIENT_ID
+# - secrets.MEIGMA_PACKAGES_APP_PRIVATE_KEY
+#
+# The private App is installed only on meigma/packages with Contents: write.
+# This workflow mints a short-lived token scoped to that repository and never
+# checks out or executes consumer repository code.
+
+name: Publish Packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable published release tag to send to meigma/packages
+        required: true
+        default: v1.0.0
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: publish-packages-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch Package Publication
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.release.prerelease }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Resolve stable release tag
+        id: release
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = release ]; then
+            if [ "$RELEASE_PRERELEASE" != false ]; then
+              echo "Pre-releases are not published to the package repository." >&2
+              exit 1
+            fi
+            tag="$RELEASE_TAG"
+          else
+            tag="$DISPATCH_TAG"
+          fi
+
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Package tag must match stable vX.Y.Z: $tag" >&2
+            exit 1
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Create packages app token
+        id: packages-app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.MEIGMA_PACKAGES_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MEIGMA_PACKAGES_APP_PRIVATE_KEY }}
+          owner: meigma
+          repositories: packages
+          permission-contents: write
+
+      - name: Dispatch package publication
+        env:
+          GH_TOKEN: ${{ steps.packages-app.outputs.token }}
+          PACKAGE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          gh api \
+            --method POST \
+            repos/meigma/packages/dispatches \
+            --raw-field event_type=publish-package \
+            --raw-field 'client_payload[project]=incus-gh-runner' \
+            --raw-field "client_payload[tag]=$PACKAGE_TAG"

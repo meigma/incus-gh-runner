@@ -38,20 +38,25 @@ for Linux and macOS, installable DEB and RPM packages for Linux, and a
 multi-architecture controller OCI image. All support amd64 and arm64 and ship
 with checksums and build attestations.
 
-Download the native package from the
-[releases page](https://github.com/meigma/incus-gh-runner/releases) and install
-it with the host package manager:
+Add the signed Meigma package repository and install with the host package
+manager:
 
 ```sh
-sudo apt-get install ./incus-gh-runner_<version>_amd64.deb
-# or
-sudo dnf install ./incus-gh-runner-<version>-1.x86_64.rpm
+sudo apt install incus-gh-runner
+# or, on Fedora
+sudo dnf install incus-gh-runner
 ```
 
-Use the `arm64.deb` or `aarch64.rpm` asset on ARM64 hosts. Packages install the
-binary, base systemd unit, tmpfiles policy, editable example configuration, and
-credential drop-in examples. They deliberately do not enable or start the
-service before host-specific configuration and credentials exist.
+Follow [Deploy to production](docs/docs/how-to/deploy.md#3-install-the-controller)
+for copy-paste repository setup and full signing-key fingerprint verification.
+Packages install the binary, base systemd unit, tmpfiles policy, editable
+example configuration, and credential drop-in examples. They deliberately do
+not enable or start the service before host-specific configuration and
+credentials exist.
+
+Versioned DEB and RPM files remain available from the
+[releases page](https://github.com/meigma/incus-gh-runner/releases) for direct
+or offline installation.
 
 The raw binary remains available for manual installations:
 
