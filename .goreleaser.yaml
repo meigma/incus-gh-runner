@@ -36,6 +36,65 @@ archives:
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
 
+nfpms:
+  - id: linux-packages
+    ids:
+      - incus-gh-runner
+    package_name: incus-gh-runner
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: Meigma
+    homepage: https://github.com/meigma/incus-gh-runner
+    maintainer: Joshua Gilman <joshuagilman@gmail.com>
+    description: Incus-backed GitHub Actions runner controller
+    license: Apache-2.0 OR MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    dependencies:
+      - ca-certificates
+    contents:
+      - src: deploy/systemd/incus-gh-runner.service
+        dst: /usr/lib/systemd/system/incus-gh-runner.service
+        file_info:
+          mode: 0644
+      - src: deploy/systemd/incus-gh-runner.tmpfiles.conf
+        dst: /usr/lib/tmpfiles.d/incus-gh-runner.conf
+        file_info:
+          mode: 0644
+      - src: deploy/systemd/config.example.yaml
+        dst: /etc/incus-gh-runner/config.yaml
+        type: config|noreplace
+        file_info:
+          mode: 0644
+      - src: deploy/systemd/credentials-github-app.conf
+        dst: /usr/share/doc/incus-gh-runner/systemd/credentials-github-app.conf
+        file_info:
+          mode: 0644
+      - src: deploy/systemd/credentials-personal-access-token.conf
+        dst: /usr/share/doc/incus-gh-runner/systemd/credentials-personal-access-token.conf
+        file_info:
+          mode: 0644
+      - src: deploy/systemd/credentials-job-proof-file.conf
+        dst: /usr/share/doc/incus-gh-runner/systemd/credentials-job-proof-file.conf
+        file_info:
+          mode: 0644
+      - src: deploy/systemd/credentials-job-proof-tpm.conf
+        dst: /usr/share/doc/incus-gh-runner/systemd/credentials-job-proof-tpm.conf
+        file_info:
+          mode: 0644
+      - src: LICENSE-APACHE
+        dst: /usr/share/licenses/incus-gh-runner/LICENSE-APACHE
+        file_info:
+          mode: 0644
+      - src: LICENSE-MIT
+        dst: /usr/share/licenses/incus-gh-runner/LICENSE-MIT
+        file_info:
+          mode: 0644
+    scripts:
+      postinstall: packaging/systemd-daemon-reload.sh
+      postremove: packaging/systemd-daemon-reload.sh
+
 checksum:
   name_template: checksums.txt
 

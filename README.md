@@ -34,11 +34,26 @@ deletes the VM when its one job finishes.
 ## Installation
 
 Each GitHub release provides `incus-gh-runner_<version>_<os>_<arch>` binaries
-for Linux and macOS (amd64 and arm64) and a multi-architecture controller OCI
-image, all with checksums and build attestations.
+for Linux and macOS, installable DEB and RPM packages for Linux, and a
+multi-architecture controller OCI image. All support amd64 and arm64 and ship
+with checksums and build attestations.
 
-Download a binary from the [releases page](https://github.com/meigma/incus-gh-runner/releases)
-and install it:
+Download the native package from the
+[releases page](https://github.com/meigma/incus-gh-runner/releases) and install
+it with the host package manager:
+
+```sh
+sudo apt-get install ./incus-gh-runner_<version>_amd64.deb
+# or
+sudo dnf install ./incus-gh-runner-<version>-1.x86_64.rpm
+```
+
+Use the `arm64.deb` or `aarch64.rpm` asset on ARM64 hosts. Packages install the
+binary, base systemd unit, tmpfiles policy, editable example configuration, and
+credential drop-in examples. They deliberately do not enable or start the
+service before host-specific configuration and credentials exist.
+
+The raw binary remains available for manual installations:
 
 ```sh
 install -m 0755 incus-gh-runner_<version>_linux_amd64 /usr/bin/incus-gh-runner

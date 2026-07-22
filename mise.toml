@@ -28,10 +28,12 @@ python = "3.14.3"
 "aqua:astral-sh/uv" = "0.11.0"
 
 # Build / CI / release / supply-chain CLIs. moon is installed via mise (CI
-# included). melange/apko/cosign
-# are consumed by the container build + image signing in the release workflow.
-"aqua:cue-lang/cue"            = "0.16.1"
+# included). GoReleaser builds release binaries and native packages;
+# melange/apko/cosign are consumed by the container build + image signing in the
+# release workflow.
+"aqua:cue-lang/cue"           = "0.16.1"
 "aqua:moonrepo/moon"          = "2.3.5"
+"aqua:goreleaser/goreleaser" = "2.17.0"
 "aqua:chainguard-dev/melange" = "0.54.0"
 "aqua:chainguard-dev/apko"    = "1.2.19"
 "aqua:sigstore/cosign"        = "3.1.1"

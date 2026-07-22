@@ -91,9 +91,10 @@ For the full set of timeout and capacity keys, see [Configuration reference](../
 
 ## Upgrade
 
-### Upgrade the binary
+### Upgrade the controller
 
-1. Replace `/usr/bin/incus-gh-runner` with the new binary.
+1. Install the new DEB or RPM with the host package manager. For a raw-binary
+   deployment, replace `/usr/bin/incus-gh-runner` manually.
 2. Restart the unit:
    ```console
    systemctl restart incus-gh-runner
