@@ -67,3 +67,12 @@ docs/docs/how-to/build-runner-images.md is the replacement hardening guide.
 Reminder for close: repository-settings.toml drift vs live rulesets remains
 an open observation (plan would create both managed rulesets); left for a
 deliberate maintainer decision.
+
+## 2026-07-21 17:12 — Close
+PR #45 squash-merged as `master` `0b7a4b6`; local master fast-forwarded,
+implementation worktree and branch removed, no tracked `.journal` files on
+master. SUMMARY.md written; INDEX.md row set complete; TECH_NOTES.md revised
+(reference image removed, `guest/` product code, stale distrobuilder notes
+corrected, ruleset-drift observation added). Handoff state: repo is
+image-free; open threads are the repo-settings drift and the absence of a
+scripted guest-contract validator.
