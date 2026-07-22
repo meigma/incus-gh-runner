@@ -1,5 +1,5 @@
-# This workflow is tag-triggered by Release Please. It publishes binary release
-# assets with GoReleaser, builds the container image with melange (signed apk) +
+# This workflow is tag-triggered by Release Please. It publishes release assets
+# with GoReleaser, builds the container image with melange (signed apk) +
 # apko (minimal multi-arch image), signs the image with keyless cosign, attests
 # both artifact classes through GitHub-native attestations, and leaves draft
 # publication as a human decision after inspection.
@@ -104,7 +104,7 @@ jobs:
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
-          version: '~> v2'
+          version: v2.17.0
           args: release --clean --skip=publish
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -142,6 +142,16 @@ jobs:
 
           "$bin" validate --help >/dev/null
 
+      - name: Upload packages for native installation tests
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-packages
+          path: |
+            dist/release-assets/*.deb
+            dist/release-assets/*.rpm
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Upload assets to draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -156,7 +166,93 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Generate binary provenance in an ISOLATED reusable workflow (SLSA L3): the
+  package-install:
+    name: Package Install (${{ matrix.arch }})
+    needs:
+      - resolve-release
+      - binary-release-assets
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            deb_pattern: '*_amd64.deb'
+            rpm_pattern: '*.x86_64.rpm'
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            deb_pattern: '*_arm64.deb'
+            rpm_pattern: '*.aarch64.rpm'
+    steps:
+      - name: Download release packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-packages
+          path: packages
+
+      - name: Resolve native packages
+        id: packages
+        env:
+          DEB_PATTERN: ${{ matrix.deb_pattern }}
+          RPM_PATTERN: ${{ matrix.rpm_pattern }}
+        run: |
+          set -euo pipefail
+
+          mapfile -t debs < <(find packages -maxdepth 1 -type f -name "$DEB_PATTERN" -print)
+          mapfile -t rpms < <(find packages -maxdepth 1 -type f -name "$RPM_PATTERN" -print)
+          if [ "${#debs[@]}" -ne 1 ] || [ "${#rpms[@]}" -ne 1 ]; then
+            find packages -maxdepth 1 -type f -print | sort >&2
+            echo "expected exactly one native DEB and RPM" >&2
+            exit 1
+          fi
+
+          deb="$(basename "${debs[0]}")"
+          rpm="$(basename "${rpms[0]}")"
+          echo "deb=$deb" >> "$GITHUB_OUTPUT"
+          echo "rpm=$rpm" >> "$GITHUB_OUTPUT"
+
+      - name: Install and smoke test DEB
+        env:
+          DEBIAN_IMAGE: debian:13-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd
+          PACKAGE: ${{ steps.packages.outputs.deb }}
+        run: |
+          docker run --rm --platform "linux/${{ matrix.arch }}" \
+            --volume "$PWD/packages:/packages:ro" \
+            "$DEBIAN_IMAGE" sh -ceu '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update >/dev/null
+              apt-get install -y --no-install-recommends "/packages/$1" >/dev/null
+              dpkg-query --show --showformat="\${Package} \${Version} \${Architecture}\n" incus-gh-runner
+              incus-gh-runner --version
+              incus-gh-runner validate --help >/dev/null
+              test -f /usr/lib/systemd/system/incus-gh-runner.service
+              test -f /usr/lib/tmpfiles.d/incus-gh-runner.conf
+              test -f /etc/incus-gh-runner/config.yaml
+              test ! -e /etc/systemd/system/multi-user.target.wants/incus-gh-runner.service
+            ' sh "$PACKAGE"
+
+      - name: Install and smoke test RPM
+        env:
+          FEDORA_IMAGE: fedora:44@sha256:6c75d5bf57cb0fa5aa4b92c6a83c86c791644496d9ac230de7711f5b8ec3b898
+          PACKAGE: ${{ steps.packages.outputs.rpm }}
+        run: |
+          docker run --rm --platform "linux/${{ matrix.arch }}" \
+            --volume "$PWD/packages:/packages:ro" \
+            "$FEDORA_IMAGE" sh -ceu '
+              dnf -q install -y "/packages/$1"
+              rpm -q --qf "%{NAME} %{VERSION}-%{RELEASE} %{ARCH}\n" incus-gh-runner
+              incus-gh-runner --version
+              incus-gh-runner validate --help >/dev/null
+              test -f /usr/lib/systemd/system/incus-gh-runner.service
+              test -f /usr/lib/tmpfiles.d/incus-gh-runner.conf
+              test -f /etc/incus-gh-runner/config.yaml
+              test ! -e /etc/systemd/system/multi-user.target.wants/incus-gh-runner.service
+            ' sh "$PACKAGE"
+
+  # Generate release-asset provenance in an ISOLATED reusable workflow (SLSA L3): the
   # signing OIDC token is minted in attest.yml, unreachable by the build steps.
   attest-binaries:
     needs:
@@ -415,6 +511,7 @@ jobs:
     needs:
       - resolve-release
       - binary-release-assets
+      - package-install
       - container-image-release
       - attest-binaries
       - attest-image
@@ -439,6 +536,14 @@ jobs:
             echo "asset=\"incus-gh-runner_${RELEASE_VERSION}_\$(go env GOOS)_\$(go env GOARCH)\""
             echo "gh attestation verify \"dist/release-assets/\${asset}\" --repo \"$GITHUB_REPOSITORY\" --signer-workflow \"$GITHUB_REPOSITORY/.github/workflows/attest.yml\" --source-ref \"refs/tags/$RELEASE_TAG\" --deny-self-hosted-runners"
             echo "ghd download \"$GITHUB_REPOSITORY/incus-gh-runner@${RELEASE_VERSION}\" --output \"\$(mktemp -d)\""
+            echo '```'
+            echo
+            echo "Package verification commands:"
+            echo
+            echo '```sh'
+            echo "gh release download $RELEASE_TAG --repo $GITHUB_REPOSITORY --pattern '*.deb' --pattern '*.rpm'"
+            echo "sudo apt-get install ./incus-gh-runner_${RELEASE_VERSION}_amd64.deb"
+            echo "sudo dnf install ./incus-gh-runner-${RELEASE_VERSION}-1.x86_64.rpm"
             echo '```'
             echo
             echo "Container verification commands:"

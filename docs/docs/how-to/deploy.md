@@ -15,7 +15,7 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 
 - A systemd version supporting `LoadCredential=` and the `%d` credentials-directory specifier the unit relies on, along with `DynamicUser=` and the unit's other sandboxing directives. Ubuntu 24.04 is the validated reference host. TPM-bound proof keys additionally require systemd 250 or newer, an enrolled TPM 2.0 device, and the distribution's TPM2 userspace runtime libraries.
 - Administrative access to the target GitHub organization or repository.
-- The `incus-gh-runner` binary for your platform, and a checkout of this repository: the steps below use files from `deploy/systemd/` and `deploy/incus/`.
+- The `incus-gh-runner` package or binary for your platform, and a checkout of this repository: the steps below use the desired-state files from `deploy/incus/`.
 
 ## 1. Prepare and validate Incus
 
@@ -173,7 +173,21 @@ A classic PAT also works, but requires the broader `repo` scope for repository r
 
 ## 3. Install the controller
 
-Install the binary and base unit:
+Prefer the native package from the GitHub release. It installs the binary, base
+unit, tmpfiles policy, editable example configuration, license files, and
+credential drop-in examples without enabling or starting the service:
+
+```sh
+sudo apt-get install ./incus-gh-runner_<version>_amd64.deb
+# or
+sudo dnf install ./incus-gh-runner-<version>-1.x86_64.rpm
+```
+
+Use `arm64.deb` or `aarch64.rpm` on ARM64 hosts. Packaged credential examples
+are under `/usr/share/doc/incus-gh-runner/systemd/`; select and install exactly
+one GitHub credential method later in this guide.
+
+For a raw-binary installation, install the same files manually:
 
 ```sh
 sudo install -m 0755 incus-gh-runner /usr/bin/incus-gh-runner

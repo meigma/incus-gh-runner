@@ -20,7 +20,8 @@ EXPECTED_PLATFORMS = (
     ("linux", "amd64"),
     ("linux", "arm64"),
 )
-EXPECTED_ASSET_COUNT = 9
+EXPECTED_PACKAGE_COUNT = 4
+EXPECTED_ASSET_COUNT = 13
 
 
 class StageError(RuntimeError):
@@ -72,12 +73,12 @@ def stage_release_assets(
     artifacts = load_artifacts(artifacts_path)
     stage_artifacts(artifacts, output_dir=output_dir, binary_name=binary_name)
 
-    expected_binaries = verify_expected_assets(
+    checksum_required = verify_expected_assets(
         output_dir=output_dir,
         binary_name=binary_name,
         version=version,
     )
-    verify_checksums(output_dir, expected_binaries)
+    verify_checksums(output_dir, checksum_required)
 
     for path in sorted(path for path in output_dir.iterdir() if path.is_file()):
         print(path.as_posix())
@@ -208,6 +209,14 @@ def stage_artifacts(
             if not isinstance(artifact_path, str):
                 raise StageError(f"SBOM artifact {artifact_name!r} is missing a path")
             destination_name = Path(artifact_path).name
+        elif artifact_type == "Linux Package":
+            if not isinstance(artifact_path, str):
+                raise StageError(f"Linux package artifact {artifact_name!r} is missing a path")
+            package_name = Path(artifact_path).name
+            if package_name.endswith((".deb", ".rpm")) and package_name.startswith(
+                (binary_name + "_", binary_name + "-")
+            ):
+                destination_name = package_name
         elif artifact_type == "Checksum" and artifact_name == "checksums.txt":
             destination_name = "checksums.txt"
 
@@ -250,6 +259,25 @@ def verify_expected_assets(*, output_dir: Path, binary_name: str, version: str) 
         if not sbom_path.is_file():
             raise StageError(f"missing expected SBOM asset {sbom}")
 
+    package_files = {
+        path.name
+        for path in output_dir.iterdir()
+        if path.is_file() and path.suffix in {".deb", ".rpm"}
+    }
+    deb_files = {name for name in package_files if name.endswith(".deb")}
+    rpm_files = {name for name in package_files if name.endswith(".rpm")}
+    if len(deb_files) != 2 or len(rpm_files) != 2:
+        packages = ", ".join(sorted(package_files))
+        raise StageError(
+            "expected two DEB and two RPM package assets, "
+            f"found {len(deb_files)} DEB and {len(rpm_files)} RPM: {packages}"
+        )
+    if len(package_files) != EXPECTED_PACKAGE_COUNT:
+        raise StageError(
+            f"expected {EXPECTED_PACKAGE_COUNT} package assets, found {len(package_files)}"
+        )
+    expected_files.update(package_files)
+
     staged_files = {path.name for path in output_dir.iterdir() if path.is_file()}
     if "checksums.txt" not in staged_files:
         raise StageError("missing staged checksums.txt")
@@ -265,14 +293,14 @@ def verify_expected_assets(*, output_dir: Path, binary_name: str, version: str) 
     if unexpected_files:
         raise StageError(f"unexpected staged release asset(s): {', '.join(unexpected_files)}")
 
-    return expected_binaries
+    return expected_binaries | package_files
 
 
-def verify_checksums(output_dir: Path, expected_binaries: set[str]) -> None:
+def verify_checksums(output_dir: Path, required_assets: set[str]) -> None:
     checksums = parse_checksums(output_dir / "checksums.txt")
-    missing_checksums = sorted(expected_binaries - checksums.keys())
+    missing_checksums = sorted(required_assets - checksums.keys())
     if missing_checksums:
-        raise StageError(f"missing checksum entry for expected binary asset(s): {', '.join(missing_checksums)}")
+        raise StageError(f"missing checksum entry for required release asset(s): {', '.join(missing_checksums)}")
 
     for name, expected_digest in sorted(checksums.items()):
         path = output_dir / name

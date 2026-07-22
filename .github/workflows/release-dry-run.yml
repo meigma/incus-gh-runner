@@ -49,59 +49,16 @@ jobs:
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
-          version: '~> v2'
+          version: v2.17.0
           args: release --clean --skip=publish
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GORELEASER_CURRENT_TAG: v0.0.0-dryrun.${{ github.run_id }}.${{ github.run_attempt }}
 
-      - name: Validate ghd-compatible dry-run artifacts
-        run: |
-          set -euo pipefail
-
-          version="0.0.0-dryrun.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
-          binary_name="incus-gh-runner"
-          asset_prefix="${binary_name}_"
-          expected_signer="${GITHUB_REPOSITORY}/.github/workflows/attest.yml"
-          actual_signer="$(awk -F'"' '/signer_workflow/ { print $2; exit }' ghd.toml)"
-
-          if [ "$actual_signer" != "$expected_signer" ]; then
-            echo "ghd.toml signer_workflow must be $expected_signer, got $actual_signer" >&2
-            exit 1
-          fi
-
-          grep -Fq "name = \"$binary_name\"" ghd.toml
-          grep -Fq "tag_pattern = \"v\${version}\"" ghd.toml
-          grep -Fq "path = \"$binary_name\"" ghd.toml
-
-          jq -e --arg asset_prefix "$asset_prefix" '
-            [
-              .[]
-              | select(
-                  (.type == "Binary" and (.name | startswith($asset_prefix))) or
-                  (.type == "SBOM" and (.name | startswith($asset_prefix))) or
-                  (.type == "Checksum" and .name == "checksums.txt")
-                )
-            ] as $artifacts
-            | ($artifacts | map(select(.type == "Binary")) | length) == 4
-            and ($artifacts | map(select(.type == "SBOM")) | length) == 4
-            and ($artifacts | map(select(.type == "Checksum")) | length) == 1
-          ' dist/artifacts.json
-
-          test -f dist/checksums.txt
-
-          for os in darwin linux; do
-            for arch in amd64 arm64; do
-              expected="${binary_name}_${version}_${os}_${arch}"
-              expected_sbom="${expected}.sbom.json"
-              expected_pattern="pattern = \"${binary_name}_\${version}_${os}_${arch}\""
-
-              jq -e --arg name "$expected" '.[] | select(.type == "Binary" and .name == $name)' dist/artifacts.json >/dev/null
-              jq -e --arg name "$expected_sbom" '.[] | select(.type == "SBOM" and .name == $name)' dist/artifacts.json >/dev/null
-              grep -Fq "$expected_pattern" ghd.toml
-              awk -v name="$expected" '$2 == name && length($1) == 64 && $1 ~ /^[[:xdigit:]]+$/ { found = 1 } END { exit(found ? 0 : 1) }' dist/checksums.txt
-            done
-          done
+      - name: Stage and validate dry-run release assets
+        env:
+          DRY_RUN_TAG: v0.0.0-dryrun.${{ github.run_id }}.${{ github.run_attempt }}
+        run: python3 .github/scripts/stage_ghd_release_assets.py --tag "$DRY_RUN_TAG"
 
       - name: Smoke test dry-run binary
         run: |
@@ -129,6 +86,102 @@ jobs:
           esac
 
           "$bin" validate --help >/dev/null
+
+      - name: Upload packages for native installation tests
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-packages
+          path: |
+            dist/release-assets/*.deb
+            dist/release-assets/*.rpm
+          if-no-files-found: error
+          retention-days: 1
+
+  package-install-dry-run:
+    name: Package Install Dry Run (${{ matrix.arch }})
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'release-please--') }}
+    needs:
+      - binary-release-dry-run
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            deb_pattern: '*_amd64.deb'
+            rpm_pattern: '*.x86_64.rpm'
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            deb_pattern: '*_arm64.deb'
+            rpm_pattern: '*.aarch64.rpm'
+    steps:
+      - name: Download release packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-packages
+          path: packages
+
+      - name: Resolve native packages
+        id: packages
+        env:
+          DEB_PATTERN: ${{ matrix.deb_pattern }}
+          RPM_PATTERN: ${{ matrix.rpm_pattern }}
+        run: |
+          set -euo pipefail
+
+          mapfile -t debs < <(find packages -maxdepth 1 -type f -name "$DEB_PATTERN" -print)
+          mapfile -t rpms < <(find packages -maxdepth 1 -type f -name "$RPM_PATTERN" -print)
+          if [ "${#debs[@]}" -ne 1 ] || [ "${#rpms[@]}" -ne 1 ]; then
+            find packages -maxdepth 1 -type f -print | sort >&2
+            echo "expected exactly one native DEB and RPM" >&2
+            exit 1
+          fi
+
+          deb="$(basename "${debs[0]}")"
+          rpm="$(basename "${rpms[0]}")"
+          echo "deb=$deb" >> "$GITHUB_OUTPUT"
+          echo "rpm=$rpm" >> "$GITHUB_OUTPUT"
+
+      - name: Install and smoke test DEB
+        env:
+          DEBIAN_IMAGE: debian:13-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd
+          PACKAGE: ${{ steps.packages.outputs.deb }}
+        run: |
+          docker run --rm --platform "linux/${{ matrix.arch }}" \
+            --volume "$PWD/packages:/packages:ro" \
+            "$DEBIAN_IMAGE" sh -ceu '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update >/dev/null
+              apt-get install -y --no-install-recommends "/packages/$1" >/dev/null
+              dpkg-query --show --showformat="\${Package} \${Version} \${Architecture}\n" incus-gh-runner
+              incus-gh-runner --version
+              incus-gh-runner validate --help >/dev/null
+              test -f /usr/lib/systemd/system/incus-gh-runner.service
+              test -f /usr/lib/tmpfiles.d/incus-gh-runner.conf
+              test -f /etc/incus-gh-runner/config.yaml
+              test ! -e /etc/systemd/system/multi-user.target.wants/incus-gh-runner.service
+            ' sh "$PACKAGE"
+
+      - name: Install and smoke test RPM
+        env:
+          FEDORA_IMAGE: fedora:44@sha256:6c75d5bf57cb0fa5aa4b92c6a83c86c791644496d9ac230de7711f5b8ec3b898
+          PACKAGE: ${{ steps.packages.outputs.rpm }}
+        run: |
+          docker run --rm --platform "linux/${{ matrix.arch }}" \
+            --volume "$PWD/packages:/packages:ro" \
+            "$FEDORA_IMAGE" sh -ceu '
+              dnf -q install -y "/packages/$1"
+              rpm -q --qf "%{NAME} %{VERSION}-%{RELEASE} %{ARCH}\n" incus-gh-runner
+              incus-gh-runner --version
+              incus-gh-runner validate --help >/dev/null
+              test -f /usr/lib/systemd/system/incus-gh-runner.service
+              test -f /usr/lib/tmpfiles.d/incus-gh-runner.conf
+              test -f /etc/incus-gh-runner/config.yaml
+              test ! -e /etc/systemd/system/multi-user.target.wants/incus-gh-runner.service
+            ' sh "$PACKAGE"
 
   # Rehearse the container build: build per-arch signed apks on native runners and
   # assemble the image with apko, WITHOUT pushing, signing, or attesting.

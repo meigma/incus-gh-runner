@@ -80,11 +80,20 @@ tasks:
       - 'root:lint'
       - 'root:build'
       - 'root:test'
+      - 'root:release-config-check'
       - 'root:release-config-test'
       - 'docs:build'
     inputs:
       - '@group(goSources)'
       - '@group(lintConfig)'
+      - '@group(releaseConfig)'
+    options:
+      cache: false
+      runInCI: true
+
+  release-config-check:
+    command: 'goreleaser check'
+    inputs:
       - '@group(releaseConfig)'
     options:
       cache: false

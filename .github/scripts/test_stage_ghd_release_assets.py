@@ -61,6 +61,10 @@ class StageGhdReleaseAssetsTest(unittest.TestCase):
                 staged,
                 [
                     "checksums.txt",
+                    "incus-gh-runner-1.2.3-1.aarch64.rpm",
+                    "incus-gh-runner-1.2.3-1.x86_64.rpm",
+                    "incus-gh-runner_1.2.3_amd64.deb",
+                    "incus-gh-runner_1.2.3_arm64.deb",
                     "incus-gh-runner_1.2.3_darwin_amd64",
                     "incus-gh-runner_1.2.3_darwin_amd64.sbom.json",
                     "incus-gh-runner_1.2.3_darwin_arm64",
@@ -111,7 +115,14 @@ class StageGhdReleaseAssetsTest(unittest.TestCase):
             result, _, stderr = run_script(root)
 
             self.assertEqual(result, 1)
-            self.assertIn("expected 9 draft release assets, found 10", stderr)
+            self.assertIn("expected 13 draft release assets, found 14", stderr)
+
+    def test_fails_on_missing_package_format(self) -> None:
+        with fixture(omit_package="incus-gh-runner-1.2.3-1.aarch64.rpm") as root:
+            result, _, stderr = run_script(root)
+
+            self.assertEqual(result, 1)
+            self.assertIn("expected two DEB and two RPM package assets", stderr)
 
 
 def run_script(root: Path) -> tuple[int, str, str]:
@@ -131,6 +142,7 @@ def fixture(
     checksum_override: tuple[str, str] | None = None,
     omit_artifact: tuple[str, str, str] | None = None,
     extra_binary: bool = False,
+    omit_package: str | None = None,
 ):
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -161,6 +173,24 @@ def fixture(
                     "name": binary_name,
                     "path": f"dist/{sbom_name}",
                 })
+
+        package_names = (
+            "incus-gh-runner_1.2.3_amd64.deb",
+            "incus-gh-runner_1.2.3_arm64.deb",
+            "incus-gh-runner-1.2.3-1.x86_64.rpm",
+            "incus-gh-runner-1.2.3-1.aarch64.rpm",
+        )
+        for package_name in package_names:
+            if package_name == omit_package:
+                continue
+            package_path = root / "dist" / package_name
+            package_path.write_bytes(f"{package_name}\n".encode())
+            checksum_entries[package_name] = sha256(package_path)
+            artifacts.append({
+                "type": "Linux Package",
+                "name": package_name,
+                "path": f"dist/{package_name}",
+            })
 
         if extra_binary:
             extra_name = "incus-gh-runner_1.2.3_freebsd_amd64"
