@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/meigma/incus-gh-runner/compare/v1.0.0...v1.1.0) (2026-07-23)
+
+
+### Features
+
+* **incus:** support LVM isolation baselines ([#49](https://github.com/meigma/incus-gh-runner/issues/49)) ([c41f108](https://github.com/meigma/incus-gh-runner/commit/c41f10841170c5f066c6d2667c07c72a00a26379))
+* **release:** dispatch package publication ([#47](https://github.com/meigma/incus-gh-runner/issues/47)) ([dfd1e29](https://github.com/meigma/incus-gh-runner/commit/dfd1e299fe06649edc65f352d1790c12b0849690))
+
 ## 1.0.0 (2026-07-22)
 
 
