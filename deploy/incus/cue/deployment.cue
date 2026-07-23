@@ -20,7 +20,21 @@ _#ProxyPort:   (int & >=1 & <=65535 & !=53) |
 _#IPv4:          (net.IP & !~":") | error("value must be an IPv4 address")
 _#IPv4CIDR:      (net.IPCIDR & !~":") | error("value must be an IPv4 CIDR")
 _#StorageSource: (string & =~"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,254}$") |
-	error("storage source contains unsupported characters")
+		error("storage source contains unsupported characters")
+_#StorageName: (string & =~"^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$") |
+	error("storage name contains unsupported characters")
+
+_#ZFSStorageInput: {
+	driver:  *"zfs" | "zfs"
+	source!: _#StorageSource
+}
+
+_#LVMStorageInput: {
+	driver:         "lvm"
+	source!:        _#StorageName
+	thinPoolName!:  _#StorageName
+	volumeSizeGiB!: int & >=1 & <=16384
+}
 
 // #Inputs is the complete operator-controlled configuration surface. Fields
 // absent from this definition are deliberately not configurable.
@@ -35,7 +49,7 @@ _#StorageSource: (string & =~"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,254}$") |
 		networkACL: _#DedicatedName & (*"runner-egress" | string)
 		// profile names the sole profile applied to each runner VM.
 		profile: _#DedicatedName & (*"github-runner" | string)
-		// storagePool names the dedicated ZFS storage pool available to the project.
+		// storagePool names the dedicated storage pool available to the project.
 		storagePool: _#DedicatedName & (*"runner-storage" | string)
 	}
 
@@ -91,11 +105,8 @@ _#StorageSource: (string & =~"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,254}$") |
 		}
 	}
 
-	// storage configures the dedicated ZFS backing store.
-	storage: {
-		// source is the existing zpool or dataset placed under Incus control.
-		source!: _#StorageSource
-	}
+	// storage selects one narrowly configured dedicated backing store.
+	storage: *_#ZFSStorageInput | _#LVMStorageInput
 }
 
 _#PositiveDecimalString: string & =~"^[1-9][0-9]*$"
@@ -155,7 +166,7 @@ _#Baseline: {
 		network_acl: _#DedicatedName
 		// profile names the sole profile applied to each runner VM.
 		profile: _#DedicatedName
-		// storage_pool names the dedicated ZFS storage pool available to the project.
+		// storage_pool names the dedicated storage pool available to the project.
 		storage_pool: _#DedicatedName
 	}
 	// server constrains the Incus daemon features and exposure model.
@@ -440,18 +451,28 @@ _#Baseline: {
 		}
 	}
 	// storage_pool is the desired dedicated runner storage pool configuration.
-	storage_pool: {
-		// description explains the pool's runner image and root disk purpose.
-		description: "Dedicated ZFS pool for ephemeral runner images and VM roots"
-		// driver selects the Incus ZFS storage driver.
-		driver: "zfs"
-		// config binds Incus to the operator-selected ZFS source.
-		config: {
-			// source names the existing zpool or dataset placed under Incus control.
-			source: _#StorageSource
-			// `zfs.pool_name` pins the effective ZFS pool name to the same source.
-			"zfs.pool_name": storage_pool.config.source
-		}
+	storage_pool: _#ZFSStoragePool | _#LVMStoragePool
+}
+
+// _#ZFSStoragePool is the exact supported ZFS pool state.
+_#ZFSStoragePool: {
+	description: "Dedicated ZFS pool for ephemeral runner images and VM roots"
+	driver:      "zfs"
+	config: {
+		source:          _#StorageSource
+		"zfs.pool_name": source
+	}
+}
+
+// _#LVMStoragePool is the exact supported LVM thin-pool state.
+_#LVMStoragePool: {
+	description: "Dedicated LVM thin pool for ephemeral runner images and VM roots"
+	driver:      "lvm"
+	config: {
+		source:              _#StorageName
+		"lvm.vg_name":       source
+		"lvm.thinpool_name": _#StorageName
+		"volume.size":       _#PositiveGiBString
 	}
 }
 
@@ -534,6 +555,16 @@ _#Baseline: {
 				}
 			}
 		}
-		storage_pool: config: source: inputs.storage.source
+		storage_pool: {
+			driver: inputs.storage.driver
+			config: source: inputs.storage.source
+		}
+	}
+
+	if inputs.storage.driver == "lvm" {
+		output: storage_pool: config: {
+			"lvm.thinpool_name": inputs.storage.thinPoolName
+			"volume.size":       "\(inputs.storage.volumeSizeGiB)GiB"
+		}
 	}
 }

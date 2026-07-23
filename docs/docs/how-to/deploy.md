@@ -37,20 +37,25 @@ Start from the fail-closed desired-state example instead of creating an
 unrestricted project and attaching the project's `default` profile:
 
 ```sh
+# ZFS (the backward-compatible default)
 cp deploy/incus/baseline.example.json incus-baseline.json
+
+# Or LVM thin pool
+cp deploy/incus/baseline.lvm.example.json incus-baseline.json
 ```
 
 The repository also ships the dependency-free CUE policy prototype under
-`deploy/incus/cue/`. Its default input renders exactly the JSON above, derives
-aggregate project ceilings from host and runner capacity, and rejects attempts
-to weaken fixed isolation controls. It also renders a partial controller
-configuration that keeps `incus.project`, the sole Incus profile, and
-`capacity.max_runners` aligned with those ceilings. The module is not yet
-registry-published, so the rendered files remain local deployment artifacts for
-this increment.
+`deploy/incus/cue/`. Its default ZFS and LVM inputs render the corresponding
+JSON fixtures above, derive aggregate project ceilings from host and runner
+capacity, and reject attempts to weaken fixed isolation controls. It also
+renders a partial controller configuration that keeps `incus.project`, the sole
+Incus profile, and `capacity.max_runners` aligned with those ceilings. The
+module is not yet registry-published, so the rendered files remain local
+deployment artifacts for this increment.
 
 Edit the copy for the target host. In particular, replace every documentation
-address, bridge subnet, resource name, ZFS source, and capacity limit. Managed
+address, bridge subnet, resource name, storage source, and capacity limit. For
+LVM, also replace the thin-pool name and default volume size. Managed
 bridge names must be 2 to 15 characters, start with a lowercase letter, and
 otherwise contain only lowercase letters, digits, or hyphens. The example proxy
 and DNS addresses are non-routable and intentionally provide no useful egress
@@ -58,16 +63,16 @@ until replaced. Configure a controlled proxy to allow only GitHub or GHES and
 the dependency destinations approved for this builder. Do not replace the proxy
 boundary with unrestricted TCP/443 and call it a GitHub allowlist.
 
-`baseline.example.json` is reviewable desired state, not an input Incus can
-apply directly. Materialize the exact project, network, ACL, profile, and
+The selected baseline fixture is reviewable desired state, not an input Incus
+can apply directly. Materialize the exact project, network, ACL, profile, and
 storage state through your Incus CLI or infrastructure-management workflow;
 the controller does not create or modify that infrastructure. Keep the bridge
 and ACL host-owned in the Incus `default` project, while the restricted runner
 project inherits the allowlisted bridge and owns only its runner profile. The
-baseline requires a dedicated ZFS pool, default-deny ACLs at the bridge and
-NIC, anti-spoofing and port isolation, and both per-VM and aggregate project
-ceilings. Keep the current controller on a dedicated, single-purpose host: its
-Unix-socket `incus-admin` identity remains root-equivalent.
+baseline requires a dedicated ZFS or LVM thin pool, default-deny ACLs at the
+bridge and NIC, anti-spoofing and port isolation, and both per-VM and aggregate
+project ceilings. Keep the current controller on a dedicated, single-purpose
+host: its Unix-socket `incus-admin` identity remains root-equivalent.
 
 Set the project VM limit at or above the controller's
 `capacity.max_runners`, then size aggregate CPU, memory, and disk for that many

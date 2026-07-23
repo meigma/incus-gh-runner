@@ -5,6 +5,9 @@ import (
 	"os"
 	"testing"
 
+	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/cuecontext"
+	"cuelang.org/go/cue/load"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -13,10 +16,12 @@ import (
 func TestValidateBaselineAcceptsRenderedPolicy(t *testing.T) {
 	t.Parallel()
 
-	baseline := readPolicyFixture(t)
+	baseline := readPolicyFixture(t, "baseline.example.json")
 	require.NoError(t, ValidateBaseline("baseline.example.json", baseline))
+	lvmBaseline := readPolicyFixture(t, "baseline.lvm.example.json")
+	require.NoError(t, ValidateBaseline("baseline.lvm.example.json", lvmBaseline))
 
-	custom := decodePolicyFixture(t)
+	custom := decodePolicyFixture(t, "baseline.example.json")
 	projectConfig := policyObject(t, custom, "project", "config")
 	projectConfig["limits.cpu"] = "12"
 	projectConfig["limits.disk"] = "120GiB"
@@ -178,11 +183,126 @@ func TestValidateBaselineRejectsWeakening(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			baseline := decodePolicyFixture(t)
+			baseline := decodePolicyFixture(t, "baseline.example.json")
 			tt.mutate(t, baseline)
 			err := ValidateBaseline("invalid.json", encodePolicyFixture(t, baseline))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "baseline violates CUE policy")
+		})
+	}
+}
+
+// TestValidateBaselineRejectsInvalidLVMStorage proves the LVM policy remains an exact closed variant.
+func TestValidateBaselineRejectsInvalidLVMStorage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(t *testing.T, baseline map[string]any)
+	}{
+		{
+			name: "unsupported driver",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyObject(t, baseline, "storage_pool")["driver"] = "btrfs"
+			},
+		},
+		{
+			name: "mixed ZFS key",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyObject(t, baseline, "storage_pool", "config")["zfs.pool_name"] = "incus-vg"
+			},
+		},
+		{
+			name: "missing source",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				delete(policyObject(t, baseline, "storage_pool", "config"), "source")
+			},
+		},
+		{
+			name: "missing volume group",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				delete(policyObject(t, baseline, "storage_pool", "config"), "lvm.vg_name")
+			},
+		},
+		{
+			name: "missing thin pool",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				delete(policyObject(t, baseline, "storage_pool", "config"), "lvm.thinpool_name")
+			},
+		},
+		{
+			name: "missing volume size",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				delete(policyObject(t, baseline, "storage_pool", "config"), "volume.size")
+			},
+		},
+		{
+			name: "source and volume group mismatch",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyObject(t, baseline, "storage_pool", "config")["lvm.vg_name"] = "other-vg"
+			},
+		},
+		{
+			name: "zero volume size",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyObject(t, baseline, "storage_pool", "config")["volume.size"] = "0GiB"
+			},
+		},
+		{
+			name: "invalid volume size unit",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyObject(t, baseline, "storage_pool", "config")["volume.size"] = "32GB"
+			},
+		},
+		{
+			name: "unexpected storage key",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyObject(t, baseline, "storage_pool", "config")["lvm.use_thinpool"] = "true"
+			},
+		},
+		{
+			name: "mutated description",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyObject(t, baseline, "storage_pool")["description"] = "General-purpose LVM pool"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			baseline := decodePolicyFixture(t, "baseline.lvm.example.json")
+			tt.mutate(t, baseline)
+			err := ValidateBaseline("invalid-lvm.json", encodePolicyFixture(t, baseline))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "baseline violates CUE policy")
+		})
+	}
+}
+
+// TestCUEExamplesMatchJSONFixtures proves both checked-in examples render their fixtures semantically.
+func TestCUEExamplesMatchJSONFixtures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		packagePath string
+		fixture     string
+	}{
+		{name: "default ZFS", packagePath: "./examples/default", fixture: "baseline.example.json"},
+		{name: "LVM thin pool", packagePath: "./examples/lvm", fixture: "baseline.lvm.example.json"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			instances := load.Instances([]string{tt.packagePath}, &load.Config{Dir: "cue"})
+			require.Len(t, instances, 1)
+			value := cuecontext.New().BuildInstance(instances[0])
+			require.NoError(t, value.Err())
+			rendered, err := value.LookupPath(cue.ParsePath("baseline")).MarshalJSON()
+			require.NoError(t, err)
+			assert.JSONEq(t, string(readPolicyFixture(t, tt.fixture)), string(rendered))
 		})
 	}
 }
@@ -210,19 +330,19 @@ func TestValidateBaselineRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-// readPolicyFixture reads the checked-in CUE-rendered baseline.
-func readPolicyFixture(t *testing.T) []byte {
+// readPolicyFixture reads one checked-in CUE-rendered baseline.
+func readPolicyFixture(t *testing.T, filename string) []byte {
 	t.Helper()
-	data, err := os.ReadFile("baseline.example.json")
+	data, err := os.ReadFile(filename)
 	require.NoError(t, err)
 	return data
 }
 
-// decodePolicyFixture returns a mutable generic representation of the baseline.
-func decodePolicyFixture(t *testing.T) map[string]any {
+// decodePolicyFixture returns a mutable generic representation of one baseline.
+func decodePolicyFixture(t *testing.T, filename string) map[string]any {
 	t.Helper()
 	var baseline map[string]any
-	require.NoError(t, json.Unmarshal(readPolicyFixture(t), &baseline))
+	require.NoError(t, json.Unmarshal(readPolicyFixture(t, filename), &baseline))
 	return baseline
 }
 
