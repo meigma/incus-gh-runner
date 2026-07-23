@@ -213,7 +213,7 @@ func normalizeExpectedStorage(pool StoragePool) StoragePool {
 	return pool
 }
 
-// normalizeObservedStorage removes only the known server-generated ZFS source field.
+// normalizeObservedStorage removes only Incus's known server-generated initial-source field.
 func normalizeObservedStorage(pool StoragePool) StoragePool {
 	pool.Config = normalizeStringMap(pool.Config)
 	delete(pool.Config, "volatile.initial_source")

@@ -227,6 +227,86 @@ func TestValidateComparesReadOnlySnapshot(t *testing.T) {
 	}
 }
 
+// TestValidateLVMStorageSnapshot proves only Incus's generated initial-source key is normalized.
+func TestValidateLVMStorageSnapshot(t *testing.T) {
+	t.Parallel()
+
+	baseline := decodeBaselineFixtureFile(t, "../../deploy/incus/baseline.lvm.example.json")
+	tests := []struct {
+		name   string
+		mutate func(snapshot *Snapshot)
+	}{
+		{name: "matching snapshot with initial source"},
+		{
+			name: "description drift",
+			mutate: func(snapshot *Snapshot) {
+				snapshot.StoragePool.Description = "General-purpose LVM pool"
+			},
+		},
+		{
+			name: "driver drift",
+			mutate: func(snapshot *Snapshot) {
+				snapshot.StoragePool.Driver = "zfs"
+			},
+		},
+		{
+			name: "source drift",
+			mutate: func(snapshot *Snapshot) {
+				snapshot.StoragePool.Config["source"] = "other-vg"
+			},
+		},
+		{
+			name: "volume group drift",
+			mutate: func(snapshot *Snapshot) {
+				snapshot.StoragePool.Config["lvm.vg_name"] = "other-vg"
+			},
+		},
+		{
+			name: "thin pool drift",
+			mutate: func(snapshot *Snapshot) {
+				snapshot.StoragePool.Config["lvm.thinpool_name"] = "other-thinpool"
+			},
+		},
+		{
+			name: "volume size drift",
+			mutate: func(snapshot *Snapshot) {
+				snapshot.StoragePool.Config["volume.size"] = "64GiB"
+			},
+		},
+		{
+			name: "unexpected volatile key",
+			mutate: func(snapshot *Snapshot) {
+				snapshot.StoragePool.Config["volatile.unexpected"] = "value"
+			},
+		},
+		{
+			name: "unexpected configuration key",
+			mutate: func(snapshot *Snapshot) {
+				snapshot.StoragePool.Config["lvm.use_thinpool"] = "true"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			snapshot := validSnapshot(baseline)
+			if tt.mutate != nil {
+				tt.mutate(&snapshot)
+			}
+
+			_, err := Validate(context.Background(), baseline, &snapshotReader{snapshot: snapshot})
+			if tt.mutate == nil {
+				require.NoError(t, err)
+				return
+			}
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "storage pool drift detected")
+		})
+	}
+}
+
 // readBaselineFixture reads the checked-in CUE-rendered baseline.
 func readBaselineFixture(t *testing.T) []byte {
 	t.Helper()
@@ -238,8 +318,16 @@ func readBaselineFixture(t *testing.T) []byte {
 // decodeBaselineFixture decodes the checked-in baseline for comparison tests.
 func decodeBaselineFixture(t *testing.T) Baseline {
 	t.Helper()
+	return decodeBaselineFixtureFile(t, "../../deploy/incus/baseline.example.json")
+}
+
+// decodeBaselineFixtureFile decodes one checked-in baseline for comparison tests.
+func decodeBaselineFixtureFile(t *testing.T, filename string) Baseline {
+	t.Helper()
+	data, err := os.ReadFile(filename)
+	require.NoError(t, err)
 	var baseline Baseline
-	require.NoError(t, json.Unmarshal(readBaselineFixture(t), &baseline))
+	require.NoError(t, json.Unmarshal(data, &baseline))
 	return baseline
 }
 

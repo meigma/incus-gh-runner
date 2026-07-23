@@ -20,7 +20,8 @@ fileGroups:
     - 'internal/**/*.go'
     - 'deploy/incus/*.go'
     - 'deploy/incus/cue/deployment.cue'
-    - 'deploy/incus/baseline.example.json'
+    - 'deploy/incus/cue/examples/**/*.cue'
+    - 'deploy/incus/baseline*.example.json'
     - 'go.mod'
     - 'go.sum'
     # Tool/version pins. Under the `system` toolchain moon does not hash the Go

@@ -10,7 +10,7 @@ The public contract has two definitions:
 
 - `#Inputs` is a closed operator surface. It accepts Incus object names, host
   capacity and reserved headroom, runner sizing, one IPv4 bridge, controlled
-  DNS and HTTP CONNECT proxy endpoints, and the ZFS source.
+  DNS and HTTP CONNECT proxy endpoints, and one supported storage-driver input.
 - `#Deployment` derives the complete `output` baseline and a partial
   `controller` configuration. Aggregate project CPU, memory, disk, and VM limits
   come from the runner count and per-runner sizing; the controller fragment
@@ -28,6 +28,15 @@ Managed bridge names must contain 2 to 15 characters, start with a lowercase
 letter, and otherwise contain only lowercase letters, digits, or hyphens. Incus
 uses the name as a Linux network-interface name.
 
+Storage is a closed choice between ZFS and an LVM thin pool. Omitting
+`storage.driver` preserves the default ZFS behavior and requires only the
+existing `source`; the renderer pins `zfs.pool_name` to that source. The LVM
+variant requires `driver: "lvm"`, `source`, `thinPoolName`, and a positive
+`volumeSizeGiB` no larger than 16384. It derives `lvm.vg_name` from `source`,
+renders the size with the `GiB` suffix, and fixes the driver-specific
+description and configuration. Neither variant accepts an arbitrary storage
+configuration map or keys from the other driver.
+
 ## Render the example
 
 From this directory:
@@ -36,10 +45,14 @@ From this directory:
 mise exec -- cue vet -c ./examples/default
 mise exec -- cue export ./examples/default -e baseline --out json
 mise exec -- cue export ./examples/default -e controller --out yaml
+mise exec -- cue vet -c ./examples/lvm
+mise exec -- cue export ./examples/lvm -e baseline --out json
+mise exec -- cue export ./examples/lvm -e controller --out yaml
 ```
 
-The example uses non-routable documentation endpoints and renders the exact
-contents of `../baseline.example.json`.
+Both examples use non-routable documentation endpoints. The default ZFS
+example renders the exact contents of `../baseline.example.json`; the LVM
+thin-pool example renders `../baseline.lvm.example.json`.
 The controller export is intentionally partial: merge it into the full
 controller configuration alongside environment-specific GitHub, image, owner,
 and minimum-runner settings.

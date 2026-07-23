@@ -11,7 +11,7 @@ The example establishes:
 - a dedicated restricted project with explicit aggregate VM, CPU, memory,
   network, and per-pool disk ceilings;
 - one host-owned managed bridge and network ACL, one project-local profile, and
-  one dedicated ZFS pool;
+  one dedicated ZFS or LVM thin pool;
 - per-VM CPU, memory, root-disk, network-bandwidth, and requested disk-I/O
   limits;
 - MAC and IPv4 anti-spoofing, explicit NIC-level IPv6 address denial, IPv6
@@ -43,21 +43,23 @@ host capacity, runner sizing, network endpoints, and storage inputs. It derives
 aggregate limits and emits a complete baseline while keeping the security
 controls non-overridable. It also emits the controller project, sole profile,
 and `capacity.max_runners` as one partial configuration so those values cannot
-drift from the baseline. Its default example is continuously checked for
-semantic equality with `baseline.example.json`.
+drift from the baseline. Its default ZFS and LVM examples are checked for
+semantic equality with `baseline.example.json` and
+`baseline.lvm.example.json`, respectively.
 
 Registry publication is not part of this proof increment. Until the `@v0`
-module interface is reviewed and published, `baseline.example.json` remains the
-portable deployment artifact. Copy it outside the checkout and change every
-environment-specific value before applying it:
+module interface is reviewed and published, `baseline.example.json` and
+`baseline.lvm.example.json` remain the portable deployment artifacts. Copy the
+appropriate fixture outside the checkout and change every environment-specific
+value before applying it:
 
 - replace the `192.0.2.10/32` proxy and `192.0.2.53/32` DNS documentation
   addresses with dedicated endpoint IPv4 `/32` CIDRs;
-- replace the bridge subnet, names, ZFS `source` and `zfs.pool_name`, and
-  capacity limits; managed bridge names must be 2 to 15 characters, start with
-  a lowercase letter, and otherwise contain only lowercase letters, digits, or
-  hyphens; the storage source must be a dedicated existing zpool or dataset
-  under Incus control;
+- replace the bridge subnet, names, storage source, and capacity limits;
+  managed bridge names must be 2 to 15 characters, start with a lowercase
+  letter, and otherwise contain only lowercase letters, digits, or hyphens;
+  use either a dedicated existing zpool or dataset for ZFS, or an existing VG,
+  thin-pool name, and default volume size for LVM;
 - size aggregate limits below physical host capacity so Incus, the controller,
   and the host retain explicit CPU, memory, and disk headroom; keep the VM
   count at or above `capacity.max_runners`, and size aggregate CPU, memory, and
@@ -143,7 +145,8 @@ project, network, ACL, profile, or storage-pool drift. The only accepted
 authority is `dedicated-host-unix-socket` with both HTTPS listener settings
 empty. The storage comparison ignores only the server-generated
 `volatile.initial_source` field observed on Incus 7.0.1; `source`,
-`zfs.pool_name`, and every other effective storage setting remain fail-closed.
+the selected driver's derived settings, and every other effective storage
+setting remain fail-closed.
 
 The rendered baseline records the resource ceilings derived by CUE, but not the
 physical host totals and reserved-headroom inputs used to derive them. Runtime
@@ -179,7 +182,7 @@ behavior. Project CPU and memory totals are admission budgets, not aggregate
 runtime throttles for already-running VMs.
 
 Treat Secure Boot as required configuration, not proof that an untrusted EFI
-payload is rejected. Likewise, the NIC bandwidth and ZFS disk-I/O values are
+payload is rejected. Likewise, the NIC bandwidth and storage disk-I/O values are
 requested limits until their effective throughput has been benchmarked on the
 production host. Explicit NIC-level IPv6 denial and filtering remain required,
 but operators must validate their runtime behavior on the deployed host.
