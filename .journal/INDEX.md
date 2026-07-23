@@ -25,3 +25,4 @@
 | 021 | 2026-07-21 | Start new work session | in-progress | Opened a fresh session and awaited the substantive work request. |
 | 022 | 2026-07-21 | Remove bash test-script debt | complete | Removed all non-product bash test/validation scripts and live harnesses with their CI tasks and docs references through PR #44. |
 | 023 | 2026-07-21 | Remove the reference image surface | complete | Removed the reference image, distrobuilder toolchain, and their CI/docs surface through PR #45, keeping `guest/` as product code and adding a single image-hardening how-to. |
+| 024 | 2026-07-22 | Add LVM isolation baseline support | in-progress | Extend the closed Incus storage policy and packaged validator with a narrow LVM thin-pool variant while preserving default ZFS compatibility. |
