@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/meigma/incus-gh-runner/compare/v1.1.0...v1.2.0) (2026-07-24)
+
+
+### Features
+
+* **incus:** support additional controlled egress ([#50](https://github.com/meigma/incus-gh-runner/issues/50)) ([63ae36b](https://github.com/meigma/incus-gh-runner/commit/63ae36b8132d1eefffc71399dee929901baae7a9))
+
 ## [1.1.0](https://github.com/meigma/incus-gh-runner/compare/v1.0.0...v1.1.0) (2026-07-23)
 
 
