@@ -18,7 +18,8 @@ The example establishes:
   filtering, and bridge-port isolation;
 - a network ACL attached to both the host-owned bridge and the profile NIC,
   with rejected and logged unmatched ingress and egress; and
-- egress only to an explicit DNS resolver and HTTP CONNECT proxy.
+- egress only to an explicit DNS resolver and HTTP CONNECT proxy, plus at most
+  16 optional exact IPv4 TCP or UDP endpoints.
 
 Incus 7.0.1 rejects creation of a managed bridge in a non-default project;
 only OVN networks can be created and managed there. This standalone-host
@@ -39,10 +40,13 @@ default actions to reject and log unmatched traffic.
 ## Adapt the example
 
 The dependency-free module under [`cue/`](cue/) accepts a closed set of names,
-host capacity, runner sizing, network endpoints, and storage inputs. It derives
-aggregate limits and emits a complete baseline while keeping the security
-controls non-overridable. It also emits the controller project, sole profile,
-and `capacity.max_runners` as one partial configuration so those values cannot
+host capacity, runner sizing, controlled network endpoints, and storage inputs.
+It derives aggregate limits and emits a complete baseline while keeping the
+security controls non-overridable. The optional `additionalEgress` list accepts
+only named IPv4 `/32` endpoints with one TCP or UDP port each; it cannot express
+CIDR ranges, port ranges, actions, or rule state. The module also emits the
+controller project, sole profile, and
+`capacity.max_runners` as one partial configuration so those values cannot
 drift from the baseline. Its default ZFS and LVM examples are checked for
 semantic equality with `baseline.example.json` and
 `baseline.lvm.example.json`, respectively.
@@ -76,6 +80,9 @@ the restricted project name.
 
 Incus ACL rules match addresses and ports, not DNS names. Do not replace the
 proxy rule with unrestricted TCP/443 and describe that as GitHub allowlisting.
+Use additional endpoints only for reviewed services that cannot traverse the
+proxy, and apply an independent host firewall when an endpoint terminates on the
+managed bridge host.
 The example documentation addresses are deliberately non-routable, so an
 unchanged example fails closed by having no useful external connectivity.
 The bridge keeps DHCP but sets `raw.dnsmasq=port=0` so runners cannot bypass the

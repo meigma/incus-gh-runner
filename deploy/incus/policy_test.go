@@ -2,7 +2,9 @@ package incuspolicy
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"strconv"
 	"testing"
 
 	"cuelang.org/go/cue"
@@ -296,13 +298,100 @@ func TestCUEExamplesMatchJSONFixtures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			instances := load.Instances([]string{tt.packagePath}, &load.Config{Dir: "cue"})
-			require.Len(t, instances, 1)
-			value := cuecontext.New().BuildInstance(instances[0])
-			require.NoError(t, value.Err())
-			rendered, err := value.LookupPath(cue.ParsePath("baseline")).MarshalJSON()
-			require.NoError(t, err)
+			rendered := renderCUEExample(t, tt.packagePath)
 			assert.JSONEq(t, string(readPolicyFixture(t, tt.fixture)), string(rendered))
+		})
+	}
+}
+
+// TestCUEAdditionalEgressExample proves one exact additional endpoint renders and validates.
+func TestCUEAdditionalEgressExample(t *testing.T) {
+	t.Parallel()
+
+	rendered := renderCUEExample(t, "./examples/additional-egress")
+	require.NoError(t, ValidateBaseline("additional-egress.json", rendered))
+
+	var baseline map[string]any
+	require.NoError(t, json.Unmarshal(rendered, &baseline))
+	rules := policyRules(t, baseline)
+	require.Len(t, rules, 4)
+	assert.Equal(t, map[string]any{
+		"action":           "allow",
+		"state":            "enabled",
+		"description":      "Controlled additional egress: moon-cache",
+		"destination":      "198.51.100.20/32",
+		"protocol":         "tcp",
+		"destination_port": "9092",
+	}, rules[3])
+}
+
+// TestValidateBaselineRejectsInvalidAdditionalEgress proves endpoint extensions remain narrow.
+func TestValidateBaselineRejectsInvalidAdditionalEgress(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(t *testing.T, baseline map[string]any)
+	}{
+		{
+			name: "wide destination",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyRules(t, baseline)[3].(map[string]any)["destination"] = "10.248.0.0/24"
+			},
+		},
+		{
+			name: "port range",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyRules(t, baseline)[3].(map[string]any)["destination_port"] = "9092-9093"
+			},
+		},
+		{
+			name: "port above maximum",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyRules(t, baseline)[3].(map[string]any)["destination_port"] = "65536"
+			},
+		},
+		{
+			name: "unsupported protocol",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyRules(t, baseline)[3].(map[string]any)["protocol"] = "icmp"
+			},
+		},
+		{
+			name: "duplicate endpoint",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				rules := policyRules(t, baseline)
+				policyObject(t, baseline, "network_acl")["egress"] = append(rules, rules[3])
+			},
+		},
+		{
+			name: "more than 16 additional endpoints",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				rules := policyRules(t, baseline)[:3]
+				for index := 1; index <= 17; index++ {
+					rules = append(rules, map[string]any{
+						"action":           "allow",
+						"state":            "enabled",
+						"description":      fmt.Sprintf("Controlled additional egress: endpoint-%d", index),
+						"destination":      fmt.Sprintf("198.51.100.%d/32", index),
+						"protocol":         "tcp",
+						"destination_port": strconv.Itoa(9000 + index),
+					})
+				}
+				policyObject(t, baseline, "network_acl")["egress"] = rules
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var baseline map[string]any
+			require.NoError(t, json.Unmarshal(renderCUEExample(t, "./examples/additional-egress"), &baseline))
+			tt.mutate(t, baseline)
+			err := ValidateBaseline("invalid-additional-egress.json", encodePolicyFixture(t, baseline))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "baseline violates CUE policy")
 		})
 	}
 }
@@ -372,4 +461,16 @@ func policyRules(t *testing.T, baseline map[string]any) []any {
 	rules, ok := policyObject(t, baseline, "network_acl")["egress"].([]any)
 	require.True(t, ok, "expected egress to be an array")
 	return rules
+}
+
+// renderCUEExample renders the baseline field from one checked-in CUE example package.
+func renderCUEExample(t *testing.T, packagePath string) []byte {
+	t.Helper()
+	instances := load.Instances([]string{packagePath}, &load.Config{Dir: "cue"})
+	require.Len(t, instances, 1)
+	value := cuecontext.New().BuildInstance(instances[0])
+	require.NoError(t, value.Err())
+	rendered, err := value.LookupPath(cue.ParsePath("baseline")).MarshalJSON()
+	require.NoError(t, err)
+	return rendered
 }

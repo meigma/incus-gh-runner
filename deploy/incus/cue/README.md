@@ -10,7 +10,8 @@ The public contract has two definitions:
 
 - `#Inputs` is a closed operator surface. It accepts Incus object names, host
   capacity and reserved headroom, runner sizing, one IPv4 bridge, controlled
-  DNS and HTTP CONNECT proxy endpoints, and one supported storage-driver input.
+  DNS and HTTP CONNECT proxy endpoints, up to 16 optional exact egress
+  endpoints, and one supported storage-driver input.
 - `#Deployment` derives the complete `output` baseline and a partial
   `controller` configuration. Aggregate project CPU, memory, disk, and VM limits
   come from the runner count and per-runner sizing; the controller fragment
@@ -22,8 +23,11 @@ operator cannot use the module to enable the Incus HTTPS listener, use the
 Incus configuration, change default-deny ACL actions, or remove NIC filtering
 and port isolation. It also cannot enable NIC-level IPv6 assignment: the
 profile fixes `ipv6.address=none` alongside IPv6 filtering. The module
-intentionally does not expose arbitrary direct egress rules; v0 keeps the
-controlled DNS and proxy boundary fixed by the hardened deployment contract.
+does not expose arbitrary ACL rule bodies. Each `additionalEgress` item renders
+one enabled allow rule to an IPv4 `/32` and one TCP or UDP port; CIDR ranges,
+port ranges, actions, and rule state are not configurable. Duplicate endpoint
+tuples and more than 16 additional rules are rejected. The controlled DNS and
+proxy rules remain fixed by the hardened deployment contract.
 Managed bridge names must contain 2 to 15 characters, start with a lowercase
 letter, and otherwise contain only lowercase letters, digits, or hyphens. Incus
 uses the name as a Linux network-interface name.
@@ -48,11 +52,16 @@ mise exec -- cue export ./examples/default -e controller --out yaml
 mise exec -- cue vet -c ./examples/lvm
 mise exec -- cue export ./examples/lvm -e baseline --out json
 mise exec -- cue export ./examples/lvm -e controller --out yaml
+mise exec -- cue vet -c ./examples/additional-egress
+mise exec -- cue export ./examples/additional-egress -e baseline --out json
+mise exec -- cue export ./examples/additional-egress -e controller --out yaml
 ```
 
 Both examples use non-routable documentation endpoints. The default ZFS
 example renders the exact contents of `../baseline.example.json`; the LVM
 thin-pool example renders `../baseline.lvm.example.json`.
+The additional-egress example demonstrates an optional fourth ACL rule without
+providing another portable JSON fixture.
 The controller export is intentionally partial: merge it into the full
 controller configuration alongside environment-specific GitHub, image, owner,
 and minimum-runner settings.

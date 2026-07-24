@@ -3,8 +3,10 @@ package incuspolicy
 
 import (
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
@@ -61,6 +63,54 @@ func ValidateBaseline(filename string, data []byte) error {
 	}
 	if err := validated.Subsume(baseline, cue.Final(), cue.Raw()); err != nil {
 		return fmt.Errorf("baseline violates CUE policy: %w", err)
+	}
+	if err := validateAdditionalEgress(data); err != nil {
+		return fmt.Errorf("baseline violates CUE policy: %w", err)
+	}
+
+	return nil
+}
+
+// validateAdditionalEgress enforces relational list constraints after CUE fixes each rule's shape.
+func validateAdditionalEgress(data []byte) error {
+	const (
+		fixedEgressRules       = 3
+		maximumAdditionalRules = 16
+	)
+
+	var manifest struct {
+		NetworkACL struct {
+			Egress []struct {
+				Destination     string `json:"destination"`
+				DestinationPort string `json:"destination_port"`
+				Protocol        string `json:"protocol"`
+			} `json:"egress"`
+		} `json:"network_acl"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return fmt.Errorf("decode validated egress rules: %w", err)
+	}
+
+	rules := manifest.NetworkACL.Egress
+	if len(rules) > fixedEgressRules+maximumAdditionalRules {
+		return fmt.Errorf("additional egress exceeds %d rules", maximumAdditionalRules)
+	}
+
+	seen := make(map[string]struct{}, len(rules))
+	for index, rule := range rules {
+		key := rule.Protocol + "\x00" + rule.Destination + "\x00" + rule.DestinationPort
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("egress rule %d duplicates an earlier endpoint", index)
+		}
+		seen[key] = struct{}{}
+
+		if index < fixedEgressRules {
+			continue
+		}
+		port, err := strconv.Atoi(rule.DestinationPort)
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("additional egress rule %d has an invalid port", index)
+		}
 	}
 
 	return nil
