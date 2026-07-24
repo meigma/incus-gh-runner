@@ -53,6 +53,14 @@ Incus profile, and `capacity.max_runners` aligned with those ceilings. The
 module is not yet registry-published, so the rendered files remain local
 deployment artifacts for this increment.
 
+When runners need a service that cannot traverse the HTTPS proxy, add a named
+item to `network.additionalEgress` with its IPv4 address, `tcp` or `udp`
+protocol, and one destination port. Each item adds one exact `/32` permit after
+DNS and proxy. CIDR ranges, port ranges, actions, and rule state are not
+configurable, and the list accepts no more than 16 endpoints. Apply host
+firewall policy independently when an endpoint terminates on the managed bridge
+host because the Incus ACL does not constrain host-originated traffic.
+
 Edit the copy for the target host. In particular, replace every documentation
 address, bridge subnet, resource name, storage source, and capacity limit. For
 LVM, also replace the thin-pool name and default volume size. Managed

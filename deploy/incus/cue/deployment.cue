@@ -17,6 +17,8 @@ _#BridgeName: (_#DedicatedName & =~"^[a-z][a-z0-9-]{1,14}$") |
 _#PositiveInt: (int & >=1) | error("value must be a positive integer")
 _#ProxyPort:   (int & >=1 & <=65535 & !=53) |
 			error("proxy port must be between 1 and 65535 and must not be the DNS port")
+_#EndpointPort: (int & >=1 & <=65535) |
+	error("endpoint port must be between 1 and 65535")
 _#IPv4:          (net.IP & !~":") | error("value must be an IPv4 address")
 _#IPv4CIDR:      (net.IPCIDR & !~":") | error("value must be an IPv4 CIDR")
 _#StorageSource: (string & =~"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,254}$") |
@@ -103,6 +105,17 @@ _#LVMStorageInput: {
 			// port is the proxy TCP port and must not overlap DNS port 53.
 			port: _#ProxyPort & (*3128 | int)
 		}
+		// additionalEgress appends narrowly scoped endpoints to the fixed DNS and proxy policy.
+		additionalEgress: *[] | [...{
+			// name identifies the endpoint in the rendered ACL description.
+			name!: _#Name
+			// address is the endpoint's exact IPv4 destination.
+			address!: _#IPv4
+			// protocol restricts the endpoint to TCP or UDP.
+			protocol!: "tcp" | "udp"
+			// port is the endpoint's single destination port.
+			port!: _#EndpointPort
+		}]
 	}
 
 	// storage selects one narrowly configured dedicated backing store.
@@ -144,6 +157,8 @@ _#Baseline: {
 	_diskIOMiB:   >=1 & <=100000
 	_proxyPort:   strconv.Atoi(network_acl.egress[2].destination_port)
 	_proxyPort:   >=1 & <=65535 & !=53
+	_additionalEgressCount: len(network_acl.egress) - 3
+	_additionalEgressCount: >=0 & <=16
 
 	// schema_version identifies the baseline manifest schema.
 	schema_version: 1
@@ -333,57 +348,20 @@ _#Baseline: {
 	}
 	// network_acl is the desired controlled-egress ACL configuration.
 	network_acl: {
-		// description explains the ACL's default-deny egress boundary.
-		description: "Default-deny runner egress through controlled DNS and HTTPS proxy"
+		// description explains the ACL's controlled-egress purpose.
+		description: "Default-deny runner egress through controlled DNS and HTTPS proxy" |
+			"Default-deny runner egress through controlled endpoints"
 		// config contains ACL-level settings; none are permitted by this baseline.
 		config: {}
 		// ingress contains explicit ingress permits; none are permitted.
 		ingress: []
-		// egress contains the only DNS and proxy destinations runners may contact.
 		egress: [
-			{
-				// action permits traffic matching this rule.
-				action: "allow"
-				// state enables this rule.
-				state: "enabled"
-				// description identifies the controlled DNS-over-UDP permit.
-				description: "Controlled DNS over UDP"
-				// destination restricts the rule to the controlled DNS host.
-				destination: "\(network.config["dns.nameservers"])/32"
-				// protocol restricts the rule to UDP.
-				protocol: "udp"
-				// destination_port restricts the rule to DNS port 53.
-				destination_port: "53"
-			},
-			{
-				// action permits traffic matching this rule.
-				action: "allow"
-				// state enables this rule.
-				state: "enabled"
-				// description identifies the controlled DNS-over-TCP permit.
-				description: "Controlled DNS over TCP"
-				// destination restricts the rule to the controlled DNS host.
-				destination: "\(network.config["dns.nameservers"])/32"
-				// protocol restricts the rule to TCP.
-				protocol: "tcp"
-				// destination_port restricts the rule to DNS port 53.
-				destination_port: "53"
-			},
-			{
-				// action permits traffic matching this rule.
-				action: "allow"
-				// state enables this rule.
-				state: "enabled"
-				// description identifies the controlled HTTP CONNECT proxy permit.
-				description: "Controlled HTTP CONNECT proxy"
-				// destination restricts the rule to the controlled proxy host.
-				destination: _#IPv4HostCIDR
-				// protocol restricts the rule to TCP.
-				protocol: "tcp"
-				// destination_port restricts the rule to the configured proxy port.
-				destination_port: _#PositiveDecimalString
-			},
+			{destination: "\(network.config["dns.nameservers"])/32"},
+			{destination: "\(network.config["dns.nameservers"])/32"},
+			...,
 		]
+		// egress contains fixed DNS and proxy rules followed by at most 16 exact endpoints.
+		egress: [_#DNSUDPRule, _#DNSTCPRule, _#ProxyRule, ..._#AdditionalEgressRule]
 	}
 	// profile is the desired sole runner VM profile configuration.
 	profile: {
@@ -452,6 +430,42 @@ _#Baseline: {
 	}
 	// storage_pool is the desired dedicated runner storage pool configuration.
 	storage_pool: _#ZFSStoragePool | _#LVMStoragePool
+}
+
+_#DNSUDPRule: {
+	action:           "allow"
+	state:            "enabled"
+	description:      "Controlled DNS over UDP"
+	destination:      _#IPv4HostCIDR
+	protocol:         "udp"
+	destination_port: "53"
+}
+
+_#DNSTCPRule: {
+	action:           "allow"
+	state:            "enabled"
+	description:      "Controlled DNS over TCP"
+	destination:      _#IPv4HostCIDR
+	protocol:         "tcp"
+	destination_port: "53"
+}
+
+_#ProxyRule: {
+	action:           "allow"
+	state:            "enabled"
+	description:      "Controlled HTTP CONNECT proxy"
+	destination:      _#IPv4HostCIDR
+	protocol:         "tcp"
+	destination_port: _#PositiveDecimalString
+}
+
+_#AdditionalEgressRule: {
+	action:           "allow"
+	state:            "enabled"
+	description:      string & =~"^Controlled additional egress: [a-z][a-z0-9-]{0,62}$"
+	destination:      _#IPv4HostCIDR
+	protocol:         "tcp" | "udp"
+	destination_port: _#PositiveDecimalString
 }
 
 // _#ZFSStoragePool is the exact supported ZFS pool state.
@@ -531,14 +545,22 @@ _#LVMStoragePool: {
 			"dns.nameservers": inputs.network.dnsAddress
 			"ipv4.address":    inputs.network.ipv4Address
 		}
-		network_acl: egress: [
-			{},
-			{},
-			{
-				destination:      "\(inputs.network.proxy.address)/32"
-				destination_port: "\(inputs.network.proxy.port)"
-			},
-		]
+		network_acl: {
+			egress: [
+				{},
+				{},
+				{
+					destination:      "\(inputs.network.proxy.address)/32"
+					destination_port: "\(inputs.network.proxy.port)"
+				},
+				for endpoint in inputs.network.additionalEgress {
+					description:      "Controlled additional egress: \(endpoint.name)"
+					destination:      "\(endpoint.address)/32"
+					protocol:         endpoint.protocol
+					destination_port: "\(endpoint.port)"
+				},
+			]
+		}
 		profile: {
 			config: {
 				"limits.cpu":    "\(inputs.runners.cpu)"
@@ -559,6 +581,14 @@ _#LVMStoragePool: {
 			driver: inputs.storage.driver
 			config: source: inputs.storage.source
 		}
+	}
+
+	if len(inputs.network.additionalEgress) == 0 {
+		output: network_acl: description: "Default-deny runner egress through controlled DNS and HTTPS proxy"
+	}
+
+	if len(inputs.network.additionalEgress) > 0 {
+		output: network_acl: description: "Default-deny runner egress through controlled endpoints"
 	}
 
 	if inputs.storage.driver == "lvm" {
