@@ -118,8 +118,10 @@ func TestDemandSourceOptionsLeaveDisabledJobProofSinkNil(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
 	cfg := config.Defaults()
 	cfg.GitHub.ScaleSet = "incus-runners"
-	options := demandSourceOptions(cfg, 73, logger, nil, 0)
+	cfg.GitHub.MessagePollTimeout = 5 * time.Second
+	options := demandSourceOptions(cfg, 73, logger, nil)
 	require.Nil(t, options.JobStartedSink)
+	assert.Equal(t, 5*time.Second, options.MessagePollTimeout)
 	session := &jobStartedMessageSession{}
 	source, err := githubadapter.NewDemandSource(session, options)
 	require.NoError(t, err)
@@ -129,36 +131,6 @@ func TestDemandSourceOptionsLeaveDisabledJobProofSinkNil(t *testing.T) {
 	require.ErrorContains(t, err, "test message stream complete")
 	assert.Contains(t, logs.String(), "GitHub Actions job started")
 	assert.NotContains(t, logs.String(), "GitHub Actions job proof event dropped")
-}
-
-func TestDiagnosticMessagePollTimeout(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		value   string
-		want    time.Duration
-		wantErr string
-	}{
-		{name: "disabled", value: "", want: 0},
-		{name: "enabled", value: "1", want: 5 * time.Second},
-		{name: "trims enabled value", value: " 1\n", want: 5 * time.Second},
-		{name: "rejects arbitrary duration", value: "10s", wantErr: "must be unset or 1"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := diagnosticMessagePollTimeout(tt.value)
-
-			if tt.wantErr != "" {
-				require.ErrorContains(t, err, tt.wantErr)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
-		})
-	}
 }
 
 func TestResolvePersonalAccessToken(t *testing.T) {

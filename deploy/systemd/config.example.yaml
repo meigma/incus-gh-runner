@@ -3,6 +3,8 @@ github:
   scale_set: incus-linux-x64
   # Required for repository scope; use a private repo unless public-repo threat review is complete.
   runner_group: default
+  # Optional workaround for actions/scaleset#122; 0s keeps the upstream long poll.
+  # message_poll_timeout: 5s
 # GitHub credentials are supplied by one systemd credential drop-in.
 incus:
   project: github-runners

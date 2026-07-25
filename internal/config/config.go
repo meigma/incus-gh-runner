@@ -14,15 +14,16 @@ import (
 )
 
 const (
-	defaultMaxRunners        = 1
-	defaultIncusOperations   = 2
-	defaultReconcileInterval = time.Second
-	defaultOperationTimeout  = 5 * time.Minute
-	defaultShutdownTimeout   = 30 * time.Second
-	defaultBootstrapTimeout  = 5 * time.Minute
-	defaultRetryInitial      = time.Second
-	defaultRetryMaximum      = 30 * time.Second
-	defaultRunnerGroup       = "default"
+	defaultMaxRunners         = 1
+	defaultIncusOperations    = 2
+	defaultReconcileInterval  = time.Second
+	defaultOperationTimeout   = 5 * time.Minute
+	defaultShutdownTimeout    = 30 * time.Second
+	defaultBootstrapTimeout   = 5 * time.Minute
+	defaultRetryInitial       = time.Second
+	defaultRetryMaximum       = 30 * time.Second
+	defaultRunnerGroup        = "default"
+	minimumMessagePollTimeout = 5 * time.Second
 
 	// KeyMinRunners identifies the configured idle capacity floor.
 	KeyMinRunners = "capacity.min_runners"
@@ -46,6 +47,8 @@ const (
 	KeyGitHubScaleSet = "github.scale_set"
 	// KeyGitHubRunnerGroup identifies the runner group containing the scale set.
 	KeyGitHubRunnerGroup = "github.runner_group"
+	// KeyGitHubMessagePollTimeout identifies the optional GitHub long-poll reset interval.
+	KeyGitHubMessagePollTimeout = "github.message_poll_timeout"
 	// KeyGitHubAppClientID identifies the GitHub App client ID.
 	KeyGitHubAppClientID = "github.app.client_id"
 	// KeyGitHubAppInstallationID identifies the GitHub App installation ID.
@@ -107,6 +110,8 @@ type GitHub struct {
 	ScaleSet string `mapstructure:"scale_set"`
 	// RunnerGroup is the existing GitHub runner group containing the scale set.
 	RunnerGroup string `mapstructure:"runner_group"`
+	// MessagePollTimeout optionally resets an active GitHub message long poll.
+	MessagePollTimeout time.Duration `mapstructure:"message_poll_timeout"`
 	// App contains preferred GitHub App credentials.
 	App GitHubApp `mapstructure:"app"`
 	// Token contains the environment-only PAT and is never decoded from YAML.
@@ -190,45 +195,47 @@ type Retry struct {
 func ConfigureViper(vp *viper.Viper) error {
 	defaultConfig := Defaults()
 	defaults := map[string]any{
-		KeyMinRunners:            defaultConfig.Capacity.MinRunners,
-		KeyMaxRunners:            defaultConfig.Capacity.MaxRunners,
-		KeyIncusOperations:       defaultConfig.Concurrency.IncusOperations,
-		KeyReconcileInterval:     defaultConfig.ReconcileInterval,
-		KeyOperationTimeout:      defaultConfig.Timeouts.IncusOperation,
-		KeyShutdownTimeout:       defaultConfig.Timeouts.Shutdown,
-		KeyRetryInitial:          defaultConfig.Retry.Initial,
-		KeyRetryMaximum:          defaultConfig.Retry.Maximum,
-		KeyGitHubRunnerGroup:     defaultConfig.GitHub.RunnerGroup,
-		KeyIncusBootstrapTimeout: defaultConfig.Incus.BootstrapTimeout,
+		KeyMinRunners:               defaultConfig.Capacity.MinRunners,
+		KeyMaxRunners:               defaultConfig.Capacity.MaxRunners,
+		KeyIncusOperations:          defaultConfig.Concurrency.IncusOperations,
+		KeyReconcileInterval:        defaultConfig.ReconcileInterval,
+		KeyOperationTimeout:         defaultConfig.Timeouts.IncusOperation,
+		KeyShutdownTimeout:          defaultConfig.Timeouts.Shutdown,
+		KeyRetryInitial:             defaultConfig.Retry.Initial,
+		KeyRetryMaximum:             defaultConfig.Retry.Maximum,
+		KeyGitHubRunnerGroup:        defaultConfig.GitHub.RunnerGroup,
+		KeyGitHubMessagePollTimeout: defaultConfig.GitHub.MessagePollTimeout,
+		KeyIncusBootstrapTimeout:    defaultConfig.Incus.BootstrapTimeout,
 	}
 	for key, value := range defaults {
 		vp.SetDefault(key, value)
 	}
 
 	environment := map[string]string{
-		KeyMinRunners:              "INCUS_GH_RUNNER_CAPACITY_MIN_RUNNERS",
-		KeyMaxRunners:              "INCUS_GH_RUNNER_CAPACITY_MAX_RUNNERS",
-		KeyIncusOperations:         "INCUS_GH_RUNNER_CONCURRENCY_INCUS_OPERATIONS",
-		KeyReconcileInterval:       "INCUS_GH_RUNNER_RECONCILE_INTERVAL",
-		KeyOperationTimeout:        "INCUS_GH_RUNNER_TIMEOUTS_INCUS_OPERATION",
-		KeyShutdownTimeout:         "INCUS_GH_RUNNER_TIMEOUTS_SHUTDOWN",
-		KeyRetryInitial:            "INCUS_GH_RUNNER_RETRY_INITIAL",
-		KeyRetryMaximum:            "INCUS_GH_RUNNER_RETRY_MAXIMUM",
-		KeyGitHubConfigURL:         "INCUS_GH_RUNNER_GITHUB_CONFIG_URL",
-		KeyGitHubScaleSet:          "INCUS_GH_RUNNER_GITHUB_SCALE_SET",
-		KeyGitHubRunnerGroup:       "INCUS_GH_RUNNER_GITHUB_RUNNER_GROUP",
-		KeyGitHubAppClientID:       "INCUS_GH_RUNNER_GITHUB_APP_CLIENT_ID",
-		KeyGitHubAppInstallationID: "INCUS_GH_RUNNER_GITHUB_APP_INSTALLATION_ID",
-		KeyGitHubAppPrivateKeyFile: "INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE",
-		KeyGitHubTokenFile:         EnvGitHubTokenFile,
-		KeyJobProofHostID:          "INCUS_GH_RUNNER_JOB_PROOF_HOST_ID",
-		KeyJobProofSigningKeyFile:  EnvJobProofSigningKeyFile,
-		KeyIncusSocket:             "INCUS_GH_RUNNER_INCUS_SOCKET",
-		KeyIncusProject:            "INCUS_GH_RUNNER_INCUS_PROJECT",
-		KeyIncusImage:              "INCUS_GH_RUNNER_INCUS_IMAGE",
-		KeyIncusOwner:              "INCUS_GH_RUNNER_INCUS_OWNER",
-		KeyIncusBootstrapTimeout:   "INCUS_GH_RUNNER_INCUS_BOOTSTRAP_TIMEOUT",
-		KeyIncusDiagnosticsDir:     "INCUS_GH_RUNNER_INCUS_DIAGNOSTICS_DIR",
+		KeyMinRunners:               "INCUS_GH_RUNNER_CAPACITY_MIN_RUNNERS",
+		KeyMaxRunners:               "INCUS_GH_RUNNER_CAPACITY_MAX_RUNNERS",
+		KeyIncusOperations:          "INCUS_GH_RUNNER_CONCURRENCY_INCUS_OPERATIONS",
+		KeyReconcileInterval:        "INCUS_GH_RUNNER_RECONCILE_INTERVAL",
+		KeyOperationTimeout:         "INCUS_GH_RUNNER_TIMEOUTS_INCUS_OPERATION",
+		KeyShutdownTimeout:          "INCUS_GH_RUNNER_TIMEOUTS_SHUTDOWN",
+		KeyRetryInitial:             "INCUS_GH_RUNNER_RETRY_INITIAL",
+		KeyRetryMaximum:             "INCUS_GH_RUNNER_RETRY_MAXIMUM",
+		KeyGitHubConfigURL:          "INCUS_GH_RUNNER_GITHUB_CONFIG_URL",
+		KeyGitHubScaleSet:           "INCUS_GH_RUNNER_GITHUB_SCALE_SET",
+		KeyGitHubRunnerGroup:        "INCUS_GH_RUNNER_GITHUB_RUNNER_GROUP",
+		KeyGitHubMessagePollTimeout: "INCUS_GH_RUNNER_GITHUB_MESSAGE_POLL_TIMEOUT",
+		KeyGitHubAppClientID:        "INCUS_GH_RUNNER_GITHUB_APP_CLIENT_ID",
+		KeyGitHubAppInstallationID:  "INCUS_GH_RUNNER_GITHUB_APP_INSTALLATION_ID",
+		KeyGitHubAppPrivateKeyFile:  "INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE",
+		KeyGitHubTokenFile:          EnvGitHubTokenFile,
+		KeyJobProofHostID:           "INCUS_GH_RUNNER_JOB_PROOF_HOST_ID",
+		KeyJobProofSigningKeyFile:   EnvJobProofSigningKeyFile,
+		KeyIncusSocket:              "INCUS_GH_RUNNER_INCUS_SOCKET",
+		KeyIncusProject:             "INCUS_GH_RUNNER_INCUS_PROJECT",
+		KeyIncusImage:               "INCUS_GH_RUNNER_INCUS_IMAGE",
+		KeyIncusOwner:               "INCUS_GH_RUNNER_INCUS_OWNER",
+		KeyIncusBootstrapTimeout:    "INCUS_GH_RUNNER_INCUS_BOOTSTRAP_TIMEOUT",
+		KeyIncusDiagnosticsDir:      "INCUS_GH_RUNNER_INCUS_DIAGNOSTICS_DIR",
 	}
 	for key, name := range environment {
 		if err := vp.BindEnv(key, name); err != nil {
@@ -505,6 +512,12 @@ func validConfigURLPort(port string) (bool, bool) {
 func (c Config) Validate() error {
 	if err := validateJobProof(c.JobProof); err != nil {
 		return err
+	}
+	if c.GitHub.MessagePollTimeout < 0 {
+		return errors.New("github.message_poll_timeout must not be negative")
+	}
+	if c.GitHub.MessagePollTimeout > 0 && c.GitHub.MessagePollTimeout < minimumMessagePollTimeout {
+		return errors.New("github.message_poll_timeout must be at least 5s when set")
 	}
 	if c.Capacity.MinRunners < 0 {
 		return errors.New("capacity.min_runners must not be negative")

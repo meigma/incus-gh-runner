@@ -45,7 +45,7 @@ func TestObservedMessageSessionLogsOnlySecretSafeMetadata(t *testing.T) {
 	assert.NotContains(t, logs.String(), secret)
 }
 
-func TestObservedMessageSessionTranslatesOnlyItsDiagnosticTimeout(t *testing.T) {
+func TestObservedMessageSessionTranslatesOnlyItsConfiguredTimeout(t *testing.T) {
 	t.Parallel()
 
 	session := newFakeMessageSession(
@@ -100,7 +100,7 @@ func TestObservedMessageSessionPreservesUpstreamErrors(t *testing.T) {
 	assert.Nil(t, message)
 }
 
-func TestObservedMessageSessionDoesNotHideUpstreamErrorAtDiagnosticDeadline(t *testing.T) {
+func TestObservedMessageSessionDoesNotHideUpstreamErrorAtConfiguredDeadline(t *testing.T) {
 	t.Parallel()
 
 	upstreamErr := errors.New("unavailable")

@@ -16,6 +16,7 @@ func TestValidateYAMLAcceptsExactConfiguration(t *testing.T) {
   config_url: https://github.com/meigma/incus-gh-runner
   scale_set: incus-runners
   runner_group: default
+  message_poll_timeout: 5s
   app:
     client_id: Iv1.example
     installation_id: 1234

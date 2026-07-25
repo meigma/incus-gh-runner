@@ -282,7 +282,7 @@ type DemandSourceOptions struct {
 	ReconnectMaximum time.Duration
 	// SessionCloseTimeout bounds cleanup of each replaced GitHub message session.
 	SessionCloseTimeout time.Duration
-	// MessagePollTimeout optionally shortens long polls for bounded diagnostic experiments.
+	// MessagePollTimeout optionally resets active GitHub message long polls.
 	MessagePollTimeout time.Duration
 	// JobStartedSink receives validated proof events without blocking callbacks when configured.
 	JobStartedSink provenance.JobStartedSink

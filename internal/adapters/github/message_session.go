@@ -9,9 +9,9 @@ import (
 	"github.com/actions/scaleset"
 )
 
-var errDiagnosticMessagePollTimeout = errors.New("diagnostic message poll timeout")
+var errMessagePollTimeout = errors.New("configured message poll timeout")
 
-// observedMessageSession records secret-safe message timing and can bound polls for diagnostics.
+// observedMessageSession records secret-safe message timing and can bound active polls.
 type observedMessageSession struct {
 	messageSession
 
@@ -48,13 +48,13 @@ func (s *observedMessageSession) GetMessage(
 		"started_at", startedAt,
 		"last_message_id", lastMessageID,
 		"max_capacity", maxCapacity,
-		"diagnostic_timeout", s.pollTimeout,
+		"poll_timeout", s.pollTimeout,
 	)
 
 	pollContext := ctx
 	cancel := func() {}
 	if s.pollTimeout > 0 {
-		pollContext, cancel = context.WithTimeoutCause(ctx, s.pollTimeout, errDiagnosticMessagePollTimeout)
+		pollContext, cancel = context.WithTimeoutCause(ctx, s.pollTimeout, errMessagePollTimeout)
 	}
 	defer cancel()
 
@@ -63,14 +63,14 @@ func (s *observedMessageSession) GetMessage(
 	duration := completedAt.Sub(startedAt)
 	if err != nil {
 		if ctx.Err() == nil &&
-			errors.Is(context.Cause(pollContext), errDiagnosticMessagePollTimeout) &&
+			errors.Is(context.Cause(pollContext), errMessagePollTimeout) &&
 			errors.Is(err, context.DeadlineExceeded) {
 			s.logger.InfoContext(
 				ctx,
 				"GitHub message poll completed",
 				"completed_at", completedAt,
 				"duration", duration,
-				"outcome", "diagnostic_timeout",
+				"outcome", "configured_timeout",
 			)
 			return nil, nil //nolint:nilnil // The listener treats an expired empty long poll as healthy contact.
 		}

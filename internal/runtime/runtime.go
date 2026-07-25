@@ -23,11 +23,6 @@ import (
 	"github.com/meigma/incus-gh-runner/internal/provenance"
 )
 
-const (
-	envDiagnosticShortPoll     = "INCUS_GH_RUNNER_DIAGNOSTIC_SHORT_POLL"
-	diagnosticShortPollTimeout = 5 * time.Second
-)
-
 // BuildInfo identifies the executable in GitHub scale-set client requests.
 type BuildInfo struct {
 	// Version is the release version or development marker.
@@ -115,17 +110,11 @@ func Run(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.L
 
 // prepare preflights Incus before resolving GitHub state and preparing message-session recovery.
 func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.Logger) (*components, error) {
-	messagePollTimeout, diagnosticErr := diagnosticMessagePollTimeout(
-		os.Getenv(envDiagnosticShortPoll),
-	)
-	if diagnosticErr != nil {
-		return nil, diagnosticErr
-	}
-	if messagePollTimeout > 0 {
+	if cfg.GitHub.MessagePollTimeout > 0 {
 		logger.WarnContext(
 			ctx,
-			"diagnostic GitHub message short polling enabled",
-			"poll_timeout", messagePollTimeout,
+			"GitHub message poll timeout override enabled",
+			"poll_timeout", cfg.GitHub.MessagePollTimeout,
 		)
 	}
 
@@ -179,7 +168,7 @@ func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *sl
 	}
 
 	sessionOwner := resolveSessionOwner(ctx, logger)
-	demandOptions := demandSourceOptions(cfg, resolved.ID(), logger, proofQueue, messagePollTimeout)
+	demandOptions := demandSourceOptions(cfg, resolved.ID(), logger, proofQueue)
 	demandSource, sourceErr := githubadapter.NewResilientDemandSource(
 		ctx,
 		githubClient,
@@ -218,7 +207,6 @@ func demandSourceOptions(
 	scaleSetID int,
 	logger *slog.Logger,
 	proofQueue *provenance.JobStartedQueue,
-	messagePollTimeout time.Duration,
 ) githubadapter.DemandSourceOptions {
 	options := githubadapter.DemandSourceOptions{
 		ScaleSetID:          scaleSetID,
@@ -229,25 +217,13 @@ func demandSourceOptions(
 		ReconnectInitial:    cfg.Retry.Initial,
 		ReconnectMaximum:    cfg.Retry.Maximum,
 		SessionCloseTimeout: cfg.Timeouts.Shutdown,
-		MessagePollTimeout:  messagePollTimeout,
+		MessagePollTimeout:  cfg.GitHub.MessagePollTimeout,
 	}
 	if proofQueue != nil {
 		options.JobStartedSink = proofQueue
 	}
 
 	return options
-}
-
-// diagnosticMessagePollTimeout resolves the deliberately narrow, non-YAML canary switch.
-func diagnosticMessagePollTimeout(value string) (time.Duration, error) {
-	switch strings.TrimSpace(value) {
-	case "":
-		return 0, nil
-	case "1":
-		return diagnosticShortPollTimeout, nil
-	default:
-		return 0, fmt.Errorf("%s must be unset or 1", envDiagnosticShortPoll)
-	}
 }
 
 // prepareJobProofSigner loads the optional signing credential exactly once during startup.
