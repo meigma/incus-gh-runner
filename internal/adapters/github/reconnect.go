@@ -108,6 +108,9 @@ func validateReconnectOptions(options DemandSourceOptions) error {
 	if options.SessionCloseTimeout <= 0 {
 		return errors.New("message-session close timeout must be positive")
 	}
+	if options.MessagePollTimeout < 0 {
+		return errors.New("message poll timeout must not be negative")
+	}
 	return nil
 }
 
@@ -163,7 +166,12 @@ func (s *ResilientDemandSource) runSession(
 	onContact func(),
 	generation uint64,
 ) error {
-	source, err := NewDemandSource(session, s.options)
+	observed := newObservedMessageSession(
+		session,
+		s.options.Logger.WithGroup("message_poll"),
+		s.options.MessagePollTimeout,
+	)
+	source, err := NewDemandSource(observed, s.options)
 	if err != nil {
 		return err
 	}
