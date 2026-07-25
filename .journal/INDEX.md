@@ -26,3 +26,4 @@
 | 022 | 2026-07-21 | Remove bash test-script debt | complete | Removed all non-product bash test/validation scripts and live harnesses with their CI tasks and docs references through PR #44. |
 | 023 | 2026-07-21 | Remove the reference image surface | complete | Removed the reference image, distrobuilder toolchain, and their CI/docs surface through PR #45, keeping `guest/` as product code and adding a single image-hardening how-to. |
 | 024 | 2026-07-22 | Add LVM isolation baseline support | in-progress | Extend the closed Incus storage policy and packaged validator with a narrow LVM thin-pool variant while preserving default ZFS compatibility. |
+| 025 | 2026-07-25 | Investigate machine-proof availability delay | in-progress | Investigate the consistent Phoenix CI delay between job execution starting and the signed machine proof becoming available. |
