@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/actions/scaleset"
 	"github.com/google/uuid"
@@ -117,8 +118,10 @@ func TestDemandSourceOptionsLeaveDisabledJobProofSinkNil(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
 	cfg := config.Defaults()
 	cfg.GitHub.ScaleSet = "incus-runners"
+	cfg.GitHub.MessagePollTimeout = 5 * time.Second
 	options := demandSourceOptions(cfg, 73, logger, nil)
 	require.Nil(t, options.JobStartedSink)
+	assert.Equal(t, 5*time.Second, options.MessagePollTimeout)
 	session := &jobStartedMessageSession{}
 	source, err := githubadapter.NewDemandSource(session, options)
 	require.NoError(t, err)

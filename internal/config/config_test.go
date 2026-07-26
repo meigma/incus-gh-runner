@@ -16,6 +16,7 @@ func TestLoadUsesDefaultsAndExplicitEnvironment(t *testing.T) {
 	t.Setenv("INCUS_GH_RUNNER_CAPACITY_MAX_RUNNERS", "4")
 	t.Setenv("INCUS_GH_RUNNER_TIMEOUTS_SHUTDOWN", "45s")
 	t.Setenv("INCUS_GH_RUNNER_RETRY_MAXIMUM", "20s")
+	t.Setenv("INCUS_GH_RUNNER_GITHUB_MESSAGE_POLL_TIMEOUT", "7s")
 	t.Setenv(config.EnvGitHubToken, "development-token")
 	t.Setenv("INCUS_GH_RUNNER_JOB_PROOF_HOST_ID", " builder-host-01 ")
 	t.Setenv(config.EnvJobProofSigningKeyFile, " /run/credentials/incus-gh-runner.service/machine-provenance-key ")
@@ -31,6 +32,7 @@ func TestLoadUsesDefaultsAndExplicitEnvironment(t *testing.T) {
 	assert.Equal(t, 45*time.Second, cfg.Timeouts.Shutdown)
 	assert.Equal(t, time.Second, cfg.Retry.Initial)
 	assert.Equal(t, 20*time.Second, cfg.Retry.Maximum)
+	assert.Equal(t, 7*time.Second, cfg.GitHub.MessagePollTimeout)
 	assert.Equal(t, "development-token", cfg.GitHub.Token)
 	assert.Equal(t, "default", cfg.GitHub.RunnerGroup)
 	assert.Equal(t, 5*time.Minute, cfg.Incus.BootstrapTimeout)
@@ -83,6 +85,20 @@ func TestValidateRejectsInvalidConfiguration(t *testing.T) {
 		mutate func(*config.Config)
 		want   string
 	}{
+		{
+			name: "negative GitHub message poll timeout",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.MessagePollTimeout = -time.Second
+			},
+			want: "github.message_poll_timeout must not be negative",
+		},
+		{
+			name: "GitHub message poll timeout below safe minimum",
+			mutate: func(cfg *config.Config) {
+				cfg.GitHub.MessagePollTimeout = 4999 * time.Millisecond
+			},
+			want: "github.message_poll_timeout must be at least 5s when set",
+		},
 		{
 			name: "job proof host without key",
 			mutate: func(cfg *config.Config) {

@@ -29,10 +29,17 @@ Duration values use Go duration syntax (for example `30s`, `5m`).
 | `github.config_url` | string | — | Required. Absolute HTTPS GitHub or GHES organization or repository URL. GitHub-hosted domains may not specify a port; GHES ports must be valid. Enterprise URLs, trailing DNS dots, userinfo, query strings, fragments, escaped paths, and other path shapes are rejected. |
 | `github.scale_set` | string | — | Required. Non-empty and exactly representable by the GitHub client without query decoding. Also used as the sole runner label. A pre-existing scale set must have that exact label and runner self-update disabled. |
 | `github.runner_group` | string | `default` | Controller validation requires a non-empty, exactly representable value, `default` at repository scope, and an explicit non-default name at organization scope. The controller does not enforce the group's repository or workflow policy; restricting the organization group to selected repositories and commit-pinned workflows is a separate GitHub-side control (see [Deploy](../how-to/deploy.md#2-choose-the-github-scope-and-credential)). |
+| `github.message_poll_timeout` | duration | `0s` | Optional workaround for [actions/scaleset#122](https://github.com/actions/scaleset/issues/122). `0s` preserves the upstream long poll. A nonzero value must be at least `5s`; when it expires, the controller treats that poll as an empty response and immediately opens the next poll. |
 | `github.token_file` | string | — | PAT file read once at startup. Mutually exclusive with `github.app` and `INCUS_GH_RUNNER_GITHUB_TOKEN`. |
 | `github.app.client_id` | string | — | Required if GitHub App credentials are configured. |
 | `github.app.installation_id` | int64 | — | Required if GitHub App credentials are configured. Must be greater than `0`. |
 | `github.app.private_key_file` | string | — | Required if GitHub App credentials are configured. Path to a PEM file, read once at startup. |
+
+!!! warning "Temporary workaround increases message API traffic"
+    At `5s`, an idle controller can make up to about 12 message requests per
+    minute instead of about 1.2 with the upstream 50-second long poll. Enable
+    this only while the upstream issue remains unresolved, and remove the
+    override once the client or service wakes active polls reliably.
 
 ### `incus`
 
@@ -118,6 +125,7 @@ Examples:
 | YAML key | Environment variable |
 |---|---|
 | `github.config_url` | `INCUS_GH_RUNNER_GITHUB_CONFIG_URL` |
+| `github.message_poll_timeout` | `INCUS_GH_RUNNER_GITHUB_MESSAGE_POLL_TIMEOUT` |
 | `incus.project` | `INCUS_GH_RUNNER_INCUS_PROJECT` |
 | `capacity.min_runners` | `INCUS_GH_RUNNER_CAPACITY_MIN_RUNNERS` |
 | `timeouts.shutdown` | `INCUS_GH_RUNNER_TIMEOUTS_SHUTDOWN` |

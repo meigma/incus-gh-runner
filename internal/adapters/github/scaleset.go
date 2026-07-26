@@ -282,6 +282,8 @@ type DemandSourceOptions struct {
 	ReconnectMaximum time.Duration
 	// SessionCloseTimeout bounds cleanup of each replaced GitHub message session.
 	SessionCloseTimeout time.Duration
+	// MessagePollTimeout optionally resets active GitHub message long polls.
+	MessagePollTimeout time.Duration
 	// JobStartedSink receives validated proof events without blocking callbacks when configured.
 	JobStartedSink provenance.JobStartedSink
 }
@@ -382,6 +384,7 @@ func (h *demandHandler) HandleDesiredRunnerCount(_ context.Context, count int) (
 // HandleJobStarted records a secret-safe lifecycle event.
 func (h *demandHandler) HandleJobStarted(ctx context.Context, job *scaleset.JobStarted) error {
 	if job != nil {
+		callbackTime := time.Now().UTC()
 		if job.RunnerName != "" {
 			h.busy[job.RunnerName] = struct{}{}
 		}
@@ -392,6 +395,14 @@ func (h *demandHandler) HandleJobStarted(ctx context.Context, job *scaleset.JobS
 			job.RunnerName,
 			"job_id",
 			job.JobID,
+			"queue_time",
+			job.QueueTime,
+			"scale_set_assign_time",
+			job.ScaleSetAssignTime,
+			"runner_assign_time",
+			job.RunnerAssignTime,
+			"callback_time",
+			callbackTime,
 		)
 		if h.options.JobStartedSink != nil {
 			event := provenance.JobStarted{

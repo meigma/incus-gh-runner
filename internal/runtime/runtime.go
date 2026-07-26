@@ -110,6 +110,14 @@ func Run(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.L
 
 // prepare preflights Incus before resolving GitHub state and preparing message-session recovery.
 func prepare(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.Logger) (*components, error) {
+	if cfg.GitHub.MessagePollTimeout > 0 {
+		logger.WarnContext(
+			ctx,
+			"GitHub message poll timeout override enabled",
+			"poll_timeout", cfg.GitHub.MessagePollTimeout,
+		)
+	}
+
 	jobProof, proofErr := prepareJobProofSigner(cfg.JobProof)
 	if proofErr != nil {
 		return nil, proofErr
@@ -209,6 +217,7 @@ func demandSourceOptions(
 		ReconnectInitial:    cfg.Retry.Initial,
 		ReconnectMaximum:    cfg.Retry.Maximum,
 		SessionCloseTimeout: cfg.Timeouts.Shutdown,
+		MessagePollTimeout:  cfg.GitHub.MessagePollTimeout,
 	}
 	if proofQueue != nil {
 		options.JobStartedSink = proofQueue
