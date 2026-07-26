@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/meigma/incus-gh-runner/compare/v1.2.0...v1.3.0) (2026-07-26)
+
+
+### Features
+
+* **github:** configure message poll timeout ([#58](https://github.com/meigma/incus-gh-runner/issues/58)) ([9b0f2a5](https://github.com/meigma/incus-gh-runner/commit/9b0f2a52b7e14424640d1b5dd6d4715c8cbab362))
+
 ## [1.2.0](https://github.com/meigma/incus-gh-runner/compare/v1.1.0...v1.2.0) (2026-07-24)
 
 
