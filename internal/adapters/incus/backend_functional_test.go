@@ -27,13 +27,13 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 	testContext, cancelTest := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancelTest()
 
-	server, err := ConnectUnix(testContext, os.Getenv("INCUS_GH_RUNNER_TEST_SOCKET"), project)
-	require.NoError(t, err)
+	server := connectFunctionalTestServer(testContext, t, project)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	mailbox := controller.NewMailbox()
 	probeSecret := "functional-probe-" + uuid.NewString()
 	diagnosticsObserved := make(chan Diagnostics, 1)
+	fencer := testFencerFunc(func(context.Context, string) error { return nil })
 	backend, err := NewBackend(server, Options{
 		Project:          project,
 		Image:            image,
@@ -41,9 +41,7 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 		Owner:            "functional-test-" + uuid.NewString(),
 		BootstrapTimeout: 5 * time.Minute,
 		Logger:           logger,
-		RunnerFencer: testFencerFunc(func(context.Context, string) error {
-			return nil
-		}),
+		RunnerFencer:     fencer,
 		Payloads: PayloadSourceFunc(func(_ context.Context, runnerName string) (Payload, error) {
 			return Payload{
 				Version:   1,
@@ -69,6 +67,7 @@ func TestIncusLifecycleFunctional(t *testing.T) {
 
 	ctrl, err := controller.New(controller.Options{
 		Backend:           backend,
+		Fencer:            fencer,
 		Demand:            mailbox.Updates(),
 		Logger:            logger,
 		MinRunners:        0,

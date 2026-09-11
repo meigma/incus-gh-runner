@@ -63,9 +63,9 @@ func TestValidateBaselineRejectsWeakening(t *testing.T) {
 			},
 		},
 		{
-			name: "exposed API",
+			name: "cluster API",
 			mutate: func(t *testing.T, baseline map[string]any) {
-				policyObject(t, baseline, "server")["core_https_address"] = "127.0.0.1:8443"
+				policyObject(t, baseline, "server")["cluster_https_address"] = "127.0.0.1:8444"
 			},
 		},
 		{
@@ -190,6 +190,78 @@ func TestValidateBaselineRejectsWeakening(t *testing.T) {
 			err := ValidateBaseline("invalid.json", encodePolicyFixture(t, baseline))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "baseline violates CUE policy")
+		})
+	}
+}
+
+// TestValidateBaselineCoreHTTPSAddress proves HTTPS authority needs a concrete listener.
+func TestValidateBaselineCoreHTTPSAddress(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		mode    string
+		address string
+		wantErr string
+	}{
+		{name: "disabled unix listener", address: ""},
+		{name: "https loopback IPv4", mode: "dedicated-host-https", address: "127.0.0.1:8443"},
+		{name: "https loopback IPv6", mode: "dedicated-host-https", address: "[::1]:8443"},
+		{name: "https hostname", mode: "dedicated-host-https", address: "incus.example:8443"},
+		{
+			name:    "https unspecified IPv4",
+			mode:    "dedicated-host-https",
+			address: "0.0.0.0:8443",
+			wantErr: "core_https_address",
+		},
+		{
+			name:    "https unspecified IPv6",
+			mode:    "dedicated-host-https",
+			address: "[::]:8443",
+			wantErr: "core_https_address",
+		},
+		{name: "https missing host", mode: "dedicated-host-https", address: ":8443", wantErr: "core_https_address"},
+		{
+			name:    "https URL",
+			mode:    "dedicated-host-https",
+			address: "https://127.0.0.1:8443",
+			wantErr: "core_https_address",
+		},
+		{
+			name:    "https arbitrary string",
+			mode:    "dedicated-host-https",
+			address: "public",
+			wantErr: "core_https_address",
+		},
+		{
+			name:    "https without listener",
+			mode:    "dedicated-host-https",
+			address: "",
+			wantErr: "baseline violates CUE policy",
+		},
+		{
+			name:    "unix with listener",
+			mode:    "dedicated-host-unix-socket",
+			address: "127.0.0.1:8443",
+			wantErr: "baseline violates CUE policy",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			baseline := decodePolicyFixture(t, "baseline.example.json")
+			if tt.mode != "" {
+				policyObject(t, baseline, "authority")["mode"] = tt.mode
+			}
+			policyObject(t, baseline, "server")["core_https_address"] = tt.address
+			err := ValidateBaseline("listener.json", encodePolicyFixture(t, baseline))
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "baseline violates CUE policy")
+			assert.Contains(t, err.Error(), tt.wantErr)
 		})
 	}
 }

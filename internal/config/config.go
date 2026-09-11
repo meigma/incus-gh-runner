@@ -61,8 +61,16 @@ const (
 	KeyJobProofHostID = "job_proof.host_id"
 	// KeyJobProofSigningKeyFile identifies the protected Ed25519 private-key path.
 	KeyJobProofSigningKeyFile = "job_proof.signing_key_file"
-	// KeyIncusSocket identifies an optional Incus Unix socket path.
+	// KeyIncusSocket identifies a local Incus Unix socket path.
 	KeyIncusSocket = "incus.socket"
+	// KeyIncusURL identifies a remote Incus HTTPS endpoint.
+	KeyIncusURL = "incus.url"
+	// KeyIncusClientCertFile identifies the TLS client certificate path.
+	KeyIncusClientCertFile = "incus.client_cert_file"
+	// KeyIncusClientKeyFile identifies the TLS client private-key path.
+	KeyIncusClientKeyFile = "incus.client_key_file"
+	// KeyIncusServerCertFile identifies the pinned Incus server certificate path.
+	KeyIncusServerCertFile = "incus.server_cert_file"
 	// KeyIncusProject identifies the preconfigured Incus project.
 	KeyIncusProject = "incus.project"
 	// KeyIncusImage identifies the existing runner image alias or fingerprint.
@@ -143,10 +151,24 @@ func (j JobProof) Enabled() bool {
 	return strings.TrimSpace(j.HostID) != "" && strings.TrimSpace(j.SigningKeyFile) != ""
 }
 
+// IncusConnection selects exactly one local Unix socket or remote HTTPS endpoint.
+type IncusConnection struct {
+	// Socket selects a local Incus Unix socket. It is mutually exclusive with URL.
+	Socket string `mapstructure:"socket"`
+	// URL selects a remote Incus HTTPS endpoint. It is mutually exclusive with Socket.
+	URL string `mapstructure:"url"`
+	// ClientCertFile is the TLS client certificate path used with URL.
+	ClientCertFile string `mapstructure:"client_cert_file"`
+	// ClientKeyFile is the TLS client private-key path used with URL.
+	ClientKeyFile string `mapstructure:"client_key_file"`
+	// ServerCertFile is the pinned Incus server certificate path used with URL.
+	ServerCertFile string `mapstructure:"server_cert_file"`
+}
+
 // Incus contains references to the preconfigured runner environment.
 type Incus struct {
-	// Socket optionally selects a non-default local Incus Unix socket.
-	Socket string `mapstructure:"socket"`
+	IncusConnection `mapstructure:",squash"`
+
 	// Project is the existing Incus project used for runner VMs.
 	Project string `mapstructure:"project"`
 	// Image is an existing local runner image alias or fingerprint.
@@ -231,6 +253,10 @@ func ConfigureViper(vp *viper.Viper) error {
 		KeyJobProofHostID:           "INCUS_GH_RUNNER_JOB_PROOF_HOST_ID",
 		KeyJobProofSigningKeyFile:   EnvJobProofSigningKeyFile,
 		KeyIncusSocket:              "INCUS_GH_RUNNER_INCUS_SOCKET",
+		KeyIncusURL:                 "INCUS_GH_RUNNER_INCUS_URL",
+		KeyIncusClientCertFile:      "INCUS_GH_RUNNER_INCUS_CLIENT_CERT_FILE",
+		KeyIncusClientKeyFile:       "INCUS_GH_RUNNER_INCUS_CLIENT_KEY_FILE",
+		KeyIncusServerCertFile:      "INCUS_GH_RUNNER_INCUS_SERVER_CERT_FILE",
 		KeyIncusProject:             "INCUS_GH_RUNNER_INCUS_PROJECT",
 		KeyIncusImage:               "INCUS_GH_RUNNER_INCUS_IMAGE",
 		KeyIncusOwner:               "INCUS_GH_RUNNER_INCUS_OWNER",
@@ -367,6 +393,9 @@ func validateGitHubScheduling(settings GitHub) error {
 
 // validateIncus checks preconfigured environment references and lifecycle settings.
 func validateIncus(settings Incus) error {
+	if err := settings.IncusConnection.Validate(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(settings.Project) == "" {
 		return errors.New("incus.project is required")
 	}
@@ -553,6 +582,64 @@ func validateJobProof(settings JobProof) error {
 	keyConfigured := strings.TrimSpace(settings.SigningKeyFile) != ""
 	if hostConfigured != keyConfigured {
 		return errors.New("job_proof.host_id and job_proof.signing_key_file must be configured together")
+	}
+
+	return nil
+}
+
+// Validate checks that exactly one Incus transport is configured.
+func (c IncusConnection) Validate() error {
+	socket := strings.TrimSpace(c.Socket)
+	remoteURL := strings.TrimSpace(c.URL)
+	clientCert := strings.TrimSpace(c.ClientCertFile)
+	clientKey := strings.TrimSpace(c.ClientKeyFile)
+	serverCert := strings.TrimSpace(c.ServerCertFile)
+
+	switch {
+	case socket != "" && remoteURL != "":
+		return errors.New("configure exactly one of incus.socket or incus.url")
+	case socket == "" && remoteURL == "":
+		return errors.New("configure exactly one of incus.socket or incus.url")
+	case socket != "":
+		if clientCert != "" {
+			return errors.New("incus.client_cert_file is only valid with incus.url")
+		}
+		if clientKey != "" {
+			return errors.New("incus.client_key_file is only valid with incus.url")
+		}
+		if serverCert != "" {
+			return errors.New("incus.server_cert_file is only valid with incus.url")
+		}
+		return nil
+	default:
+		if err := validateIncusHTTPSURL(c.URL); err != nil {
+			return err
+		}
+		if clientCert == "" {
+			return errors.New("incus.client_cert_file is required")
+		}
+		if clientKey == "" {
+			return errors.New("incus.client_key_file is required")
+		}
+		if serverCert == "" {
+			return errors.New("incus.server_cert_file is required")
+		}
+		return nil
+	}
+}
+
+// validateIncusHTTPSURL checks that the remote Incus endpoint is an absolute HTTPS URL.
+func validateIncusHTTPSURL(raw string) error {
+	const message = "incus.url must be an absolute HTTPS URL"
+
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil || strings.TrimSpace(raw) != raw || parsed.Opaque != "" ||
+		!strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" || parsed.User != nil {
+		return errors.New(message)
+	}
+	if (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.ForceQuery ||
+		parsed.Fragment != "" {
+		return errors.New("incus.url must be a root endpoint without a path, query, or fragment")
 	}
 
 	return nil

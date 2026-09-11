@@ -115,6 +115,9 @@ func validateServer(baseline Baseline, actual ServerState) error {
 	if actual.FirewallDriver != baseline.Server.FirewallDriver {
 		return errors.New("server firewall driver drift detected")
 	}
+	if len(actual.Addresses) > 0 && actual.Config["core.https_address"] == "" {
+		return errors.New("validator requires access to sensitive server configuration to verify HTTPS listeners")
+	}
 	if actual.Config["core.https_address"] != baseline.Server.CoreHTTPSAddress {
 		return errors.New("core.https_address drift detected")
 	}

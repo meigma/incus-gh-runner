@@ -4,9 +4,11 @@ Read logs, collect VM diagnostics, change capacity and configuration safely, upg
 
 ## Prerequisites
 
-- `incus-gh-runner` deployed as the `incus-gh-runner.service` systemd unit (see [Deploy incus-gh-runner](./deploy.md)).
-- `journalctl` access to the unit (root, or membership in a group granted access).
-- Shell access to edit `/etc/incus-gh-runner/config.yaml` and restart the unit.
+- `incus-gh-runner` deployed as the `incus-gh-runner.service` systemd unit
+  (see [Deploy incus-gh-runner](./deploy.md)).
+- `journalctl` access to the unit on the controller machine.
+- Shell access to edit `/etc/incus-gh-runner/config.yaml`, replace its
+  credential sources, and restart the unit on the controller machine.
 
 ## Read the logs
 
@@ -40,7 +42,9 @@ The following events carry the fields you need for day-2 monitoring. All other f
 | `owned Incus runner started` | `runner_id`, `correlation_id` | A VM the controller owns was created, started, and handed its job payload; it is provisioning until the guest reports in. |
 | `owned Incus runner deleted` | `runner_id` | A VM the controller owns was deleted. |
 
-Credentials (GitHub App private key material, PAT values, JIT runner configuration) are never logged, so logs are safe to attach to a ticket.
+Credential contents, including the Incus client private key, are never logged.
+Review logs for workload and environment identifiers before attaching them to
+a ticket.
 
 For what these events mean in terms of runner lifecycle and capacity, see [How incus-gh-runner works](../explanation/how-it-works.md).
 
@@ -52,6 +56,10 @@ When a runner VM is deleted, the controller captures its serial console log befo
 incus:
   diagnostics_dir: /var/log/incus-gh-runner/diagnostics
 ```
+
+This fragment adds one setting to the existing `incus` mapping. Retain its
+complete `socket` mode or `url` plus certificate-file mode; do not replace the
+connection fields with this fragment.
 
 1. Create the directory with mode `0700`, or let the unit's `LogsDirectory` machinery own it (it produces `0700`). The controller refuses any other mode: every capture then fails with a `failed to store runner diagnostics` warning in the journal while runner deletion proceeds, and no file appears.
 2. Restart the unit for the new value to take effect:
@@ -81,6 +89,37 @@ To change capacity limits, timeouts, or any other setting:
 
 `systemctl restart` sends `SIGTERM`. The controller does not delete busy VMs on shutdown — jobs already running on a runner continue to completion and are reconciled against the new configuration once the process comes back up. Idle and provisioning runners are unaffected by the restart itself; they are re-evaluated against the new target on the next reconcile.
 
+### Rotate Incus HTTPS credentials
+
+The controller reads its Incus client certificate, client key, and pinned
+server certificate only during startup. It does not watch those files.
+
+For a client-certificate rotation:
+
+1. Generate the replacement key and certificate on the controller machine.
+2. From the existing trusted administration workstation, enroll the
+   replacement certificate as restricted to the runner project before using
+   it:
+   ```sh
+   incus config trust add-certificate <remote>: client.crt --restricted --projects github-runners
+   ```
+3. Replace `/etc/incus-gh-runner/client.key` as `root:root` mode `0600` and
+   `/etc/incus-gh-runner/client.crt` as a readable public certificate.
+4. Restart `incus-gh-runner.service` and confirm it connects through the named
+   project.
+5. Remove the old trust entry only after the replacement is active.
+
+For a server-certificate rotation, obtain the replacement certificate through
+an authenticated out-of-band channel and verify its SHA-256 fingerprint
+against a trusted operator record. Coordinate the Incus server change with an
+atomic replacement of `/etc/incus-gh-runner/server.crt`, then restart the
+controller. Do not retrieve the new pin insecurely, accept it on first use
+without independent verification, or disable TLS checks during the transition.
+
+The HTTPS systemd drop-in continues to expose the root-owned client-key source
+through `LoadCredential=` after restart. No `daemon-reload` is needed when only
+credential file contents change.
+
 ### Shutdown budget
 
 Each shutdown phase (graceful, then forced) waits up to `timeouts.shutdown`; the total wait budget across both phases is `2 * timeouts.shutdown`. The unit's `TimeoutStopSec` must exceed this budget, or systemd kills the process mid-shutdown before it finishes waiting out active operations. The packaged unit ships `TimeoutStopSec=70s`, which covers the default `timeouts.shutdown: 30s` (budget 60s) with headroom.
@@ -93,8 +132,8 @@ For the full set of timeout and capacity keys, see [Configuration reference](../
 
 ### Upgrade the controller
 
-1. Install the new DEB or RPM with the host package manager. For a raw-binary
-   deployment, replace `/usr/bin/incus-gh-runner` manually.
+1. Install the new DEB or RPM with the controller machine's package manager.
+   For a raw-binary deployment, replace `/usr/bin/incus-gh-runner` manually.
 2. Restart the unit:
    ```console
    systemctl restart incus-gh-runner
@@ -104,7 +143,8 @@ The same busy-VM survival and shutdown-budget behavior described above applies d
 
 ### Upgrade the runner image
 
-1. Import the new image into Incus under a new alias or fingerprint.
+1. From a trusted Incus administration context, import the new image under a
+   new alias or fingerprint.
 2. Update `incus.image` in `config.yaml` to point at it.
 3. Restart the unit.
 
@@ -114,7 +154,7 @@ Existing runner VMs built from the old image are left running until they finish 
 
 | Symptom | Likely cause | Action |
 |---|---|---|
-| Unit exits immediately at start | Invalid config, a bad credential, or the startup preflight failed to resolve the configured Incus image or a profile | Read the error on stderr / `journalctl -u incus-gh-runner`; the process fails fast and reports the specific validation or preflight error. |
+| Unit exits immediately at start | Invalid config, an unreadable or malformed credential, HTTPS certificate verification or pinning failure, inaccessible Incus project, or image/profile preflight failure | Read the error on stderr / `journalctl -u incus-gh-runner`; the process fails fast and reports the failing setting or startup stage without printing key or certificate contents. |
 | Repeated `GitHub message session disconnected; reconnecting` | A GitHub-side outage, or the App/PAT credential was revoked mid-run | Backoff is capped and automatic; no restart is needed for a transient outage. If it persists, verify the credential is still valid. |
 | Runner stays `provisioning`, then goes `terminal` after a while | Image doesn't implement the guest contract, the wrong image is configured, or the VM has no network reachability to GitHub | Check `incus.image` and `incus.bootstrap_timeout`; boot-test the image against the [guest contract](./build-runner-images.md#10-boot-test-against-the-guest-contract); confirm the VM's network path. |
 | `runner operation failed` repeats with growing `retry_after` | An Incus-side failure (API, storage, hypervisor) put that operation into cooldown | Creates share one cooldown; each runner's delete has its own. A fresh successful inventory list (`operation: list`) must land before further mutation is attempted — check Incus itself for the underlying error reported in the `error` field. |

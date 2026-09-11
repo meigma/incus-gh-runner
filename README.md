@@ -23,11 +23,14 @@ deletes the VM when its one job finishes.
 
 ## Requirements
 
-- A dedicated, single-purpose Linux host running Incus 7.0 or newer with QEMU
-  VM support. Incus 6 is not supported.
-- Membership in the `incus-admin` group for the controller process. This is
-  root-equivalent on the host. Do not deploy the current controller on an Incus
-  host shared with unrelated trusted workloads.
+- A dedicated, single-purpose Incus 7.0 or newer compute host with QEMU VM
+  support. Incus 6 is not supported.
+- One explicit Incus connection mode:
+  - a local Unix socket, which requires the controller to run on the compute
+    host with root-equivalent `incus-admin` membership; or
+  - a remote HTTPS endpoint, an exact pinned server certificate, and a client
+    certificate restricted to the runner project. The controller may then run
+    on a separate Linux machine without `incus-admin` membership.
 - A GitHub App or personal access token authorized to manage runner scale sets
   at the configured repository or organization.
 
@@ -38,8 +41,8 @@ for Linux and macOS, installable DEB and RPM packages for Linux, and a
 multi-architecture controller OCI image. All support amd64 and arm64 and ship
 with checksums and build attestations.
 
-Add the signed Meigma package repository and install with the host package
-manager:
+Add the signed Meigma package repository and install with the controller
+machine's package manager:
 
 ```sh
 sudo apt install incus-gh-runner
@@ -50,9 +53,9 @@ sudo dnf install incus-gh-runner
 Follow [Deploy to production](docs/docs/how-to/deploy.md#3-install-the-controller)
 for copy-paste repository setup and full signing-key fingerprint verification.
 Packages install the binary, base systemd unit, tmpfiles policy, editable
-example configuration, and credential drop-in examples. They deliberately do
-not enable or start the service before host-specific configuration and
-credentials exist.
+example configuration, and all credential drop-in examples, including the
+Incus HTTPS client-key drop-in. They deliberately do not enable or start the
+service before machine-specific configuration and credentials exist.
 
 Versioned DEB and RPM files remain available from the
 [releases page](https://github.com/meigma/incus-gh-runner/releases) for direct
@@ -94,11 +97,27 @@ github:
     installation_id: 12345678
     private_key_file: /path/to/private-key.pem
 incus:
+  socket: /var/lib/incus/unix.socket
   project: github-runners
   image: incus-gh-runner-v1
   profiles: [github-runner]
   owner: incus-gh-runner-example
 ```
+
+`incus.socket` and `incus.url` are mutually exclusive, and one is required.
+Existing controller configurations that omitted `incus.socket` must add the
+intended socket explicitly. There is no implicit controller socket after this
+change. HTTPS mode instead requires `incus.url`, `incus.client_cert_file`,
+`incus.client_key_file`, and `incus.server_cert_file`; see the
+[deployment guide](docs/docs/how-to/deploy.md#1-prepare-and-validate-incus) for
+certificate enrollment and pinning.
+
+Both transports retain the dedicated-host isolation baseline. An unrestricted
+Incus TLS client certificate has administrative authority just as the local
+socket does. Use a project-restricted controller certificate, and keep the
+restricted project, network, storage, and workload-isolation controls in place.
+The transport choice does not change the guest contract, runner image
+requirements, VM placement, or failover behavior.
 
 For a PAT, omit the `app` block and set `github.token_file` to a protected token
 file instead. Private-repository scope is the hardened starting point and pairs
@@ -121,20 +140,21 @@ jobs:
 ```
 
 For production, run the controller under the hardened systemd unit in
-[`deploy/systemd/`](deploy/systemd/), selecting the GitHub App or PAT credential
-drop-in. Apply and validate the restricted project, network, profile, storage,
-resource limits, and controlled-egress baseline with the CUE policy and
-read-only drift tooling in
-[`deploy/incus/`](deploy/incus/) first. Follow the
+[`deploy/systemd/`](deploy/systemd/), selecting the GitHub credential drop-in
+and, for HTTPS mode, the Incus client-key credential drop-in. Apply and
+validate the restricted project, network, profile, storage, resource limits,
+and controlled-egress baseline with the CUE policy and read-only drift tooling
+in [`deploy/incus/`](deploy/incus/) first. Follow the
 [deployment guide](docs/docs/how-to/deploy.md) for the end-to-end path.
 
 ## Documentation
 
-- [Deploy to production](docs/docs/how-to/deploy.md) — host preparation,
-  restricted Incus preparation, repository or organization scope, GitHub App
-  or PAT setup, and the systemd installation.
+- [Deploy to production](docs/docs/how-to/deploy.md) — controller and compute
+  host preparation, local socket or pinned HTTPS setup, restricted Incus
+  preparation, repository or organization scope, GitHub App or PAT setup, and
+  the systemd installation.
 - [Operate and troubleshoot](docs/docs/how-to/operate.md) — logs, VM
-  diagnostics, safe configuration changes, and upgrades.
+  diagnostics, safe configuration changes, credential rotation, and upgrades.
 - [Build runner images](docs/docs/how-to/build-runner-images.md) — building
   and boot-testing a hardened, contract-conforming runner image.
 - [Configuration reference](docs/docs/reference/configuration.md) — every

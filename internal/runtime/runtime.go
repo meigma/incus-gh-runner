@@ -13,6 +13,7 @@ import (
 
 	"github.com/actions/scaleset"
 	"github.com/google/uuid"
+	incusclient "github.com/lxc/incus/v7/client"
 
 	githubadapter "github.com/meigma/incus-gh-runner/internal/adapters/github"
 	incusadapter "github.com/meigma/incus-gh-runner/internal/adapters/incus"
@@ -260,9 +261,16 @@ func newIncusBackend(
 	proofVerifier provenance.ProofVerifier,
 	logger *slog.Logger,
 ) (*incusadapter.Backend, *incusadapter.ProofSink, error) {
-	incusServer, connectErr := incusadapter.ConnectUnix(ctx, cfg.Incus.Socket, cfg.Incus.Project)
+	connectContext, cancelConnect := context.WithTimeout(ctx, cfg.Timeouts.IncusOperation)
+	incusServer, connectErr := incusadapter.Connect(connectContext, cfg.Incus.IncusConnection, cfg.Incus.Project)
 	if connectErr != nil {
+		cancelConnect()
 		return nil, nil, fmt.Errorf("connect to Incus project %q: %w", cfg.Incus.Project, connectErr)
+	}
+	incusServer, connectErr = withParentContext(ctx, incusServer)
+	cancelConnect()
+	if connectErr != nil {
+		return nil, nil, connectErr
 	}
 	diagnostics, diagnosticsErr := newDiagnosticsSink(cfg.Incus.DiagnosticsDir)
 	if diagnosticsErr != nil {
@@ -406,4 +414,17 @@ func closePreparedDemandSource(
 	if err := source.Close(closeContext); err != nil {
 		logger.Warn("failed to close GitHub message session", "error", err)
 	}
+}
+
+// withParentContext rebinds a retained Incus client to ctx after a bounded startup call.
+func withParentContext(ctx context.Context, server incusclient.InstanceServer) (incusclient.InstanceServer, error) {
+	type contextualServer interface {
+		WithContext(context.Context) incusclient.InstanceServer
+	}
+	rebound, ok := server.(contextualServer)
+	if !ok {
+		return nil, errors.New("incus server does not support request contexts")
+	}
+
+	return rebound.WithContext(ctx), nil
 }

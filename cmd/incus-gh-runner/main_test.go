@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	incuspolicy "github.com/meigma/incus-gh-runner/deploy/incus"
+	"github.com/meigma/incus-gh-runner/internal/config"
 	"github.com/meigma/incus-gh-runner/internal/provenance"
 )
 
@@ -28,7 +29,11 @@ func TestValidateIncusBaselineBoundsInputBeforeSocketAccess(t *testing.T) {
 	require.NoError(t, file.Truncate(incuspolicy.MaximumBaselineBytes+1))
 	require.NoError(t, file.Close())
 
-	_, err = validateIncusBaseline(context.Background(), baselinePath, "/missing/incus.socket")
+	_, err = validateIncusBaseline(
+		context.Background(),
+		baselinePath,
+		config.IncusConnection{Socket: "/missing/incus.socket"},
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "baseline exceeds")
 	assert.NotContains(t, err.Error(), "connect Incus")

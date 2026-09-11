@@ -120,6 +120,13 @@ _#LVMStorageInput: {
 
 	// storage selects one narrowly configured dedicated backing store.
 	storage: *_#ZFSStorageInput | _#LVMStorageInput
+
+	// server optionally pins the dedicated-host Incus HTTPS listener compared by the validator.
+	server: {
+		// coreHTTPSAddress is empty for dedicated-host-unix-socket, or the exact host:port that selects dedicated-host-https.
+		coreHTTPSAddress: *"" | (string & =~"^.+:[0-9]+$") |
+					error("core_https_address must be a concrete host:port")
+	}
 }
 
 _#PositiveDecimalString: string & =~"^[1-9][0-9]*$"
@@ -164,8 +171,8 @@ _#Baseline: {
 	schema_version: 1
 	// authority documents the supported Incus control-plane trust boundary.
 	authority: {
-		// mode identifies the controller's Incus connection and authority model.
-		mode: "dedicated-host-unix-socket"
+		// mode is dedicated-host-unix-socket when the controller uses the local socket, or dedicated-host-https when it uses the pinned listener.
+		mode: *"dedicated-host-unix-socket" | "dedicated-host-https"
 		// dedicated_single_purpose_host_required requires workload isolation at the host boundary.
 		dedicated_single_purpose_host_required: true
 		// unix_socket_is_root_equivalent records the authority granted by the Incus Unix socket.
@@ -205,9 +212,10 @@ _#Baseline: {
 		firewall_driver: "nftables"
 		// standalone requires a non-clustered Incus server.
 		standalone: true
-		// core_https_address requires the public Incus HTTPS listener to be disabled.
-		core_https_address: ""
-		// cluster_https_address requires the Incus cluster listener to be disabled.
+		// core_https_address must be empty for dedicated-host-unix-socket and the exact host:port for dedicated-host-https.
+		core_https_address: *"" | (string & =~"^.+:[0-9]+$") |
+					error("core_https_address must be a concrete host:port")
+		// cluster_https_address requires the Incus cluster listener to remain disabled.
 		cluster_https_address: ""
 	}
 	// residual_controls documents controls that require compatibility handling.
@@ -430,6 +438,14 @@ _#Baseline: {
 	}
 	// storage_pool is the desired dedicated runner storage pool configuration.
 	storage_pool: _#ZFSStoragePool | _#LVMStoragePool
+
+	if authority.mode == "dedicated-host-unix-socket" {
+		server: core_https_address: ""
+	}
+	if authority.mode == "dedicated-host-https" {
+		server: core_https_address: (string & =~"^.+:[0-9]+$") |
+						error("core_https_address must be a concrete host:port")
+	}
 }
 
 _#DNSUDPRule: {
@@ -535,6 +551,7 @@ _#LVMStoragePool: {
 			profile:      inputs.names.profile
 			storage_pool: inputs.names.storagePool
 		}
+		server: core_https_address: inputs.server.coreHTTPSAddress
 		project: config: {
 			"limits.cpu":       "\(_runnerCPU)"
 			"limits.disk":      "\(_runnerDiskGiB)GiB"
@@ -596,5 +613,9 @@ _#LVMStoragePool: {
 			"lvm.thinpool_name": inputs.storage.thinPoolName
 			"volume.size":       "\(inputs.storage.volumeSizeGiB)GiB"
 		}
+	}
+
+	if inputs.server.coreHTTPSAddress != "" {
+		output: authority: mode: "dedicated-host-https"
 	}
 }

@@ -31,8 +31,7 @@ func TestProofSinkFunctional(t *testing.T) {
 
 	testContext, cancelTest := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancelTest()
-	server, err := ConnectUnix(testContext, os.Getenv("INCUS_GH_RUNNER_TEST_SOCKET"), project)
-	require.NoError(t, err)
+	server := connectFunctionalTestServer(testContext, t, project)
 	client, err := newServerClient(server)
 	require.NoError(t, err)
 

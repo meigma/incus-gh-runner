@@ -47,6 +47,29 @@ func TestRunRejectsInvalidConfigurationBeforeConstructingAdapters(t *testing.T) 
 	)
 }
 
+func TestRunRejectsMissingIncusTransport(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Defaults()
+	cfg.GitHub = config.GitHub{
+		ConfigURL:   "https://github.com/meigma/incus-gh-runner",
+		ScaleSet:    "incus-runners",
+		RunnerGroup: "default",
+		TokenFile:   filepath.Join(t.TempDir(), "missing-token"),
+	}
+	cfg.Incus.Project = "runners"
+	cfg.Incus.Image = "incus-gh-runner:v1"
+	cfg.Incus.Owner = "production"
+
+	err := Run(context.Background(), cfg, BuildInfo{}, nil)
+
+	require.EqualError(
+		t,
+		err,
+		"validate runtime configuration: configure exactly one of incus.socket or incus.url",
+	)
+}
+
 // TestPrepareJobProofSigner proves optional startup loading is bounded and secret-safe.
 func TestPrepareJobProofSigner(t *testing.T) {
 	t.Parallel()

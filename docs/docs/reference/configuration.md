@@ -18,6 +18,13 @@ The default configuration file path is `/etc/incus-gh-runner/config.yaml`. This 
 
 Configuration files are decoded exactly before source precedence is applied. Unknown or duplicate keys, misspellings, wrong YAML scalar or container types, aliases, merge keys, and multiple YAML documents are rejected. Field-level errors identify the field; validation errors do not include field values.
 
+### Migration: the controller no longer selects an implicit socket
+
+Exactly one of `incus.socket` and `incus.url` is required in controller mode.
+Configurations that previously omitted `incus.socket` must add the intended
+path explicitly. This is an intentional breaking change: only the standalone
+`validate` subcommand retains an implicit socket default.
+
 ## YAML configuration keys
 
 Duration values use Go duration syntax (for example `30s`, `5m`).
@@ -45,18 +52,40 @@ Duration values use Go duration syntax (for example `30s`, `5m`).
 
 | Key | Type | Default | Required / validation |
 |---|---|---|---|
-| `incus.socket` | string | `""` | Optional. Non-default local Incus Unix socket path. |
-| `incus.project` | string | — | Required. Non-empty. Must already exist. |
+| `incus.socket` | string | `""` | Required for local mode. Unix socket path. Mutually exclusive with `incus.url` and all three HTTPS file settings. |
+| `incus.url` | string | `""` | Required for HTTPS mode. Absolute HTTPS Incus API root endpoint. Mutually exclusive with `incus.socket`; plaintext HTTP and URL user information are rejected. |
+| `incus.client_cert_file` | string | `""` | Required with `incus.url`; invalid with `incus.socket`. PEM TLS client certificate path. |
+| `incus.client_key_file` | string | `""` | Required with `incus.url`; invalid with `incus.socket`. PEM TLS client private-key path. |
+| `incus.server_cert_file` | string | `""` | Required with `incus.url`; invalid with `incus.socket`. PEM certificate whose exact leaf certificate must be presented by the Incus server. |
+| `incus.project` | string | — | Required. Non-empty. Must already exist and be directly accessible to the configured Incus identity. |
 | `incus.image` | string | — | Required. Non-empty. Existing local image alias or fingerprint, resolved to a full fingerprint during preflight. |
 | `incus.profiles` | list of strings | `[]` | Optional. No empty entries. Profiles must already exist. Their effective configuration and devices are pinned during preflight and materialized directly onto each VM. When omitted, Incus image/default profile selection is reproduced before pinning. |
 | `incus.owner` | string | — | Required. Non-empty. Exact cleanup selector written to every instance this process manages; not an authorization boundary. |
 | `incus.bootstrap_timeout` | duration | `5m` | Must be greater than `0`. |
 | `incus.diagnostics_dir` | string | `""` | Optional. Directory for terminal-runner serial console diagnostics. Persistence is disabled when empty. |
 
+For HTTPS, the client performs normal certificate-chain, hostname, validity,
+and key-usage verification and also requires the presented leaf certificate to
+equal `incus.server_cert_file`. The same pin applies to HTTP and WebSocket
+connections, and a redirect cannot downgrade the connection to plaintext
+HTTP. A wrong, expired, untrusted, or hostname-invalid certificate fails the
+connection; there is no insecure or trust-on-first-use fallback.
+
+During startup, the controller reads and parses the client certificate, client
+key, and server certificate inside the bounded initial Incus connection. It
+first confirms direct access to `incus.project`, then selects that project. The
+resulting SDK client is rebound to the retained process context before image
+and profile preflight. Certificate files are not watched or reloaded; restart
+the service after rotating any of them. File-read and parse errors identify
+the setting without including certificate or private-key contents.
+
 !!! warning "Sensitive console diagnostics"
     Content written to `incus.diagnostics_dir` can include workload console output. Restrict access to this directory accordingly.
 
-Each capture is limited to 1 MiB and the directory sink retains at most 256 capture files. The packaged tmpfiles policy expires files older than 30 days from `/var/log/incus-gh-runner/diagnostics`; deployments using another directory must update that policy path.
+Each capture is limited to 1 MiB and the directory sink retains at most 256
+capture files. The packaged tmpfiles policy expires files older than 30 days
+from `/var/log/incus-gh-runner/diagnostics`; deployments using another
+directory must update that policy path.
 
 ### `job_proof`
 
@@ -126,6 +155,11 @@ Examples:
 |---|---|
 | `github.config_url` | `INCUS_GH_RUNNER_GITHUB_CONFIG_URL` |
 | `github.message_poll_timeout` | `INCUS_GH_RUNNER_GITHUB_MESSAGE_POLL_TIMEOUT` |
+| `incus.socket` | `INCUS_GH_RUNNER_INCUS_SOCKET` |
+| `incus.url` | `INCUS_GH_RUNNER_INCUS_URL` |
+| `incus.client_cert_file` | `INCUS_GH_RUNNER_INCUS_CLIENT_CERT_FILE` |
+| `incus.client_key_file` | `INCUS_GH_RUNNER_INCUS_CLIENT_KEY_FILE` |
+| `incus.server_cert_file` | `INCUS_GH_RUNNER_INCUS_SERVER_CERT_FILE` |
 | `incus.project` | `INCUS_GH_RUNNER_INCUS_PROJECT` |
 | `capacity.min_runners` | `INCUS_GH_RUNNER_CAPACITY_MIN_RUNNERS` |
 | `timeouts.shutdown` | `INCUS_GH_RUNNER_TIMEOUTS_SHUTDOWN` |
@@ -148,7 +182,25 @@ The packaged systemd deployment supplies the PAT through `github.token_file` via
 
 Path to a file containing a GitHub personal access token. The controller reads and trims the file once during startup; a missing, unreadable, or empty file fails startup. The packaged PAT drop-in sets `INCUS_GH_RUNNER_GITHUB_TOKEN_FILE` to systemd's protected runtime credential copy, so the path should be absent from `config.yaml` in that deployment.
 
-## Credential rule
+
+### Incus HTTPS files
+
+The packaged HTTPS deployment keeps `client_cert_file` and
+`server_cert_file` in readable public-certificate files under
+`/etc/incus-gh-runner`. It keeps the client private-key source root-owned and
+mode `0600`. The `credentials-incus-https.conf` drop-in loads that source into
+systemd's protected runtime credential directory and sets
+`INCUS_GH_RUNNER_INCUS_CLIENT_KEY_FILE=%d/incus-client-key`; omit
+`client_key_file` from `config.yaml` when using this drop-in.
+
+Obtain the pinned server certificate through an authenticated out-of-band
+channel and compare its fingerprint with a trusted operator record. Do not
+bootstrap the pin with an insecure request or blind trust on first use.
+Ciphers and certificate trust are not relaxed when the exact pin is present.
+Restart the service after replacing the client certificate, client key, or
+server pin.
+
+## GitHub credential rule
 
 Exactly one credential source must be configured:
 
@@ -158,10 +210,22 @@ Exactly one credential source must be configured:
 
 Configuring more than one method is an error, including setting both PAT sources. Configuring no credential is also an error.
 
-!!! warning "Root-equivalent socket access"
-    The controller's Incus client uses the account's `incus-admin` group membership, which grants root-equivalent control over the host. This applies regardless of which GitHub credential type is configured. The `incus.owner` value limits the controller's intended cleanup scope but is forgeable by another project writer; it is not authorization. Run the current production deployment only on a dedicated, single-purpose Incus host.
+!!! warning "Incus authority remains security-critical"
+    Local `incus-admin` socket access is root-equivalent on the compute host.
+    An unrestricted Incus TLS client certificate also has administrative
+    authority; HTTPS alone does not restrict it. Use a TLS certificate
+    restricted to the runner project for the controller, retain the restricted
+    project and workload-isolation controls, and use a dedicated,
+    single-purpose compute host. The `incus.owner` marker limits intended
+    cleanup but is forgeable by another project writer and is not
+    authorization.
 
-The packaged systemd deployment supplies either `github.app.private_key_file` or `github.token_file` through one selected credential drop-in. Secret values do not belong in `config.yaml`. See [systemd unit facts](#systemd-unit-facts).
+The packaged systemd deployment supplies either
+`github.app.private_key_file` or `github.token_file` through one selected
+GitHub credential drop-in. HTTPS mode additionally supplies
+`incus.client_key_file` through its independent Incus credential drop-in.
+Secret values do not belong in `config.yaml`. See
+[systemd unit facts](#systemd-unit-facts).
 
 ## CLI
 
@@ -204,19 +268,38 @@ In a release build, `<version>`, `<commit>`, and `<date>` are populated at build
 ### `validate <baseline>`
 
 Validates exactly one rendered JSON baseline against the embedded CUE policy,
-then compares it with effective state read from a local Incus Unix socket. The
-command performs read operations only; it never creates, changes, or deletes
-Incus resources and does not invoke external `cue`, `incus`, or `jq`
-executables.
+then compares it with effective state read through one flag-selected Incus
+connection. The command performs GET operations only; it never creates,
+changes, or deletes Incus resources and does not invoke external `cue`,
+`incus`, or `jq` executables.
 
 | Flag | Type | Default |
 |---|---|---|
 | `--socket` | string | `/var/lib/incus/unix.socket` |
+| `--url` | string | `""` |
+| `--client-cert` | string | `""` |
+| `--client-key` | string | `""` |
+| `--server-cert` | string | `""` |
 
-`--socket` selects a local Incus Unix socket. The command does not load
-`/etc/incus-gh-runner/config.yaml`, controller flags or environment variables,
-or GitHub credentials. A successful validation prints one human-readable line
-to stdout; compatibility notices are written to stderr.
+With no connection flags, `validate` uses
+`/var/lib/incus/unix.socket`. An explicit `--socket` selects another local
+socket. An explicit `--url` clears the implicit socket and requires all three
+certificate flags. Supplying both `--socket` and `--url` is an error.
+
+These are flag-only validator inputs. The command does not load controller
+YAML, controller environment bindings, controller flags, or GitHub
+credentials. The HTTPS certificate behavior is the same strict normal TLS
+verification plus exact server-leaf pin used by controller mode. A successful
+validation prints one human-readable line to stdout; compatibility notices are
+written to stderr.
+
+The validator reads the Incus server configuration, including sensitive
+listener values, plus the named runner project, the network and ACL in the
+`default` project, the runner-project profile, and the global storage pool. Its
+operator credential must have an administrative view that exposes every one
+of those resources and values; hidden sensitive fields fail validation. Keep
+that credential separate from the project-restricted controller certificate.
+Do not broaden the controller certificate to make validation pass.
 
 The live comparison confirms effective resource ceilings but cannot re-measure
 or re-prove the physical-host capacity and reserved headroom used to generate
@@ -260,10 +343,24 @@ on stderr otherwise.
 
 ## systemd unit facts
 
-The packaged base unit is `deploy/systemd/incus-gh-runner.service`. It deliberately selects no GitHub credential method. Install exactly one packaged credential drop-in as `/etc/systemd/system/incus-gh-runner.service.d/credentials.conf`:
+The packaged base unit is `deploy/systemd/incus-gh-runner.service`. It
+deliberately selects no GitHub credential method. Install exactly one packaged
+GitHub credential drop-in as
+`/etc/systemd/system/incus-gh-runner.service.d/credentials.conf`:
 
-- `credentials-github-app.conf` loads `/etc/incus-gh-runner/github-app-private-key.pem` and sets `INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE`.
-- `credentials-personal-access-token.conf` loads `/etc/incus-gh-runner/github-token` and sets `INCUS_GH_RUNNER_GITHUB_TOKEN_FILE`.
+- `credentials-github-app.conf` loads
+  `/etc/incus-gh-runner/github-app-private-key.pem` and sets
+  `INCUS_GH_RUNNER_GITHUB_APP_PRIVATE_KEY_FILE`.
+- `credentials-personal-access-token.conf` loads
+  `/etc/incus-gh-runner/github-token` and sets
+  `INCUS_GH_RUNNER_GITHUB_TOKEN_FILE`.
+
+For HTTPS mode, also install `credentials-incus-https.conf` as
+`incus-https.conf`. It clears the base unit's `SupplementaryGroups` value,
+loads the root-only `/etc/incus-gh-runner/client.key`, and sets
+`INCUS_GH_RUNNER_INCUS_CLIENT_KEY_FILE` to the protected runtime copy. The
+DynamicUser needs read access to the public client and server certificate
+files. It does not need `incus-admin` membership in HTTPS mode.
 
 When job proofs are enabled, install exactly one independent proof-key drop-in
 as `job-proof.conf`:
@@ -275,16 +372,17 @@ as `job-proof.conf`:
 
 Both set `INCUS_GH_RUNNER_JOB_PROOF_SIGNING_KEY_FILE` to the same protected
 runtime file (`%d/machine-provenance-key`), so they compose with either GitHub
-credential method.
+credential method and either Incus connection mode.
 
 | Directive | Value |
 |---|---|
 | `ExecStart` | `/usr/bin/incus-gh-runner --config /etc/incus-gh-runner/config.yaml` |
 | GitHub credential | Selected by one systemd drop-in; absent from the base unit |
+| Incus client key | Selected by `credentials-incus-https.conf` in HTTPS mode; absent in socket mode |
 | `ConfigurationDirectory` | `incus-gh-runner` (mode `0755`), resolves to `/etc/incus-gh-runner` |
 | `LogsDirectory` | `incus-gh-runner` (mode `0700`), resolves to `/var/log/incus-gh-runner` |
 | `DynamicUser` | `yes` |
-| `SupplementaryGroups` | `incus-admin` |
+| `SupplementaryGroups` | `incus-admin` in the base socket-mode unit; cleared by the HTTPS drop-in |
 | `UMask` | `0077` |
 | `Restart` | `on-failure` |
 | `RestartSec` | `5s` |
@@ -292,11 +390,25 @@ credential method.
 | `KillSignal` | `SIGTERM` |
 | `TimeoutStopSec` | `70s` |
 
-`TimeoutStopSec` must exceed the application's internal shutdown budget of `2 × timeouts.shutdown`. At the default `timeouts.shutdown` of `30s`, that budget is `60s`, under the unit's `70s` stop timeout. Raising `timeouts.shutdown` requires raising `TimeoutStopSec` to keep `TimeoutStopSec > 2 × timeouts.shutdown`. See [How incus-gh-runner works](../explanation/how-it-works.md) for the shutdown model these settings drive.
+`TimeoutStopSec` must exceed the application's internal shutdown budget of
+`2 × timeouts.shutdown`. At the default `timeouts.shutdown` of `30s`, that
+budget is `60s`, under the unit's `70s` stop timeout. Raising
+`timeouts.shutdown` requires raising `TimeoutStopSec` to keep
+`TimeoutStopSec > 2 × timeouts.shutdown`. See
+[How incus-gh-runner works](../explanation/how-it-works.md) for the shutdown
+model these settings drive.
 
 ### Hardening directives
 
-The unit sets the following sandboxing directives: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectKernelLogs`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname`, `ProtectProc=invisible`, `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `LockPersonality`, `MemoryDenyWriteExecute`, `SystemCallArchitectures=native`, empty `CapabilityBoundingSet`, empty `AmbientCapabilities`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`.
+The unit sets the following sandboxing directives: `NoNewPrivileges`,
+`ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`,
+`ProtectKernelTunables`, `ProtectKernelModules`, `ProtectKernelLogs`,
+`ProtectControlGroups`, `ProtectClock`, `ProtectHostname`,
+`ProtectProc=invisible`, `RestrictNamespaces`, `RestrictRealtime`,
+`RestrictSUIDSGID`, `LockPersonality`, `MemoryDenyWriteExecute`,
+`SystemCallArchitectures=native`, empty `CapabilityBoundingSet`, empty
+`AmbientCapabilities`, and
+`RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`.
 
 ## See also
 

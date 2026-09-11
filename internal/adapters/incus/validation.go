@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"strings"
 
 	incusclient "github.com/lxc/incus/v7/client"
 	"github.com/lxc/incus/v7/shared/api"
@@ -20,18 +19,9 @@ type ValidationReader struct {
 
 var _ incusvalidate.Reader = (*ValidationReader)(nil)
 
-// ConnectValidationReader connects a read-only validator to one explicit local Incus socket.
-func ConnectValidationReader(ctx context.Context, socketPath string) (*ValidationReader, error) {
-	if strings.TrimSpace(socketPath) == "" {
-		return nil, errors.New("incus validation socket path is required")
-	}
-
-	server, err := incusclient.ConnectIncusUnixWithContext(ctx, socketPath, nil)
-	if err != nil {
-		return nil, fmt.Errorf("connect Incus validation socket: %w", err)
-	}
-
-	return &ValidationReader{server: server}, nil
+// NewValidationReader adapts a connected Incus server into a read-only baseline reader.
+func NewValidationReader(server incusclient.InstanceServer) *ValidationReader {
+	return &ValidationReader{server: server}
 }
 
 // Close releases resources held by the Incus client.
@@ -111,6 +101,7 @@ func validationServerState(server *api.Server) incusvalidate.ServerState {
 	return incusvalidate.ServerState{
 		Auth:           server.Auth,
 		APIExtensions:  append([]string(nil), server.APIExtensions...),
+		Addresses:      append([]string(nil), server.Environment.Addresses...),
 		Config:         maps.Clone(server.Config),
 		Version:        server.Environment.ServerVersion,
 		Clustered:      server.Environment.ServerClustered,
