@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/meigma/incus-gh-runner/compare/v1.3.0...v2.0.0) (2026-09-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **incus:** controller configuration must explicitly select incus.socket or complete incus.url TLS settings. An omitted endpoint no longer falls back to the default Unix socket.
+
+### Features
+
+* **incus:** support pinned HTTPS connections ([#66](https://github.com/meigma/incus-gh-runner/issues/66)) ([523fb51](https://github.com/meigma/incus-gh-runner/commit/523fb513cec57431d237976854c2fd77f5192a6d))
+
 ## [1.3.0](https://github.com/meigma/incus-gh-runner/compare/v1.2.0...v1.3.0) (2026-07-26)
 
 
