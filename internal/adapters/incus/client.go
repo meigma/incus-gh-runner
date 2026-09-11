@@ -24,16 +24,6 @@ const (
 	consoleTruncationMarker = "\n[incus-gh-runner: console log truncated at 1048576 bytes]\n"
 )
 
-// ConnectUnix constructs a client for a project on a local Incus Unix socket.
-func ConnectUnix(ctx context.Context, socketPath string, project string) (incusclient.InstanceServer, error) {
-	client, err := incusclient.ConnectIncusUnixWithContext(ctx, socketPath, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return client.UseProject(project), nil
-}
-
 // client is the context-aware Incus surface required by Backend.
 type client interface {
 	ResolveImage(ctx context.Context, name string) (*api.Image, error)

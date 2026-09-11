@@ -75,6 +75,10 @@ nfpms:
         dst: /usr/share/doc/incus-gh-runner/systemd/credentials-personal-access-token.conf
         file_info:
           mode: 0644
+      - src: deploy/systemd/credentials-incus-https.conf
+        dst: /usr/share/doc/incus-gh-runner/systemd/credentials-incus-https.conf
+        file_info:
+          mode: 0644
       - src: deploy/systemd/credentials-job-proof-file.conf
         dst: /usr/share/doc/incus-gh-runner/systemd/credentials-job-proof-file.conf
         file_info:

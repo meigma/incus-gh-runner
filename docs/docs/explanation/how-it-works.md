@@ -6,7 +6,15 @@ It intentionally does not list configuration keys, CLI flags, or wire-level sche
 
 ## Demand flow: from GitHub to Incus
 
-GitHub Actions runner scale sets communicate demand through a long-lived message session: the controller opens a session against `github.config_url` for a given `github.scale_set`, and GitHub pushes job assignment events down that session for as long as it stays open. There is exactly one message session per controller process, feeding exactly one reconciler. incus-gh-runner does not fan out across multiple scale sets or multiple Incus environments — that scope boundary is a deliberate design choice. A single process manages a single scale set against a single Incus project and image, which keeps the cleanup and capacity model simple enough to reason about at a glance.
+GitHub Actions runner scale sets communicate demand through a long-lived
+message session: the controller opens a session against `github.config_url` for
+a given `github.scale_set`, and GitHub pushes job assignment events down that
+session for as long as it stays open. There is exactly one message session per
+controller process, feeding exactly one reconciler. incus-gh-runner does not
+fan out across multiple scale sets or multiple Incus environments. A single
+process manages a single scale set against a single Incus project and image.
+The remote HTTPS transport changes where that process can run; it does not add
+cluster scheduling, instance placement, or controller failover.
 
 The reconciler turns that stream of demand into a target VM count using one formula:
 
@@ -46,6 +54,11 @@ diagnostics and delete the Incus instance. A job-writable hook is never used as
 lifecycle authority. See the [guest contract reference](../reference/guest-contract.md)
 for the exact status values and file formats involved.
 
+The connection transport does not change this lifecycle or the guest
+interface. Socket and HTTPS deployments use the same runner images, payload
+and status schemas, JIT registration, one-job limit, diagnostics, and deletion
+behavior.
+
 ## Cleanup scope, not authorization
 
 Every VM the controller creates carries the configured `owner` value in one
@@ -61,18 +74,29 @@ defense against the residual fetch-to-delete race. The
 [guest contract reference](../reference/guest-contract.md) names the exact
 metadata keys.
 
-The marker does not authorize an Incus operation. Any identity that can edit an
-instance in the project can copy the value, and the current controller's local
-`incus-admin` socket access can bypass project boundaries entirely. Treat the
-marker as a cleanup selector that limits mistakes in the controller's own code,
-not as protection against a malicious project tenant or a compromised
+The marker does not authorize an Incus operation. Any identity that can edit
+an instance in the project can copy the value. A local `incus-admin` socket
+identity can bypass project boundaries entirely, and an unrestricted TLS
+client certificate has administrative authority despite using HTTPS. Treat the
+marker as a cleanup selector that limits mistakes in the controller's own
+code, not as protection against a malicious project tenant or a compromised
 controller process.
 
-The project, image, profiles, network, storage, and controller authority are
-pre-existing deployment boundaries. The current production contract therefore
-requires a dedicated, single-purpose Incus host with a restricted runner
-project and network. Sharing that host with unrelated trusted workloads would
-turn controller compromise into compromise of those workloads as well.
+For HTTPS, restrict the controller's client certificate to the runner project
+from the outset. Project restriction narrows the identity, but it does not
+replace the restricted project, host-owned network and ACL, dedicated storage,
+profile, and workload-isolation controls. The project, image, profiles,
+network, storage, and controller authority remain pre-existing deployment
+boundaries. Both connection modes therefore retain a dedicated,
+single-purpose Incus compute host.
+
+In HTTPS mode, startup reads and parses the client certificate, private key,
+and pinned server certificate during a bounded connection attempt. The client
+performs normal TLS verification and also requires exact equality with the
+pinned server leaf certificate for HTTP and WebSocket traffic. It confirms
+direct access to the named runner project before selecting that project, then
+rebinds the retained SDK client to the controller's parent context. There is no
+insecure fallback, trust on first use, or automatic credential reload.
 
 At startup the controller resolves the configured image alias to its full
 SHA-256 fingerprint and captures the effective configuration and devices of
@@ -87,9 +111,11 @@ restarts the controller and approves a new preflight snapshot.
 incus-gh-runner treats "cannot get started" and "was working, then hit a problem" as different situations that deserve different responses.
 
 At startup, invalid configuration and failed dependency setup are fast and
-loud. If the initial GitHub message session cannot be opened, or if the Incus
-preflight check finds the configured image or any configured profile missing,
-the process exits. Once those dependencies are resolved, an uncertain initial
+loud. The process exits if the bounded initial Incus connection fails, HTTPS
+credentials cannot be read or parsed, TLS verification or the exact server pin
+fails, the configured project cannot be accessed directly, or image/profile
+preflight fails. If the initial GitHub message session cannot be opened, the
+process also exits. Once those dependencies are resolved, an uncertain initial
 owned-runner inventory is different: the controller stays alive and retries
 with capped backoff while scheduling no mutation. This avoids systemd restart
 limits turning a transient guest-agent outage into an operator-only recovery.
@@ -110,24 +136,42 @@ finishes naturally.
 
 ## Security model
 
-The most consequential fact about how incus-gh-runner runs is one line: the local Incus socket it talks to is root-equivalent. Membership in the `incus-admin` group — which the controller's systemd unit grants via a supplementary group — gives full control over every instance, project, and storage pool the Incus daemon manages, not just the ones incus-gh-runner created. The exact owner check narrows the controller's intended behavior, but it does not narrow this credential. A dedicated, single-purpose host is therefore a requirement for the current production deployment, not optional defense in depth.
+The Incus credential is a primary security boundary in either transport mode.
+Local membership in `incus-admin` is root-equivalent on the compute host. An
+unrestricted TLS client certificate is also an Incus administrator; moving it
+over HTTPS does not make it least privilege. The packaged HTTPS deployment
+instead uses a certificate restricted to the runner project and clears the
+base unit's `incus-admin` supplementary group. The dedicated-host requirement
+and the restricted project, network, storage, and workload controls still
+apply because project restriction does not make the cleanup marker
+authorization or turn the baseline into a multi-tenant boundary.
 
-Two GitHub credential boundaries always matter. The controller's renewable
-credential is either an App private key or a PAT; the selected systemd drop-in
-delivers it through `LoadCredential=` and the process reads the protected
-runtime file once at startup. That credential remains on the dedicated host,
-is never injected into a runner VM, and is never written to controller logs.
+The HTTPS server certificate is obtained through an authenticated out-of-band
+path and pinned exactly on top of normal TLS verification. A mismatched,
+expired, untrusted, or hostname-invalid server certificate fails startup.
+Disabling verification, blind trust on first use, and falling back to a weaker
+connection are outside the supported model.
+
+Three systemd credential boundaries can compose. One GitHub credential
+drop-in loads either an App private key or a PAT. HTTPS mode adds an independent
+Incus drop-in that exposes the root-owned client key through
+`LoadCredential=` and clears `SupplementaryGroups`; the public client and
+server certificates remain ordinary readable files. Job proofs can add a
+third, independent Ed25519 signing credential through a file-backed or
+TPM-bound drop-in. The process reads these protected runtime files during
+startup, does not inject them into runner VMs, and does not log their contents.
+Rotate a source credential atomically and restart the service; a running
+controller does not reload it.
+
 GitHub-side, each VM gets a fresh JIT runner configuration generated at
 creation time rather than a long-lived registration token, and the controller
 does not log it.
 
-Job proofs add an optional Ed25519 signing credential. The file-backed and
-TPM-bound systemd drop-ins expose the same protected runtime file, so storage
-mode does not change the controller or receipt. TPM binding protects the
-encrypted key at rest against offline use on another host; it does not make
-signing TPM-native, attest the boot state, or keep plaintext out of systemd and
-controller memory while the service runs. The receipt format itself lives in
-the [job proofs reference](../reference/job-proofs.md).
+TPM binding protects the encrypted job-proof key at rest against offline use
+on another host; it does not make signing TPM-native, attest the boot state, or
+keep plaintext out of systemd and controller memory while the service runs.
+The receipt format itself lives in the
+[job proofs reference](../reference/job-proofs.md).
 
 The JIT configuration is not secret from the job that it launches. The guest deletes the root-owned runtime payload before starting Actions Runner, which removes that staging copy, but the stock runner receives the same value on `Runner.Listener`'s command line and materializes its session files under `/opt/actions-runner`. `Runner.Listener` then launches `Runner.Worker` under the same `actions-runner` UID. A job can therefore read its listener's command line and runner-owned JIT/session files, and can disrupt or impersonate its own in-progress runner session. The current design does not claim an OS-user boundary between the job and its JIT material; adding one would require a privileged launcher or a maintained runner fork rather than a supported stock-runner setting.
 

@@ -22,6 +22,7 @@ func TestValidateYAMLAcceptsExactConfiguration(t *testing.T) {
     installation_id: 1234
     private_key_file: /run/credentials/github-app-key.pem
 incus:
+  socket: /var/lib/incus/unix.socket
   project: runners
   image: incus-gh-runner:v1
   profiles: [default, runner]
@@ -34,6 +35,20 @@ capacity:
   min_runners: 0
   max_runners: 4
 reconcile_interval: 1s
+`)
+
+	assert.NoError(t, config.ValidateYAML(data))
+}
+
+func TestValidateYAMLAcceptsIncusHTTPSFields(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`incus:
+  url: https://incus.example:8443
+  client_cert_file: /etc/incus-gh-runner/client.crt
+  client_key_file: /run/credentials/incus-gh-runner.service/incus-client-key
+  server_cert_file: /etc/incus-gh-runner/server.crt
+  project: runners
 `)
 
 	assert.NoError(t, config.ValidateYAML(data))

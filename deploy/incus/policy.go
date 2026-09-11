@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 
 	"cuelang.org/go/cue"
@@ -67,6 +68,9 @@ func ValidateBaseline(filename string, data []byte) error {
 	if err := validateAdditionalEgress(data); err != nil {
 		return fmt.Errorf("baseline violates CUE policy: %w", err)
 	}
+	if err := validateCoreHTTPSAddress(data); err != nil {
+		return fmt.Errorf("baseline violates CUE policy: %w", err)
+	}
 
 	return nil
 }
@@ -111,6 +115,38 @@ func validateAdditionalEgress(data []byte) error {
 		if err != nil || port < 1 || port > 65535 {
 			return fmt.Errorf("additional egress rule %d has an invalid port", index)
 		}
+	}
+
+	return nil
+}
+
+// validateCoreHTTPSAddress requires an empty listener or a concrete host:port.
+func validateCoreHTTPSAddress(data []byte) error {
+	var manifest struct {
+		Server struct {
+			CoreHTTPSAddress string `json:"core_https_address"`
+		} `json:"server"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return fmt.Errorf("decode server listener: %w", err)
+	}
+	address := manifest.Server.CoreHTTPSAddress
+	if address == "" {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return errors.New("core_https_address must be a concrete host:port")
+	}
+	if host == "" || host == "*" {
+		return errors.New("core_https_address must be a concrete host:port")
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+		return errors.New("core_https_address must be a concrete host:port")
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return errors.New("core_https_address must be a concrete host:port")
 	}
 
 	return nil

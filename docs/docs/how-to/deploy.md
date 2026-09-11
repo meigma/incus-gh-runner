@@ -4,24 +4,46 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 
 ## Prerequisites
 
-- Incus 7.0 or newer, initialized with QEMU VM support, on a host reachable at the target Incus socket. Incus 6 is not supported.
-- The host `br_netfilter` kernel module loaded at boot. Incus requires it when
-  starting bridged NICs with `security.ipv4_filtering` or
-  `security.ipv6_filtering`; filtered bridged NICs cannot start without it.
-- The `incus-admin` group exists on the host (`getent group incus-admin`). Membership in this group grants root-equivalent access to the Incus socket.
-
-    !!! warning "Root-equivalent socket access"
-        `SupplementaryGroups=incus-admin` in the unit file gives the controller the same host access as a user in `incus-admin`. Run the controller on a host dedicated to this workload, not one shared with unrelated services.
-
-- A systemd version supporting `LoadCredential=` and the `%d` credentials-directory specifier the unit relies on, along with `DynamicUser=` and the unit's other sandboxing directives. Ubuntu 24.04 is the validated reference host. TPM-bound proof keys additionally require systemd 250 or newer, an enrolled TPM 2.0 device, and the distribution's TPM2 userspace runtime libraries.
+- A dedicated, single-purpose Incus 7.0 or newer compute host with QEMU VM
+  support. Incus 6 is not supported.
+- A Linux controller machine. For Unix-socket mode, this is the compute host
+  and the `incus-admin` group must exist. For HTTPS mode, the controller can be
+  a separate machine and does not need `incus-admin` membership.
+- An existing trusted Incus administration path with authority to configure
+  the compute host, projects, networks, ACLs, profiles, storage, and trust
+  entries. Use a trusted administration workstation for HTTPS enrollment.
+  IncusOS has no general-purpose host shell, so an IncusOS compute host
+  requires HTTPS mode and all Incus CLI commands run from the workstation.
+- The compute host's `br_netfilter` kernel module loaded at boot. Incus
+  requires it when starting bridged NICs with `security.ipv4_filtering` or
+  `security.ipv6_filtering`.
+- A systemd version on the controller machine supporting `LoadCredential=`,
+  the `%d` credentials-directory specifier, `DynamicUser=`, and the unit's
+  other sandboxing directives. TPM-bound proof keys additionally require
+  systemd 250 or newer, an enrolled TPM 2.0 device, and the distribution's
+  TPM2 userspace runtime libraries.
 - Administrative access to the target GitHub organization or repository.
-- `curl` and GnuPG (`gpg`) to verify and add the package repository.
-- A checkout of this repository: the steps below use the desired-state files
-  from `deploy/incus/`.
+- `curl` and GnuPG (`gpg`) on the controller machine to verify and add the
+  package repository.
+- A checkout of this repository on an administration machine. The steps below
+  use the desired-state files from `deploy/incus/`.
+
+The production baseline remains one standalone, dedicated Incus compute host
+in both connection modes. HTTPS separates the controller process from that
+host; it does not add cluster placement or failover behavior.
+
+The controller supports Incus 7.0 and newer. The bundled isolation baseline
+deliberately retains a 7.0-7.2 compatibility control and rejects servers that
+advertise the newer project-level VM-nesting extension until the baseline is
+updated. A newer server can run the controller even when this baseline
+validator rejects it; do not bypass the rejection for a production deployment.
 
 ## 1. Prepare and validate Incus
 
-Load bridge netfilter now and persist it across host reboots:
+### Prepare the compute host
+
+On a conventional Linux compute host, load bridge netfilter now and persist it
+across reboots:
 
 ```sh
 sudo modprobe br_netfilter
@@ -31,10 +53,13 @@ test -d /sys/module/br_netfilter
 
 Treat a failed check as a host-preparation error. The API drift validator
 cannot prove kernel-module state, so verify the module after provisioning and
-after every host reboot.
+after every host reboot. IncusOS does not expose a host shell; establish and
+verify this prerequisite through the IncusOS administration surface instead
+of attempting these commands on the appliance.
 
-Start from the fail-closed desired-state example instead of creating an
-unrestricted project and attaching the project's `default` profile:
+Start from the fail-closed desired state instead of creating an unrestricted
+project and attaching the project's `default` profile. For Unix-socket mode,
+the portable fixtures are ready to adapt:
 
 ```sh
 # ZFS (the backward-compatible default)
@@ -44,90 +69,185 @@ cp deploy/incus/baseline.example.json incus-baseline.json
 cp deploy/incus/baseline.lvm.example.json incus-baseline.json
 ```
 
-The repository also ships the dependency-free CUE policy prototype under
+The repository also ships the dependency-free CUE policy under
 `deploy/incus/cue/`. Its default ZFS and LVM inputs render the corresponding
-JSON fixtures above, derive aggregate project ceilings from host and runner
+JSON fixtures, derive aggregate project ceilings from host and runner
 capacity, and reject attempts to weaken fixed isolation controls. It also
-renders a partial controller configuration that keeps `incus.project`, the sole
-Incus profile, and `capacity.max_runners` aligned with those ceilings. The
-module is not yet registry-published, so the rendered files remain local
-deployment artifacts for this increment.
+renders a partial controller configuration that keeps `incus.project`, the
+sole Incus profile, and `capacity.max_runners` aligned with those ceilings.
+
+For Unix-socket mode, leave `inputs.server.coreHTTPSAddress` empty. CUE then
+renders `dedicated-host-unix-socket` authority and requires an empty Incus
+HTTPS listener.
+
+For HTTPS mode, do not use an unchanged portable JSON fixture. Add this
+unification to the selected CUE example and replace the documentation address:
+
+```cue
+_deployment: runner.#Deployment & {
+	inputs: server: coreHTTPSAddress: "192.0.2.20:8443"
+}
+```
+
+Render that example from `deploy/incus/cue/`, replacing `default` with `lvm`
+when applicable:
+
+```sh
+mise exec -- cue export ./examples/default -e baseline --out json \
+  > ../../../incus-baseline.json
+```
+
+CUE renders `dedicated-host-https` authority and requires
+`server.core_https_address` to equal that host and port. Both modes require a
+standalone server, an empty cluster listener, a dedicated host, and the same
+restricted workload baseline. See the
+[CUE module reference](https://github.com/meigma/incus-gh-runner/tree/master/deploy/incus/cue)
+for the full render contract.
 
 When runners need a service that cannot traverse the HTTPS proxy, add a named
 item to `network.additionalEgress` with its IPv4 address, `tcp` or `udp`
 protocol, and one destination port. Each item adds one exact `/32` permit after
 DNS and proxy. CIDR ranges, port ranges, actions, and rule state are not
 configurable, and the list accepts no more than 16 endpoints. Apply host
-firewall policy independently when an endpoint terminates on the managed bridge
-host because the Incus ACL does not constrain host-originated traffic.
+firewall policy independently when an endpoint terminates on the managed
+bridge host because the Incus ACL does not constrain host-originated traffic.
 
-Edit the copy for the target host. In particular, replace every documentation
-address, bridge subnet, resource name, storage source, and capacity limit. For
-LVM, also replace the thin-pool name and default volume size. Managed
-bridge names must be 2 to 15 characters, start with a lowercase letter, and
-otherwise contain only lowercase letters, digits, or hyphens. The example proxy
-and DNS addresses are non-routable and intentionally provide no useful egress
-until replaced. Configure a controlled proxy to allow only GitHub or GHES and
-the dependency destinations approved for this builder. Do not replace the proxy
+Edit the copy for the target host. Replace every documentation address, bridge
+subnet, resource name, storage source, and capacity limit. For LVM, also
+replace the thin-pool name and default volume size. Managed bridge names must
+be 2 to 15 characters, start with a lowercase letter, and otherwise contain
+only lowercase letters, digits, or hyphens. The example proxy and DNS
+addresses are non-routable and intentionally provide no useful egress until
+replaced. Configure a controlled proxy to allow only GitHub or GHES and the
+dependency destinations approved for this builder. Do not replace the proxy
 boundary with unrestricted TCP/443 and call it a GitHub allowlist.
 
 The selected baseline fixture is reviewable desired state, not an input Incus
-can apply directly. Materialize the exact project, network, ACL, profile, and
-storage state through your Incus CLI or infrastructure-management workflow;
-the controller does not create or modify that infrastructure. Keep the bridge
-and ACL host-owned in the Incus `default` project, while the restricted runner
-project inherits the allowlisted bridge and owns only its runner profile. The
-baseline requires a dedicated ZFS or LVM thin pool, default-deny ACLs at the
-bridge and NIC, anti-spoofing and port isolation, and both per-VM and aggregate
-project ceilings. Keep the current controller on a dedicated, single-purpose
-host: its Unix-socket `incus-admin` identity remains root-equivalent.
+can apply directly. Materialize the exact project, network, ACL, profile,
+storage, and server-listener state through the existing trusted Incus
+administration path. The controller does not create or modify that
+infrastructure. Keep the bridge and ACL host-owned in the Incus `default`
+project, while the restricted runner project inherits the allowlisted bridge
+and owns only its runner profile. The baseline requires a dedicated ZFS or LVM
+thin pool, default-deny ACLs at the bridge and NIC, anti-spoofing and port
+isolation, and both per-VM and aggregate project ceilings.
 
 Set the project VM limit at or above the controller's
 `capacity.max_runners`, then size aggregate CPU, memory, and disk for that many
-profile-limited VMs while reserving explicit headroom for Incus, the
-controller, and the host. A project limit below `capacity.max_runners` makes
-requested capacity impossible; limits at physical capacity do not protect the
-host control plane from exhaustion. Incus project CPU and memory ceilings are
-admission budgets calculated from the declared per-VM limits; they are not
-aggregate runtime throttles shared dynamically by running VMs.
+profile-limited VMs while reserving explicit headroom for Incus and the compute
+host. A project limit below `capacity.max_runners` makes requested capacity
+impossible; limits at physical capacity do not protect the host control plane
+from exhaustion. Incus project CPU and memory ceilings are admission budgets
+calculated from the declared per-VM limits; they are not aggregate runtime
+throttles shared dynamically by running VMs.
 
-Validate the effective API state before importing an image or starting the
-controller:
+### Enroll the HTTPS controller identity
+
+Skip this subsection for Unix-socket mode.
+
+Configure the exact `core.https_address` rendered into the HTTPS baseline
+through the trusted administration path. On IncusOS, use the appliance
+administration surface and run all Incus CLI commands below from the existing
+trusted administration workstation; there is no host shell.
+
+Generate the controller's key and certificate on the controller machine:
 
 ```sh
-incus-gh-runner validate incus-baseline.json
+umask 077
+openssl req -x509 -newkey rsa:4096 -sha256 -nodes -days 365 \
+  -subj '/CN=incus-gh-runner-controller' \
+  -keyout client.key \
+  -out client.crt
 ```
 
-The validator defaults to `/var/lib/incus/unix.socket`. Pass another local
-socket explicitly when needed:
+Transfer only `client.crt` to the trusted administration workstation. After
+the `github-runners` project exists, enroll this certificate as
+project-restricted from the outset:
 
 ```sh
-incus-gh-runner validate --socket /run/incus/unix.socket incus-baseline.json
+incus config trust add-certificate <remote>: client.crt --restricted --projects github-runners
 ```
 
-This command is read-only and fails on drift. It validates the baseline against
-the embedded CUE policy in process and reads effective state from the local
-Incus socket; it does not invoke external `cue`, `incus`, or `jq` executables.
-It does not load controller configuration or require GitHub credentials. The
-socket remains root-equivalent, so run the command only from a trusted host
-administration context.
+Replace `<remote>` with the workstation's already trusted remote for the
+compute host. This follows Incus's
+[direct certificate enrollment](https://linuxcontainers.org/incus/docs/main/authentication/#adding-trusted-certificates-to-the-server)
+workflow. Do not first enroll the certificate without `--restricted`. An
+unrestricted TLS certificate has administrative authority over Incus, while
+the controller needs only its named runner project. Project restriction does
+not replace the runner project's network, storage, profile, and workload
+isolation controls.
 
-The validator confirms the effective resource ceilings, but it cannot re-prove
-the physical-host capacity and reserved headroom used when CUE generated them.
-Re-render and review the baseline after changing host capacity or reservations.
-Resolve every failure; do not weaken or bypass it to continue deployment. See
+Obtain the Incus server certificate through an authenticated out-of-band
+channel, such as the existing trusted administration path or an authenticated
+appliance console. Save it as `server.crt` and compare its SHA-256 fingerprint
+with a value confirmed independently by the compute-host administrator:
+
+```sh
+openssl x509 -in server.crt -noout -sha256 -fingerprint
+```
+
+Stop on any mismatch. Do not fetch and trust the certificate with an insecure
+request, disable TLS verification, or accept a first-seen certificate without
+an independently trusted fingerprint. The controller performs normal TLS
+verification and exact leaf-certificate pinning; the pin is not an insecure
+fallback.
+
+### Validate the effective state
+
+Import a runner image only after the baseline validates. Any image that
+implements the [guest contract](../reference/guest-contract.md) works; see
+[Build a hardened runner image](./build-runner-images.md) for building and
+boot-testing one. Configure only the validated `github-runner` profile; adding
+the `default` or a second profile can add devices or relax limits outside the
+checked baseline. The controller pins and materializes the validated profile
+snapshot into each VM, so later profile edits do not alter an approved runner
+environment.
+
+For Unix-socket mode, run the validator in a trusted compute-host
+administration context and name the socket explicitly:
+
+```sh
+incus-gh-runner validate \
+  --socket /var/lib/incus/unix.socket \
+  incus-baseline.json
+```
+
+For HTTPS mode, run it from the trusted administration workstation with a
+separate operator credential:
+
+```sh
+incus-gh-runner validate \
+  --url https://incus.example.com:8443 \
+  --client-cert operator.crt \
+  --client-key operator.key \
+  --server-cert server.crt \
+  incus-baseline.json
+```
+
+The validator's separate operator credential must have an administrative view
+that exposes sensitive server configuration, the named runner project, the
+network and ACL in the `default` project, the runner-project profile, and the
+global storage pool. Hidden listener or global-resource values fail
+validation. The project-restricted controller certificate cannot read every
+required value. Keep the credentials separate; do not broaden the controller
+certificate for validation.
+
+The command is read-only and fails on drift. It validates the baseline against
+the embedded CUE policy in process and uses only Incus GET operations; it does
+not invoke external `cue`, `incus`, or `jq` executables. It does not load
+controller configuration, controller environment variables, or GitHub
+credentials. HTTPS validation applies the same normal TLS checks and exact
+server-certificate pin as controller mode.
+
+The validator confirms effective resource ceilings, but it cannot re-prove the
+physical-host capacity and reserved headroom used when CUE generated them.
+Re-render and review the baseline after changing host capacity or
+reservations. Resolve every failure; do not weaken or bypass it to continue
+deployment. The baseline intentionally retains its Incus 7.0-7.2 VM-nesting
+compatibility gate; see
 [`deploy/incus/README.md`](https://github.com/meigma/incus-gh-runner/tree/master/deploy/incus)
-for the manifest contract, controlled-egress model, compatibility residuals,
-and the official Incus references behind each setting.
-
-Import a runner image into the validated project. Any image that implements
-the [guest contract](../reference/guest-contract.md) works; see [Build a
-hardened runner image](./build-runner-images.md) for building and boot-testing
-one. Configure only the validated
-`github-runner` profile; adding the `default` or a second profile can add
-devices or relax limits outside the checked baseline. The controller pins and
-materializes the validated profile snapshot into each VM, so later profile
-edits do not alter an approved runner environment.
+for the transport modes, manifest contract, controlled-egress model, and
+version semantics.
 
 ## 2. Choose the GitHub scope and credential
 
@@ -233,8 +353,9 @@ rm "$key_file"
 The package installs the binary, base unit, tmpfiles policy, editable example
 configuration, license files, and credential drop-in examples without enabling
 or starting the service. Packaged credential examples are under
-`/usr/share/doc/incus-gh-runner/systemd/`; select and install exactly one GitHub
-credential method later in this guide.
+`/usr/share/doc/incus-gh-runner/systemd/`. Later steps install exactly one
+GitHub credential drop-in, the Incus HTTPS drop-in when HTTPS mode is selected,
+and optionally one proof-key drop-in.
 
 Versioned DEB and RPM files remain available from the
 [GitHub releases page](https://github.com/meigma/incus-gh-runner/releases) for
@@ -248,19 +369,27 @@ sudo install -m 0644 deploy/systemd/incus-gh-runner.service /etc/systemd/system/
 sudo install -m 0644 deploy/systemd/incus-gh-runner.tmpfiles.conf /usr/lib/tmpfiles.d/incus-gh-runner.conf
 sudo install -d -m 0755 /etc/incus-gh-runner
 sudo install -m 0644 deploy/systemd/config.example.yaml /etc/incus-gh-runner/config.yaml
+sudo install -d -m 0755 /usr/share/doc/incus-gh-runner/systemd
+sudo install -m 0644 deploy/systemd/credentials-*.conf \
+  /usr/share/doc/incus-gh-runner/systemd/
 ```
 
-The unit runs under `DynamicUser=yes`, so `config.yaml` must remain readable by the dynamically allocated service user. Credential files remain root-only and are exposed to the service through systemd's protected credential directory. The tmpfiles policy does not enable diagnostics persistence; it expires files from the recommended diagnostics directory if you opt in later.
+Run these commands on the controller machine, not the remote compute host.
+The unit uses `DynamicUser=yes`, so `config.yaml` and public certificate files
+must be readable by the dynamically allocated service user. Private keys and
+tokens remain root-only sources exposed through systemd's protected credential
+directory. The tmpfiles policy does not enable diagnostics persistence; it
+expires files from the recommended diagnostics directory if you opt in later.
 
 ## 4. Write the configuration
 
-Edit the installed `/etc/incus-gh-runner/config.yaml`. The shipped example
-already matches this walkthrough's Incus and capacity values; set
+Edit the installed `/etc/incus-gh-runner/config.yaml`. Set
 `github.config_url` to the exact destination chosen in step 2 and change
 `github.scale_set` from the example's `incus-linux-x64` to the label your
-workflows will target — this guide uses `incus-gh-runner-prod` throughout. The
-example's remaining keys ship at the built-in defaults and can stay unchanged.
-The result works with either credential method:
+workflows will target. This guide uses `incus-gh-runner-prod`.
+
+For a controller running on the compute host through the Unix socket, use an
+explicit socket:
 
 ```yaml
 github:
@@ -268,6 +397,7 @@ github:
   scale_set: incus-gh-runner-prod
   runner_group: default
 incus:
+  socket: /var/lib/incus/unix.socket
   project: github-runners
   image: incus-gh-runner-v0.1.0
   profiles: [github-runner]
@@ -276,6 +406,32 @@ capacity:
   min_runners: 1
   max_runners: 4
 ```
+
+For a controller using HTTPS, replace the complete `incus` mapping with:
+
+```yaml
+incus:
+  url: https://incus.example.com:8443
+  client_cert_file: /etc/incus-gh-runner/client.crt
+  server_cert_file: /etc/incus-gh-runner/server.crt
+  project: github-runners
+  image: incus-gh-runner-v0.1.0
+  profiles: [github-runner]
+  owner: incus-gh-runner-production
+```
+
+The HTTPS mapping is completed by the step 5 systemd drop-in, which supplies
+`incus.client_key_file` through
+`INCUS_GH_RUNNER_INCUS_CLIENT_KEY_FILE` without putting the private-key path in
+`config.yaml`. `incus.url` must be the HTTPS API root endpoint whose host name
+matches the server certificate. All three certificate files are mandatory,
+and the server must present the exact pinned leaf certificate.
+
+Exactly one of `incus.socket` and `incus.url` is required. Existing
+configurations that relied on the former implicit local socket must add
+`socket: /var/lib/incus/unix.socket` or their intended path before upgrading.
+Configuring both modes, neither mode, partial HTTPS credentials, or HTTPS
+credential fields with a socket fails startup.
 
 For organization scope, replace the three GitHub scheduling fields with a
 dedicated group whose selected-repository and selected-workflow policy was
@@ -289,8 +445,8 @@ github:
 ```
 
 When using a GitHub App, add its non-secret identifiers beneath the existing
-`github` mapping. Do not add a second `github` key; exact configuration decoding
-rejects duplicate keys.
+`github` mapping. Do not add a second `github` key; exact configuration
+decoding rejects duplicate keys.
 
 ```yaml
 github:
@@ -299,37 +455,84 @@ github:
     installation_id: 12345678
 ```
 
-When using a PAT, do not add the `app` block. The selected systemd drop-in supplies the remaining credential path.
+When using a PAT, do not add the `app` block. The selected systemd drop-in
+supplies the remaining credential path.
 
-- `github.scale_set` names the runner scale set; the controller creates it automatically on first start if it does not already exist.
-- `incus.image` is the alias or fingerprint of the image you imported in step 1.
-- `incus.owner` is an arbitrary cleanup selector exclusive to this deployment — do not reuse it across independent controller instances pointed at the same Incus project. Another project writer can forge it, so it is not authorization.
+- `github.scale_set` names the runner scale set; the controller creates it
+  automatically on first start if it does not already exist.
+- `incus.image` is the alias or fingerprint of the image imported in step 1.
+- `incus.owner` is an arbitrary cleanup selector exclusive to this deployment.
+  Do not reuse it across independent controller instances pointed at the same
+  Incus project. Another project writer can forge it, so it is not
+  authorization.
 
-See [Configuration reference](../reference/configuration.md) for every key, default, environment variable, and credential validation rule.
+See [Configuration reference](../reference/configuration.md) for every key,
+default, environment variable, and credential validation rule.
 
-## 5. Install one GitHub credential drop-in
+## 5. Install the credential drop-ins
 
-Install exactly one credential file and its matching drop-in as `credentials.conf`.
+### Install one GitHub credential
+
+Install exactly one GitHub credential file and its matching drop-in as
+`credentials.conf`.
 
 For a GitHub App:
 
 ```sh
-sudo install -m 0600 github-app-private-key.pem /etc/incus-gh-runner/github-app-private-key.pem
+sudo install -o root -g root -m 0600 github-app-private-key.pem \
+  /etc/incus-gh-runner/github-app-private-key.pem
 sudo install -d -m 0755 /etc/systemd/system/incus-gh-runner.service.d
-sudo install -m 0644 deploy/systemd/credentials-github-app.conf \
+sudo install -m 0644 /usr/share/doc/incus-gh-runner/systemd/credentials-github-app.conf \
   /etc/systemd/system/incus-gh-runner.service.d/credentials.conf
 ```
 
 For a PAT stored in a local file named `github-token`:
 
 ```sh
-sudo install -m 0600 github-token /etc/incus-gh-runner/github-token
+sudo install -o root -g root -m 0600 github-token \
+  /etc/incus-gh-runner/github-token
 sudo install -d -m 0755 /etc/systemd/system/incus-gh-runner.service.d
-sudo install -m 0644 deploy/systemd/credentials-personal-access-token.conf \
+sudo install -m 0644 /usr/share/doc/incus-gh-runner/systemd/credentials-personal-access-token.conf \
   /etc/systemd/system/incus-gh-runner.service.d/credentials.conf
 ```
 
-Do not place the App private key or PAT value in `config.yaml`. The drop-ins load the root-owned source file and point the controller at the protected runtime copy. To change methods, replace `credentials.conf`, add or remove the `github.app` identifiers in `config.yaml`, then reload and restart the service.
+Do not place the App private key or PAT value in `config.yaml`. The drop-ins
+load the root-owned source file and point the controller at the protected
+runtime copy. To change methods, replace `credentials.conf`, add or remove the
+`github.app` identifiers in `config.yaml`, then reload and restart the service.
+
+### Install the Incus HTTPS credential
+
+Skip this subsection for Unix-socket mode.
+
+Transfer `client.key`, `client.crt`, and the independently verified
+`server.crt` to the controller machine over an authenticated channel. Install
+the private-key source root-only, install the public certificates so the
+DynamicUser can read them, and install the independent HTTPS drop-in:
+
+```sh
+sudo install -o root -g root -m 0600 client.key \
+  /etc/incus-gh-runner/client.key
+sudo install -o root -g root -m 0644 client.crt \
+  /etc/incus-gh-runner/client.crt
+sudo install -o root -g root -m 0644 server.crt \
+  /etc/incus-gh-runner/server.crt
+sudo install -d -m 0755 /etc/systemd/system/incus-gh-runner.service.d
+sudo install -m 0644 /usr/share/doc/incus-gh-runner/systemd/credentials-incus-https.conf \
+  /etc/systemd/system/incus-gh-runner.service.d/incus-https.conf
+```
+
+The drop-in clears the base unit's `SupplementaryGroups=incus-admin`, loads
+the root-only client key with `LoadCredential=`, and sets
+`INCUS_GH_RUNNER_INCUS_CLIENT_KEY_FILE` to the protected runtime file. The
+HTTPS controller therefore needs no local Incus CLI, socket, or `incus-admin`
+group. This drop-in composes with either GitHub credential and either optional
+job-proof drop-in.
+
+The controller reads and parses the client key and both certificates once
+during its bounded startup connection. Replace the source files atomically and
+restart the service after any certificate or key rotation; a running process
+does not reload them.
 
 ## 6. Enable job proofs (optional)
 
@@ -338,7 +541,7 @@ Job proofs bind each GitHub Actions job to the Incus VM that ran it; the
 envelope, payload schema, and key-ID rule. Generate and enroll the host's
 Ed25519 proof key, then choose one proof-key storage mode. Both modes expose
 the same runtime credential to the unchanged controller and compose with
-either GitHub credential drop-in.
+either GitHub credential drop-in and either Incus connection mode.
 
 ### Generate and enroll the proof key
 
@@ -378,7 +581,7 @@ file-backed proof credential drop-in:
 ```sh
 sudo install -o root -g root -m 0600 machine-provenance-key.pem \
   /etc/incus-gh-runner/machine-provenance-key.pem
-sudo install -m 0644 deploy/systemd/credentials-job-proof-file.conf \
+sudo install -m 0644 /usr/share/doc/incus-gh-runner/systemd/credentials-job-proof-file.conf \
   /etc/systemd/system/incus-gh-runner.service.d/job-proof.conf
 sudo stat -c '%U:%G %a' /etc/incus-gh-runner/machine-provenance-key.pem
 ```
@@ -457,7 +660,7 @@ enrolled.
 Install the TPM-bound drop-in:
 
 ```sh
-sudo install -m 0644 deploy/systemd/credentials-job-proof-tpm.conf \
+sudo install -m 0644 /usr/share/doc/incus-gh-runner/systemd/credentials-job-proof-tpm.conf \
   /etc/systemd/system/incus-gh-runner.service.d/job-proof.conf
 ```
 
@@ -518,8 +721,9 @@ sudo journalctl -u incus-gh-runner -n 50 --no-pager
 
 Look for a JSON log line with `msg="incus-gh-runner started"`, carrying `scale_set`, `scale_set_id`, and `incus_project` fields. Its absence, or a repeating restart loop, means startup failed — check the preceding log lines for the specific error before continuing.
 
-For TPM-bound job proofs, reboot the host normally and confirm the service
-starts again before accepting the deployment. Retrieve a proof in a real job,
+For TPM-bound job proofs, reboot the controller machine normally and confirm
+the service starts again before accepting the deployment. Retrieve a proof in
+a real job,
 verify it externally with the enrolled public key, and compare it with a
 file-backed proof. The storage modes must produce the same schema, key-ID rule,
 verifier behavior, and workflow experience; the receipt cannot attest which

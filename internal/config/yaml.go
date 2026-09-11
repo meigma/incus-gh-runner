@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"reflect"
 	"strings"
 	"time"
@@ -121,8 +122,12 @@ func validateYAMLSequence(node *yaml.Node, target reflect.Type, path string) err
 func mapstructureFields(target reflect.Type) map[string]reflect.Type {
 	fields := make(map[string]reflect.Type, target.NumField())
 	for field := range target.Fields() {
-		name, _, _ := strings.Cut(field.Tag.Get("mapstructure"), ",")
+		name, options, _ := strings.Cut(field.Tag.Get("mapstructure"), ",")
 		if name == "-" {
+			continue
+		}
+		if mapstructureOptionSet(options, "squash") {
+			maps.Copy(fields, mapstructureFields(field.Type))
 			continue
 		}
 		if name == "" {
@@ -131,6 +136,19 @@ func mapstructureFields(target reflect.Type) map[string]reflect.Type {
 		fields[name] = field.Type
 	}
 	return fields
+}
+
+// mapstructureOptionSet reports whether options contains one exact mapstructure option.
+func mapstructureOptionSet(options string, name string) bool {
+	if options == "" {
+		return false
+	}
+	for option := range strings.SplitSeq(options, ",") {
+		if option == name {
+			return true
+		}
+	}
+	return false
 }
 
 // requireYAMLScalar checks a scalar node's resolved YAML type.

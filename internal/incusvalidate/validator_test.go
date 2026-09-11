@@ -227,6 +227,18 @@ func TestValidateComparesReadOnlySnapshot(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsHiddenListenerConfiguration(t *testing.T) {
+	t.Parallel()
+	baseline := decodeBaselineFixture(t)
+	snapshot := validSnapshot(baseline)
+	snapshot.Server.Config = map[string]string{}
+	snapshot.Server.Addresses = []string{"192.0.2.10:8443"}
+
+	_, err := Validate(context.Background(), baseline, &snapshotReader{snapshot: snapshot})
+
+	require.Error(t, err)
+}
+
 // TestValidateLVMStorageSnapshot proves only Incus's generated initial-source key is normalized.
 func TestValidateLVMStorageSnapshot(t *testing.T) {
 	t.Parallel()

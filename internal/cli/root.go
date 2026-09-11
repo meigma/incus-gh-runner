@@ -37,8 +37,8 @@ type BuildInfo struct {
 // RunFunc starts the configured controller application.
 type RunFunc func(ctx context.Context, cfg config.Config) error
 
-// ValidateFunc validates one rendered baseline against an Incus Unix socket.
-type ValidateFunc func(ctx context.Context, baselinePath string, socketPath string) (ValidationResult, error)
+// ValidateFunc validates one rendered baseline against an Incus connection.
+type ValidateFunc func(ctx context.Context, baselinePath string, connection config.IncusConnection) (ValidationResult, error)
 
 // VerifyProofFunc verifies one proof against an enrolled public key and host identity.
 type VerifyProofFunc func(
@@ -135,7 +135,7 @@ func (o Options) withDefaults() Options {
 		}
 	}
 	if o.Validate == nil {
-		o.Validate = func(context.Context, string, string) (ValidationResult, error) {
+		o.Validate = func(context.Context, string, config.IncusConnection) (ValidationResult, error) {
 			return ValidationResult{}, errors.New("incus validator runtime adapter is not implemented")
 		}
 	}
@@ -210,12 +210,20 @@ func newProofVerifyCommand(options Options) *cobra.Command {
 // newValidateCommand creates the read-only Incus baseline validation command.
 func newValidateCommand(options Options) *cobra.Command {
 	socketPath := defaultValidationSocketPath
+	connection := config.IncusConnection{}
 	command := &cobra.Command{
 		Use:   "validate <baseline>",
-		Short: "Validate a rendered baseline against local Incus state",
+		Short: "Validate a rendered baseline against Incus state",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := options.Validate(cmd.Context(), args[0], socketPath)
+			if cmd.Flags().Changed("socket") && cmd.Flags().Changed("url") {
+				return errors.New("specify either --socket or --url, not both")
+			}
+			connection.Socket = socketPath
+			if cmd.Flags().Changed("url") && !cmd.Flags().Changed("socket") {
+				connection.Socket = ""
+			}
+			result, err := options.Validate(cmd.Context(), args[0], connection)
 			if err != nil {
 				return err
 			}
@@ -231,7 +239,11 @@ func newValidateCommand(options Options) *cobra.Command {
 			return nil
 		},
 	}
-	command.Flags().StringVar(&socketPath, "socket", socketPath, "local Incus Unix socket path")
+	command.Flags().StringVar(&socketPath, "socket", defaultValidationSocketPath, "local Incus Unix socket path")
+	command.Flags().StringVar(&connection.URL, "url", "", "Incus HTTPS API URL")
+	command.Flags().StringVar(&connection.ClientCertFile, "client-cert", "", "TLS client certificate path")
+	command.Flags().StringVar(&connection.ClientKeyFile, "client-key", "", "TLS client private key path")
+	command.Flags().StringVar(&connection.ServerCertFile, "server-cert", "", "pinned Incus server certificate path")
 	return command
 }
 

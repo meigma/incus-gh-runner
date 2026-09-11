@@ -1,10 +1,12 @@
 # Incus isolation baseline
 
-This directory contains a reviewable desired-state example, a CUE policy module,
-and a read-only drift validator for a single-purpose Incus 7 runner host. None
-of them configure or mutate Incus. Render or adapt an environment-specific
-baseline, apply it through the Incus CLI or your infrastructure-management
-system, then validate the effective API state.
+This directory contains reviewable desired-state examples, a CUE policy
+module, and a read-only drift validator for one standalone, single-purpose
+Incus 7 runner compute host. The baseline supports either a local Unix socket
+or an exact HTTPS listener without changing the host-isolation policy. None of
+these artifacts configure or mutate Incus. Render or adapt an
+environment-specific baseline, apply it through a trusted Incus administration
+path, then validate the effective API state.
 
 The example establishes:
 
@@ -28,6 +30,26 @@ the runner project. A host administrator owns the bridge and ACL in the
 `default` project, and `restricted.networks.access` allowlists only that bridge
 for the runner project.
 
+## Connection authority modes
+
+The baseline accepts two connection authority modes:
+
+- `dedicated-host-unix-socket` requires an empty `core.https_address`.
+- `dedicated-host-https` requires `core.https_address` to equal one concrete
+  host and port.
+
+Both require `dedicated_single_purpose_host_required=true`,
+`unix_socket_is_root_equivalent=true`, a standalone Incus server, and an empty
+`cluster.https_address`. The HTTPS addition is not a cluster validator and does
+not add placement or failover semantics. It also does not change the guest
+contract, runner image requirements, project topology, or VM lifecycle.
+
+For HTTPS, enroll the controller certificate as restricted to the runner
+project from the outset. An unrestricted TLS certificate is an Incus
+administrator, and HTTPS transport alone does not narrow authority. Project
+restriction still depends on the project, host-owned network and ACL,
+dedicated storage, and workload-isolation controls described below.
+
 Both ACL attachment points are intentional. The host-owned network attachment
 keeps the external-traffic ACL on the bridge if the project-local profile omits
 its copy. However, Incus bridge ACLs applied only at network level cannot
@@ -40,22 +62,27 @@ default actions to reject and log unmatched traffic.
 ## Adapt the example
 
 The dependency-free module under [`cue/`](cue/) accepts a closed set of names,
-host capacity, runner sizing, controlled network endpoints, and storage inputs.
-It derives aggregate limits and emits a complete baseline while keeping the
-security controls non-overridable. The optional `additionalEgress` list accepts
-only named IPv4 `/32` endpoints with one TCP or UDP port each; it cannot express
+host capacity, runner sizing, controlled network endpoints, storage inputs,
+and an optional exact HTTPS listener. It derives aggregate limits and emits a
+complete baseline while keeping the security controls non-overridable. Empty
+`inputs.server.coreHTTPSAddress` renders `dedicated-host-unix-socket`; a
+concrete host and port renders `dedicated-host-https` and the same exact
+listener into the baseline. The optional `additionalEgress` list accepts only
+named IPv4 `/32` endpoints with one TCP or UDP port each; it cannot express
 CIDR ranges, port ranges, actions, or rule state. The module also emits the
-controller project, sole profile, and
-`capacity.max_runners` as one partial configuration so those values cannot
-drift from the baseline. Its default ZFS and LVM examples are checked for
-semantic equality with `baseline.example.json` and
-`baseline.lvm.example.json`, respectively.
+controller project, sole profile, and `capacity.max_runners` as one partial
+configuration so those values cannot drift from the baseline. Its default ZFS
+and LVM examples are checked for semantic equality with
+`baseline.example.json` and `baseline.lvm.example.json`, respectively.
 
 Registry publication is not part of this proof increment. Until the `@v0`
 module interface is reviewed and published, `baseline.example.json` and
-`baseline.lvm.example.json` remain the portable deployment artifacts. Copy the
-appropriate fixture outside the checkout and change every environment-specific
-value before applying it:
+`baseline.lvm.example.json` remain the portable Unix-socket deployment
+artifacts. HTTPS deployments must set
+`inputs.server.coreHTTPSAddress` in an environment-specific CUE configuration
+and render a baseline with `dedicated-host-https` authority. Copy or render the
+appropriate baseline outside the checkout and change every
+environment-specific value before applying it:
 
 - replace the `192.0.2.10/32` proxy and `192.0.2.53/32` DNS documentation
   addresses with dedicated endpoint IPv4 `/32` CIDRs;
@@ -64,10 +91,11 @@ value before applying it:
   letter, and otherwise contain only lowercase letters, digits, or hyphens;
   use either a dedicated existing zpool or dataset for ZFS, or an existing VG,
   thin-pool name, and default volume size for LVM;
-- size aggregate limits below physical host capacity so Incus, the controller,
-  and the host retain explicit CPU, memory, and disk headroom; keep the VM
-  count at or above `capacity.max_runners`, and size aggregate CPU, memory, and
-  disk for that many profile-limited VMs;
+- size aggregate limits below physical compute-host capacity so Incus and the
+  host retain explicit CPU, memory, and disk headroom; socket-mode deployments
+  must also reserve for the colocated controller. Keep the VM count at or above
+  `capacity.max_runners`, and size aggregate CPU, memory, and disk for that many
+  profile-limited VMs;
 - configure the runner listener and job tooling to use the proxy by IP; and
 - configure the proxy itself to allow only GitHub or GHES plus explicitly
   approved dependency destinations.
@@ -99,6 +127,10 @@ test -d /sys/module/br_netfilter
 Incus requires bridge netfilter when the profile enables IPv4 or IPv6 address
 filtering. The read-only API validator cannot observe kernel-module state; the
 operator must verify the module after provisioning and after every reboot.
+IncusOS has no general-purpose host shell. Establish and verify this
+kernel-module prerequisite through the appliance administration surface, and
+run Incus enrollment and drift-validation commands from an existing trusted
+administration workstation.
 
 The aggregate project CPU and memory values are admission budgets: Incus uses
 the declared per-instance limits when deciding whether another VM fits. They
@@ -113,73 +145,90 @@ preflight the controller pins this profile's effective configuration and
 devices, revalidates its digest before create, and materializes that snapshot
 directly into each VM with no mutable profile attachment.
 
-Incus 7.0 through 7.2 do not advertise the
-`projects_restricted_virtual_machines_nesting` extension. On those supported
-versions, the exact profile's `security.nesting=false` setting is the explicit
-compensating control; there is no project-level VM nesting restriction to set.
-The validator reports this residual on every successful run and fails once a
-server advertises the future extension, forcing the baseline to adopt
-`restricted.virtual-machines.nesting=block` instead of silently retaining the
-weaker compatibility path.
+The baseline intentionally preserves the Incus 7.0 through 7.2 compatibility
+path for VM nesting. Those versions do not advertise
+`projects_restricted_virtual_machines_nesting`, so the exact profile setting
+`security.nesting=false` is the compensating control. The validator reports
+this residual on every successful run.
+
+The validator also rejects a server that advertises that newer extension,
+forcing a future baseline update to enforce
+`restricted.virtual-machines.nesting=block` rather than silently retaining the
+weaker compatibility path. This is a baseline-version gate, not a general
+controller server-version limit: the controller can connect to newer Incus
+servers even while this specific isolation baseline rejects them.
 
 ## Validate without changing Incus
 
-The installed controller binary also provides a standalone validator:
+The installed controller binary also provides a standalone validator. Name the
+local socket explicitly for Unix-socket validation:
 
 ```console
-incus-gh-runner validate /etc/incus-gh-runner/incus-baseline.json
+incus-gh-runner validate \
+  --socket /var/lib/incus/unix.socket \
+  /etc/incus-gh-runner/incus-baseline.json
 ```
 
-It compiles the embedded CUE policy in process, checks the rendered baseline
-against that policy, and reads the effective Incus state through the local Unix
-socket. It does not invoke external `cue`, `incus`, or `jq` executables. The
-validator uses only read operations and never creates, changes, or deletes
-Incus resources. Its default socket is `/var/lib/incus/unix.socket`; select a
-different local socket explicitly when required:
+For HTTPS validation, supply all connection inputs as flags:
 
 ```console
-incus-gh-runner validate --socket /run/incus/unix.socket /etc/incus-gh-runner/incus-baseline.json
+incus-gh-runner validate \
+  --url https://incus.example.com:8443 \
+  --client-cert operator.crt \
+  --client-key operator.key \
+  --server-cert server.crt \
+  /etc/incus-gh-runner/incus-baseline.json
 ```
 
-`validate` does not load the controller YAML configuration or require GitHub
-credentials. Its inputs are the explicit baseline path and local socket path.
-Socket access is still root-equivalent, so run it only from a trusted host
-administration context.
+The command compiles the embedded CUE policy in process, checks the rendered
+baseline against that policy, and reads the effective Incus state with GET
+operations only. It never creates, changes, or deletes Incus resources and
+does not invoke external `cue`, `incus`, or `jq` executables. It does not load
+the controller YAML configuration, controller environment variables, or
+GitHub credentials. Its connection inputs are flag-only. If neither
+`--socket` nor `--url` is present, the CLI retains the standalone validator
+default `/var/lib/incus/unix.socket`; an explicit URL requires all three
+certificate flags, and an explicit socket and URL together are rejected.
 
-It rejects malformed manifests, missing API extensions, non-`nftables`
-firewalls, clustered hosts, any Incus network API listener, and any effective
-project, network, ACL, profile, or storage-pool drift. The only accepted
-authority is `dedicated-host-unix-socket` with both HTTPS listener settings
-empty. The storage comparison ignores only the server-generated
-`volatile.initial_source` field observed on Incus 7.0.1; `source`,
-the selected driver's derived settings, and every other effective storage
-setting remain fail-closed.
+HTTPS validation performs normal TLS verification and requires the server's
+presented leaf certificate to equal `--server-cert` for HTTP and WebSocket
+connections. Obtain that certificate out of band and compare its fingerprint
+with a trusted operator record. Do not use insecure retrieval, blind trust on
+first use, or a TLS-verification bypass.
 
-The rendered baseline records the resource ceilings derived by CUE, but not the
-physical host totals and reserved-headroom inputs used to derive them. Runtime
-validation can detect drift in those effective ceilings; it cannot re-measure
-or re-prove physical-host headroom. Re-render and review the baseline whenever
-host capacity or reservations change.
+The validator reads sensitive server configuration, the named runner project,
+the network and ACL in the `default` project, the runner-project profile, and
+the global storage pool. Use a separate operator credential with an
+administrative view that exposes all of those resources and values; hidden
+listener or global-resource values fail validation. The controller certificate
+should remain restricted to the runner project. Do not broaden it to make
+validation pass. On IncusOS, which has no general-purpose host shell, run the
+HTTPS validator and Incus enrollment commands from an existing trusted
+administration workstation.
 
-The current Unix-socket controller connection remains root-equivalent, so this
-baseline requires a dedicated single-purpose host and treats controller
-compromise as host compromise. A disposable Incus 7.0.1 authority spike proved
-the container-compatible inventory, create, start, guest-agent file transfer,
-console, stop, delete, project-denial, restriction, and certificate-revocation
-paths through a project-restricted TLS identity. It did not prove KVM boot or
-VM guest-agent readiness. The `user.incus-gh-runner.owner` key scopes cleanup;
-it is not authorization against another Incus writer.
+Validation rejects malformed manifests, missing API extensions, non-`nftables`
+firewalls, clustered hosts, a listener that does not match the selected
+authority mode, and any effective project, network, ACL, profile, or
+storage-pool drift. Unix-socket authority requires both HTTPS listener settings
+empty. HTTPS authority requires the exact `core.https_address` recorded in the
+baseline. Both require `cluster.https_address` empty.
 
-Project-restricted TLS is intentionally rejected for production despite that
-positive lifecycle result. Incus project restriction narrows a client to named
-projects, but the resulting authority is still broad within a project. Moving
-the bridge and ACL to `default` materially narrows that authority because a
-runner-project client cannot mutate those objects. The project-local profile
-remains mutable, though: such a client can remove the direct NIC ACL,
-filtering, or port isolation, change NIC defaults, or introduce another
-profile. A future TLS design must pin the server certificate and prove a
-least-privilege authorization boundary that cannot mutate those remaining
-isolation controls before this validator can report success for it.
+The storage comparison ignores only the server-generated
+`volatile.initial_source` field observed on Incus 7.0.1; `source`, the selected
+driver's derived settings, and every other effective storage setting remain
+fail-closed.
+
+The rendered baseline records the resource ceilings derived by CUE, but not
+the physical host totals and reserved-headroom inputs used to derive them.
+Runtime validation can detect drift in those effective ceilings; it cannot
+re-measure or re-prove physical-host headroom. Re-render and review the
+baseline whenever host capacity or reservations change.
+
+The local socket remains root-equivalent. A restricted HTTPS controller
+certificate narrows access to the runner project but does not make the owner
+marker authorization or remove the dedicated-host requirement. The
+`user.incus-gh-runner.owner` key scopes the controller's intended cleanup; any
+writer with project access can forge it.
 
 ## Assurance boundaries
 
@@ -205,3 +254,5 @@ without replacing command-line executables.
 - [Network ACL behavior and bridge limitations](https://linuxcontainers.org/incus/docs/main/howto/network_acls/)
 - [Disk size and I/O limits](https://linuxcontainers.org/incus/docs/main/reference/devices_disk/)
 - [Storage pools and drivers](https://linuxcontainers.org/incus/docs/main/reference/storage_drivers/)
+- [Exposing the Incus HTTPS listener](https://linuxcontainers.org/incus/docs/main/howto/server_expose/)
+- [TLS client certificates and direct trust enrollment](https://linuxcontainers.org/incus/docs/main/authentication/#tls-client-certificates)

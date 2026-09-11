@@ -93,7 +93,7 @@ func verifyJobProof(
 func validateIncusBaseline(
 	ctx context.Context,
 	baselinePath string,
-	socketPath string,
+	connection config.IncusConnection,
 ) (cli.ValidationResult, error) {
 	data, err := readIncusBaseline(baselinePath)
 	if err != nil {
@@ -104,10 +104,11 @@ func validateIncusBaseline(
 		return cli.ValidationResult{}, err
 	}
 
-	reader, err := incusadapter.ConnectValidationReader(ctx, socketPath)
+	server, err := incusadapter.Connect(ctx, connection, baseline.Names.Project)
 	if err != nil {
 		return cli.ValidationResult{}, err
 	}
+	reader := incusadapter.NewValidationReader(server)
 	defer reader.Close()
 
 	result, err := incusvalidate.Validate(ctx, baseline, reader)
@@ -118,7 +119,7 @@ func validateIncusBaseline(
 	return cli.ValidationResult{Notices: result.Notices}, nil
 }
 
-// readIncusBaseline bounds manifest reads before policy parsing and socket access.
+// readIncusBaseline bounds manifest reads before policy parsing and Incus access.
 func readIncusBaseline(baselinePath string) ([]byte, error) {
 	info, err := os.Stat(baselinePath)
 	if err != nil {

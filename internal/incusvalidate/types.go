@@ -181,6 +181,8 @@ type ServerState struct {
 	Auth string
 	// APIExtensions lists the capabilities advertised by the daemon.
 	APIExtensions []string
+	// Addresses lists HTTPS listeners advertised even when sensitive configuration is hidden.
+	Addresses []string
 	// Config contains daemon configuration relevant to network exposure.
 	Config map[string]string
 	// Version is the running Incus server version.

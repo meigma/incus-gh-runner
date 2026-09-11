@@ -193,6 +193,9 @@ func TestValidateRuntimeRequiresCompleteAdapterConfiguration(t *testing.T) {
 			Token:       "development-token",
 		},
 		Incus: config.Incus{
+			IncusConnection: config.IncusConnection{
+				Socket: "/var/lib/incus/unix.socket",
+			},
 			Project:          "runner-test",
 			Image:            "incus-gh-runner:test",
 			Profiles:         []string{"default"},
@@ -458,6 +461,48 @@ func TestValidateRuntimeRequiresCompleteAdapterConfiguration(t *testing.T) {
 			},
 			want: "incus.profiles must not contain empty names",
 		},
+		{
+			name: "missing Incus transport",
+			mutate: func(cfg *config.Config) {
+				cfg.Incus.Socket = ""
+			},
+			want: "configure exactly one of incus.socket or incus.url",
+		},
+		{
+			name: "both Incus transports",
+			mutate: func(cfg *config.Config) {
+				cfg.Incus.URL = "https://incus.example:8443"
+			},
+			want: "configure exactly one of incus.socket or incus.url",
+		},
+		{
+			name: "HTTPS without server certificate",
+			mutate: func(cfg *config.Config) {
+				cfg.Incus.Socket = ""
+				cfg.Incus.URL = "https://incus.example:8443"
+				cfg.Incus.ClientCertFile = "/client.crt"
+				cfg.Incus.ClientKeyFile = "/client.key"
+			},
+			want: "incus.server_cert_file is required",
+		},
+		{
+			name: "TLS files with Unix socket",
+			mutate: func(cfg *config.Config) {
+				cfg.Incus.ClientCertFile = "/client.crt"
+			},
+			want: "incus.client_cert_file is only valid with incus.url",
+		},
+		{
+			name: "plaintext Incus URL",
+			mutate: func(cfg *config.Config) {
+				cfg.Incus.Socket = ""
+				cfg.Incus.URL = "http://incus.example:8443"
+				cfg.Incus.ClientCertFile = "/client.crt"
+				cfg.Incus.ClientKeyFile = "/client.key"
+				cfg.Incus.ServerCertFile = "/server.crt"
+			},
+			want: "incus.url must be an absolute HTTPS URL",
+		},
 	}
 
 	for _, tt := range tests {
@@ -494,4 +539,161 @@ func TestValidateRuntimeRequiresCompleteAdapterConfiguration(t *testing.T) {
 	fileCredentials.GitHub.Token = ""
 	fileCredentials.GitHub.TokenFile = "/run/credentials/github-token"
 	assert.NoError(t, fileCredentials.ValidateRuntime())
+	httpsIncus := valid
+	httpsIncus.Incus.Socket = ""
+	httpsIncus.Incus.URL = "https://incus.example:8443"
+	httpsIncus.Incus.ClientCertFile = "/etc/incus-gh-runner/client.crt"
+	httpsIncus.Incus.ClientKeyFile = "/etc/incus-gh-runner/client.key"
+	httpsIncus.Incus.ServerCertFile = "/etc/incus-gh-runner/server.crt"
+	assert.NoError(t, httpsIncus.ValidateRuntime())
+}
+
+func TestIncusConnectionValidate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		connection config.IncusConnection
+		wantErr    string
+	}{
+		{
+			name:       "unix socket",
+			connection: config.IncusConnection{Socket: "/var/lib/incus/unix.socket"},
+		},
+		{
+			name: "HTTPS with pinned credentials",
+			connection: config.IncusConnection{
+				URL:            "https://incus.example:8443",
+				ClientCertFile: "/client.crt",
+				ClientKeyFile:  "/client.key",
+				ServerCertFile: "/server.crt",
+			},
+		},
+		{
+			name:    "neither transport",
+			wantErr: "configure exactly one of incus.socket or incus.url",
+		},
+		{
+			name: "both transports",
+			connection: config.IncusConnection{
+				Socket: "/var/lib/incus/unix.socket",
+				URL:    "https://incus.example:8443",
+			},
+			wantErr: "configure exactly one of incus.socket or incus.url",
+		},
+		{
+			name: "HTTPS without client certificate",
+			connection: config.IncusConnection{
+				URL:            "https://incus.example:8443",
+				ClientKeyFile:  "/client.key",
+				ServerCertFile: "/server.crt",
+			},
+			wantErr: "incus.client_cert_file is required",
+		},
+		{
+			name: "HTTPS without client key",
+			connection: config.IncusConnection{
+				URL:            "https://incus.example:8443",
+				ClientCertFile: "/client.crt",
+				ServerCertFile: "/server.crt",
+			},
+			wantErr: "incus.client_key_file is required",
+		},
+		{
+			name: "HTTPS without server certificate",
+			connection: config.IncusConnection{
+				URL:            "https://incus.example:8443",
+				ClientCertFile: "/client.crt",
+				ClientKeyFile:  "/client.key",
+			},
+			wantErr: "incus.server_cert_file is required",
+		},
+		{
+			name: "client key with unix socket",
+			connection: config.IncusConnection{
+				Socket:        "/var/lib/incus/unix.socket",
+				ClientKeyFile: "/client.key",
+			},
+			wantErr: "incus.client_key_file is only valid with incus.url",
+		},
+		{
+			name: "server certificate with unix socket",
+			connection: config.IncusConnection{
+				Socket:         "/var/lib/incus/unix.socket",
+				ServerCertFile: "/server.crt",
+			},
+			wantErr: "incus.server_cert_file is only valid with incus.url",
+		},
+		{
+			name: "plaintext URL",
+			connection: config.IncusConnection{
+				URL:            "http://incus.example:8443",
+				ClientCertFile: "/client.crt",
+				ClientKeyFile:  "/client.key",
+				ServerCertFile: "/server.crt",
+			},
+			wantErr: "incus.url must be an absolute HTTPS URL",
+		},
+		{
+			name: "URL with userinfo",
+			connection: config.IncusConnection{
+				URL:            "https://user@incus.example:8443",
+				ClientCertFile: "/client.crt",
+				ClientKeyFile:  "/client.key",
+				ServerCertFile: "/server.crt",
+			},
+			wantErr: "incus.url must be an absolute HTTPS URL",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := tt.connection.Validate()
+			if tt.wantErr == "" {
+				assert.NoError(t, err)
+				return
+			}
+			assert.EqualError(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestIncusConnectionRejectsNonRootHTTPSURL(t *testing.T) {
+	t.Parallel()
+	for _, endpoint := range []string{
+		"https://incus.example:8443/api",
+		"https://incus.example:8443?project=other",
+		"https://incus.example:8443?",
+		"https://incus.example:8443/#fragment",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			t.Parallel()
+			connection := config.IncusConnection{
+				URL:            endpoint,
+				ClientCertFile: "/client.crt",
+				ClientKeyFile:  "/client.key",
+				ServerCertFile: "/server.crt",
+			}
+			require.Error(t, connection.Validate())
+		})
+	}
+}
+
+func TestLoadBindsIncusHTTPSConnection(t *testing.T) {
+	t.Setenv("INCUS_GH_RUNNER_INCUS_URL", "https://incus.example:8443")
+	t.Setenv("INCUS_GH_RUNNER_INCUS_CLIENT_CERT_FILE", "/run/credentials/incus-gh-runner.service/incus-client.crt")
+	t.Setenv("INCUS_GH_RUNNER_INCUS_CLIENT_KEY_FILE", "/run/credentials/incus-gh-runner.service/incus-client-key")
+	t.Setenv("INCUS_GH_RUNNER_INCUS_SERVER_CERT_FILE", "/etc/incus-gh-runner/server.crt")
+	vp := viper.New()
+	require.NoError(t, config.ConfigureViper(vp))
+
+	cfg, err := config.Load(vp)
+
+	require.NoError(t, err)
+	assert.Equal(t, "https://incus.example:8443", cfg.Incus.URL)
+	assert.Equal(t, "/run/credentials/incus-gh-runner.service/incus-client.crt", cfg.Incus.ClientCertFile)
+	assert.Equal(t, "/run/credentials/incus-gh-runner.service/incus-client-key", cfg.Incus.ClientKeyFile)
+	assert.Equal(t, "/etc/incus-gh-runner/server.crt", cfg.Incus.ServerCertFile)
 }

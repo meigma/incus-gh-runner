@@ -205,10 +205,11 @@ func TestValidateCommandBypassesControllerInitialization(t *testing.T) {
 			controllerCalled = true
 			return nil
 		},
-		Validate: func(_ context.Context, baselinePath string, socketPath string) (ValidationResult, error) {
+		Validate: func(_ context.Context, baselinePath string, connection config.IncusConnection) (ValidationResult, error) {
 			validationCalled = true
 			assert.Equal(t, "baseline.json", baselinePath)
-			assert.Equal(t, "/run/incus/unix.socket", socketPath)
+			assert.Equal(t, "/run/incus/unix.socket", connection.Socket)
+			assert.Empty(t, connection.URL)
 			return ValidationResult{Notices: []string{"retain compensating control"}}, nil
 		},
 	})
@@ -223,17 +224,21 @@ func TestValidateCommandBypassesControllerInitialization(t *testing.T) {
 
 // TestValidateCommandUsesTheDocumentedDefaultSocket proves the stable validation flag default.
 func TestValidateCommandUsesTheDocumentedDefaultSocket(t *testing.T) {
-	var receivedSocket string
+	var received config.IncusConnection
 	root := NewRootCommand(Options{
-		Validate: func(_ context.Context, _ string, socketPath string) (ValidationResult, error) {
-			receivedSocket = socketPath
+		Validate: func(_ context.Context, _ string, connection config.IncusConnection) (ValidationResult, error) {
+			received = connection
 			return ValidationResult{}, nil
 		},
 	})
 	root.SetArgs([]string{"validate", "baseline.json"})
 
 	require.NoError(t, root.ExecuteContext(context.Background()))
-	assert.Equal(t, defaultValidationSocketPath, receivedSocket)
+	assert.Equal(t, defaultValidationSocketPath, received.Socket)
+	assert.Empty(t, received.URL)
+	assert.Empty(t, received.ClientCertFile)
+	assert.Empty(t, received.ClientKeyFile)
+	assert.Empty(t, received.ServerCertFile)
 }
 
 // TestValidateCommandRequiresOneBaseline proves the operand contract.
@@ -252,7 +257,7 @@ func TestValidateCommandRequiresOneBaseline(t *testing.T) {
 			t.Parallel()
 			called := false
 			root := NewRootCommand(Options{
-				Validate: func(context.Context, string, string) (ValidationResult, error) {
+				Validate: func(context.Context, string, config.IncusConnection) (ValidationResult, error) {
 					called = true
 					return ValidationResult{}, nil
 				},
@@ -272,7 +277,7 @@ func TestValidateCommandPassesExecutionContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	root := NewRootCommand(Options{
-		Validate: func(ctx context.Context, _ string, _ string) (ValidationResult, error) {
+		Validate: func(ctx context.Context, _ string, _ config.IncusConnection) (ValidationResult, error) {
 			assert.ErrorIs(t, ctx.Err(), context.Canceled)
 			return ValidationResult{}, nil
 		},
@@ -382,4 +387,52 @@ func TestProofVerifyRejectsMissingInputsWithoutOutput(t *testing.T) {
 			assert.Empty(t, stdout.String())
 		})
 	}
+}
+
+// TestValidateCommandClearsImplicitSocketWhenURLIsSet proves --url does not inherit the Unix default.
+func TestValidateCommandClearsImplicitSocketWhenURLIsSet(t *testing.T) {
+	var received config.IncusConnection
+	root := NewRootCommand(Options{
+		Validate: func(_ context.Context, _ string, connection config.IncusConnection) (ValidationResult, error) {
+			received = connection
+			return ValidationResult{}, nil
+		},
+	})
+	root.SetArgs([]string{
+		"validate",
+		"--url", "https://incus.example:8443",
+		"--client-cert", "client.crt",
+		"--client-key", "client.key",
+		"--server-cert", "server.crt",
+		"baseline.json",
+	})
+
+	require.NoError(t, root.ExecuteContext(context.Background()))
+	assert.Empty(t, received.Socket)
+	assert.Equal(t, "https://incus.example:8443", received.URL)
+	assert.Equal(t, "client.crt", received.ClientCertFile)
+	assert.Equal(t, "client.key", received.ClientKeyFile)
+	assert.Equal(t, "server.crt", received.ServerCertFile)
+}
+
+// TestValidateCommandRejectsExplicitSocketAndURL proves transport flags stay mutually exclusive.
+func TestValidateCommandRejectsExplicitSocketAndURL(t *testing.T) {
+	called := false
+	root := NewRootCommand(Options{
+		Validate: func(context.Context, string, config.IncusConnection) (ValidationResult, error) {
+			called = true
+			return ValidationResult{}, nil
+		},
+	})
+	root.SetArgs([]string{
+		"validate",
+		"--socket", "/run/incus/unix.socket",
+		"--url", "https://incus.example:8443",
+		"baseline.json",
+	})
+
+	err := root.ExecuteContext(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "either --socket or --url")
+	assert.False(t, called)
 }
