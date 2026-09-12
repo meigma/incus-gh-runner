@@ -68,6 +68,7 @@ func TestValidateBaselineRejectsWeakening(t *testing.T) {
 				policyObject(t, baseline, "server")["cluster_https_address"] = "127.0.0.1:8444"
 			},
 		},
+
 		{
 			name: "indirect ACL only",
 			mutate: func(t *testing.T, baseline map[string]any) {
@@ -395,6 +396,134 @@ func TestCUEAdditionalEgressExample(t *testing.T) {
 		"protocol":         "tcp",
 		"destination_port": "9092",
 	}, rules[3])
+}
+
+// TestCUEClusterExample proves the cluster server profile renders and keeps isolation controls.
+func TestCUEClusterExample(t *testing.T) {
+	t.Parallel()
+
+	rendered := renderCUEExample(t, "./examples/cluster")
+	require.NoError(t, ValidateBaseline("cluster.json", rendered))
+
+	var baseline map[string]any
+	require.NoError(t, json.Unmarshal(rendered, &baseline))
+	server := policyObject(t, baseline, "server")
+	assert.Equal(t, false, server["standalone"])
+	assert.Equal(t, "192.0.2.20:8443", server["core_https_address"])
+	assert.Equal(t, "192.0.2.20:8444", server["cluster_https_address"])
+	assert.Equal(t, "dedicated-host-https", policyObject(t, baseline, "authority")["mode"])
+	assert.Equal(t, true, policyObject(t, baseline, "authority")["dedicated_single_purpose_host_required"])
+	assert.Equal(t, "nftables", server["firewall_driver"])
+	assert.Equal(t, "block", policyObject(t, baseline, "project", "config")["restricted.virtual-machines.nesting"])
+	assert.Equal(t, "false", policyObject(t, baseline, "profile", "config")["security.nesting"])
+	assert.Contains(t, server["required_api_extensions"], "projects_restricted_virtual_machines_nesting")
+}
+
+// TestValidateBaselineClusterRejectsWeakenedNesting proves only the cluster profile owns the project nesting gate.
+func TestValidateBaselineClusterRejectsWeakenedNesting(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(t *testing.T, baseline map[string]any)
+	}{
+		{
+			name: "weakened VM nesting restriction",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				policyObject(t, baseline, "project", "config")["restricted.virtual-machines.nesting"] = "allow"
+			},
+		},
+		{
+			name: "missing VM nesting restriction",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				delete(policyObject(t, baseline, "project", "config"), "restricted.virtual-machines.nesting")
+			},
+		},
+		{
+			name: "missing nesting API extension",
+			mutate: func(t *testing.T, baseline map[string]any) {
+				server := policyObject(t, baseline, "server")
+				extensions := server["required_api_extensions"].([]any)
+				filtered := make([]any, 0, len(extensions))
+				for _, extension := range extensions {
+					if extension != "projects_restricted_virtual_machines_nesting" {
+						filtered = append(filtered, extension)
+					}
+				}
+				server["required_api_extensions"] = filtered
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var baseline map[string]any
+			require.NoError(t, json.Unmarshal(renderCUEExample(t, "./examples/cluster"), &baseline))
+			tt.mutate(t, baseline)
+			err := ValidateBaseline("invalid-cluster-nesting.json", encodePolicyFixture(t, baseline))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "baseline violates CUE policy")
+		})
+	}
+}
+
+// TestValidateBaselineClusterHTTPSAddress proves cluster listeners follow the same concrete host:port rule.
+func TestValidateBaselineClusterHTTPSAddress(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		standalone bool
+		address    string
+		wantErr    string
+	}{
+		{name: "standalone empty", standalone: true, address: ""},
+		{name: "cluster concrete", standalone: false, address: "192.0.2.20:8444"},
+		{
+			name:       "cluster unspecified IPv4",
+			standalone: false,
+			address:    "0.0.0.0:8444",
+			wantErr:    "cluster_https_address",
+		},
+		{
+			name:       "cluster unspecified IPv6",
+			standalone: false,
+			address:    "[::]:8444",
+			wantErr:    "cluster_https_address",
+		},
+		{name: "cluster missing host", standalone: false, address: ":8444", wantErr: "cluster_https_address"},
+		{
+			name:       "standalone with listener",
+			standalone: true,
+			address:    "192.0.2.20:8444",
+			wantErr:    "baseline violates CUE policy",
+		},
+		{
+			name:       "cluster without listener",
+			standalone: false,
+			address:    "",
+			wantErr:    "baseline violates CUE policy",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			baseline := decodePolicyFixture(t, "baseline.example.json")
+			if !tt.standalone {
+				rendered := renderCUEExample(t, "./examples/cluster")
+				require.NoError(t, json.Unmarshal(rendered, &baseline))
+			}
+			policyObject(t, baseline, "server")["standalone"] = tt.standalone
+			policyObject(t, baseline, "server")["cluster_https_address"] = tt.address
+			err := ValidateBaseline("cluster-listener.json", encodePolicyFixture(t, baseline))
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
 }
 
 // TestValidateBaselineRejectsInvalidAdditionalEgress proves endpoint extensions remain narrow.

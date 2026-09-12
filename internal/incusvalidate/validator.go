@@ -76,7 +76,10 @@ func Validate(ctx context.Context, baseline Baseline, reader Reader) (Result, er
 		return Result{}, err
 	}
 
-	return Result{Notices: []string{nestingCompatibilityNotice}}, nil
+	if baseline.Server.Standalone {
+		return Result{Notices: []string{nestingCompatibilityNotice}}, nil
+	}
+	return Result{}, nil
 }
 
 // requireJSONEnd rejects trailing values after the baseline object.
@@ -109,8 +112,11 @@ func validateServer(baseline Baseline, actual ServerState) error {
 	if actual.Auth != "trusted" {
 		return errors.New("validator requires a trusted read-only API view")
 	}
-	if baseline.Server.Standalone && actual.Clustered {
-		return errors.New("clustered Incus is outside this dedicated-host baseline")
+	if baseline.Server.Standalone == actual.Clustered {
+		if baseline.Server.Standalone {
+			return errors.New("clustered Incus is outside this dedicated-host baseline")
+		}
+		return errors.New("standalone Incus is outside this cluster baseline")
 	}
 	if actual.FirewallDriver != baseline.Server.FirewallDriver {
 		return errors.New("server firewall driver drift detected")
@@ -122,7 +128,7 @@ func validateServer(baseline Baseline, actual ServerState) error {
 		return errors.New("core.https_address drift detected")
 	}
 	if actual.Config["cluster.https_address"] != baseline.Server.ClusterHTTPSAddress {
-		return errors.New("cluster.https_address must remain empty")
+		return errors.New("cluster.https_address drift detected")
 	}
 
 	for _, extension := range baseline.Server.RequiredAPIExtensions {
@@ -131,7 +137,7 @@ func validateServer(baseline Baseline, actual ServerState) error {
 		}
 	}
 	futureExtension := baseline.ResidualControls.ProjectVMNestingRestriction.FutureAPIExtension
-	if slices.Contains(actual.APIExtensions, futureExtension) {
+	if baseline.Server.Standalone && slices.Contains(actual.APIExtensions, futureExtension) {
 		return fmt.Errorf(
 			"server supports %s; baseline must be upgraded to enforce the project-level restriction",
 			futureExtension,

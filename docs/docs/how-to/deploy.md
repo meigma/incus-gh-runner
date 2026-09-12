@@ -28,15 +28,17 @@ Deploy the `incus-gh-runner` controller as a hardened systemd unit and connect i
 - A checkout of this repository on an administration machine. The steps below
   use the desired-state files from `deploy/incus/`.
 
-The production baseline remains one standalone, dedicated Incus compute host
-in both connection modes. HTTPS separates the controller process from that
-host; it does not add cluster placement or failover behavior.
+The production baseline remains one dedicated Incus compute host, either
+standalone or as one clustered member. HTTPS separates the controller process
+from that host; it does not add cluster placement or failover behavior.
 
-The controller supports Incus 7.0 and newer. The bundled isolation baseline
-deliberately retains a 7.0-7.2 compatibility control and rejects servers that
-advertise the newer project-level VM-nesting extension until the baseline is
-updated. A newer server can run the controller even when this baseline
-validator rejects it; do not bypass the rejection for a production deployment.
+The controller supports Incus 7.0 and newer. The dedicated-host isolation
+baseline retains a 7.0-7.2 compatibility control and rejects servers that
+advertise the newer project-level VM-nesting extension until that dedicated-host
+baseline is updated. The cluster server profile requires
+`projects_restricted_virtual_machines_nesting` and
+`restricted.virtual-machines.nesting=block`. Do not bypass a validation
+failure for a production deployment.
 
 ## 1. Prepare and validate Incus
 
@@ -98,9 +100,12 @@ mise exec -- cue export ./examples/default -e baseline --out json \
 ```
 
 CUE renders `dedicated-host-https` authority and requires
-`server.core_https_address` to equal that host and port. Both modes require a
-standalone server, an empty cluster listener, a dedicated host, and the same
-restricted workload baseline. See the
+`server.core_https_address` to equal that host and port. The default server
+profile still requires a standalone server and an empty cluster listener. For
+a clustered member, set `inputs.server.standalone` to `false` and set
+`inputs.server.clusterHTTPSAddress` to that member's `cluster.https_address`,
+or render `examples/cluster`. Both profiles require a dedicated host and the
+same restricted workload baseline. See the
 [CUE module reference](https://github.com/meigma/incus-gh-runner/tree/master/deploy/incus/cue)
 for the full render contract.
 
@@ -243,11 +248,12 @@ The validator confirms effective resource ceilings, but it cannot re-prove the
 physical-host capacity and reserved headroom used when CUE generated them.
 Re-render and review the baseline after changing host capacity or
 reservations. Resolve every failure; do not weaken or bypass it to continue
-deployment. The baseline intentionally retains its Incus 7.0-7.2 VM-nesting
-compatibility gate; see
+deployment. Dedicated-host baselines retain the Incus 7.0-7.2 VM-nesting
+compatibility gate; cluster-member baselines require the project-level
+restriction. See
 [`deploy/incus/README.md`](https://github.com/meigma/incus-gh-runner/tree/master/deploy/incus)
-for the transport modes, manifest contract, controlled-egress model, and
-version semantics.
+for the transport modes, cluster-member scope, manifest contract,
+controlled-egress model, and version semantics.
 
 ## 2. Choose the GitHub scope and credential
 

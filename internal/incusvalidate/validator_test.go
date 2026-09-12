@@ -227,6 +227,154 @@ func TestValidateComparesReadOnlySnapshot(t *testing.T) {
 	}
 }
 
+// TestValidateComparesServerTopology proves standalone and cluster baselines reject the opposite topology.
+func TestValidateComparesServerTopology(t *testing.T) {
+	t.Parallel()
+
+	standalone := decodeBaselineFixture(t)
+	cluster := decodeBaselineFixture(t)
+	cluster.Server.Standalone = false
+	cluster.Server.ClusterHTTPSAddress = "192.0.2.20:8444"
+
+	tests := []struct {
+		name     string
+		baseline Baseline
+		mutate   func(snapshot *Snapshot)
+		match    string
+	}{
+		{
+			name:     "standalone baseline rejects clustered server",
+			baseline: standalone,
+			mutate: func(snapshot *Snapshot) {
+				snapshot.Server.Clustered = true
+			},
+			match: "clustered Incus is outside this dedicated-host baseline",
+		},
+		{
+			name:     "cluster baseline rejects standalone server",
+			baseline: cluster,
+			mutate:   func(*Snapshot) {},
+			match:    "standalone Incus is outside this cluster baseline",
+		},
+		{
+			name:     "cluster baseline rejects cluster listener drift",
+			baseline: cluster,
+			mutate: func(snapshot *Snapshot) {
+				snapshot.Server.Clustered = true
+				snapshot.Server.Config["cluster.https_address"] = "192.0.2.21:8444"
+			},
+			match: "cluster.https_address drift detected",
+		},
+		{
+			name:     "standalone baseline rejects cluster listener drift",
+			baseline: standalone,
+			mutate: func(snapshot *Snapshot) {
+				snapshot.Server.Config["cluster.https_address"] = "192.0.2.20:8444"
+			},
+			match: "cluster.https_address drift detected",
+		},
+		{
+			name:     "cluster baseline matches clustered member",
+			baseline: cluster,
+			mutate: func(snapshot *Snapshot) {
+				snapshot.Server.Clustered = true
+				snapshot.Server.Config["cluster.https_address"] = "192.0.2.20:8444"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			snapshot := validSnapshot(tt.baseline)
+			if tt.mutate != nil {
+				tt.mutate(&snapshot)
+			}
+
+			result, err := Validate(context.Background(), tt.baseline, &snapshotReader{snapshot: snapshot})
+			if tt.match != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.match)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Empty(t, result.Notices)
+		})
+	}
+}
+
+// TestValidateClusterEnforcesProjectNesting proves the cluster profile requires the project nesting gate.
+func TestValidateClusterEnforcesProjectNesting(t *testing.T) {
+	t.Parallel()
+
+	baseline := clusterBaseline(t)
+	tests := []struct {
+		name   string
+		mutate func(snapshot *Snapshot)
+		match  string
+	}{
+		{name: "matching cluster member"},
+		{
+			name: "missing nesting extension",
+			mutate: func(snapshot *Snapshot) {
+				snapshot.Server.APIExtensions = snapshot.Server.APIExtensions[:len(snapshot.Server.APIExtensions)-1]
+			},
+			match: "required Incus API extension is unavailable",
+		},
+		{
+			name: "weakened project nesting",
+			mutate: func(snapshot *Snapshot) {
+				snapshot.Project.Config["restricted.virtual-machines.nesting"] = "allow"
+			},
+			match: "project drift detected",
+		},
+		{
+			name: "missing project nesting",
+			mutate: func(snapshot *Snapshot) {
+				delete(snapshot.Project.Config, "restricted.virtual-machines.nesting")
+			},
+			match: "project drift detected",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			snapshot := validSnapshot(baseline)
+			snapshot.Server.Clustered = true
+			snapshot.Server.Config["cluster.https_address"] = baseline.Server.ClusterHTTPSAddress
+			if tt.mutate != nil {
+				tt.mutate(&snapshot)
+			}
+
+			result, err := Validate(context.Background(), baseline, &snapshotReader{snapshot: snapshot})
+			if tt.match != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.match)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Empty(t, result.Notices)
+		})
+	}
+}
+
+func clusterBaseline(t *testing.T) Baseline {
+	t.Helper()
+	baseline := decodeBaselineFixture(t)
+	baseline.Server.Standalone = false
+	baseline.Server.ClusterHTTPSAddress = "192.0.2.20:8444"
+	baseline.Server.RequiredAPIExtensions = append(
+		append([]string{}, baseline.Server.RequiredAPIExtensions...),
+		"projects_restricted_virtual_machines_nesting",
+	)
+	baseline.Project.Config["restricted.virtual-machines.nesting"] = "block"
+	baseline.ResidualControls.ProjectVMNestingRestriction.Status = "enforced-at-project-level"
+	return baseline
+}
+
 func TestValidateRejectsHiddenListenerConfiguration(t *testing.T) {
 	t.Parallel()
 	baseline := decodeBaselineFixture(t)

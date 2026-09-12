@@ -73,7 +73,7 @@ type ServerRequirements struct {
 	RequiredAPIExtensions []string `json:"required_api_extensions"`
 	// FirewallDriver is the required host firewall implementation.
 	FirewallDriver string `json:"firewall_driver"`
-	// Standalone requires a non-clustered Incus daemon.
+	// Standalone is true when the baseline requires a non-clustered Incus daemon.
 	Standalone bool `json:"standalone"`
 	// CoreHTTPSAddress is the required public API listener value.
 	CoreHTTPSAddress string `json:"core_https_address"`

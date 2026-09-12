@@ -11,8 +11,8 @@ The public contract has two definitions:
 - `#Inputs` is a closed operator surface. It accepts Incus object names, host
   capacity and reserved headroom, runner sizing, one IPv4 bridge, controlled
   DNS and HTTP CONNECT proxy endpoints, up to 16 optional exact egress
-  endpoints, one supported storage-driver input, and an optional exact Incus
-  HTTPS listener.
+  endpoints, one supported storage-driver input, an optional exact Incus
+  HTTPS listener, and an optional cluster server profile.
 - `#Deployment` derives the complete `output` baseline and a partial
   `controller` configuration. Aggregate project CPU, memory, disk, and VM
   limits come from the runner count and per-runner sizing; the controller
@@ -21,19 +21,25 @@ The public contract has two definitions:
 
 Security-sensitive Incus values are exact constraints, not CUE defaults. An
 operator cannot use the module to select the `default` project, relax project
-restrictions, enable clustering, disable Secure Boot, add raw Incus
-configuration, change default-deny ACL actions, or remove NIC filtering and
-port isolation.
+restrictions, disable Secure Boot, add raw Incus configuration, change
+default-deny ACL actions, or remove NIC filtering and port isolation.
 
-The one transport input is `inputs.server.coreHTTPSAddress`. Its empty default
+The default server profile keeps `server.standalone=true` and an empty
+`server.cluster_https_address`. Its empty `inputs.server.coreHTTPSAddress`
 renders `authority.mode: dedicated-host-unix-socket` and an empty
 `server.core_https_address`. A concrete host and port renders
 `authority.mode: dedicated-host-https` and requires that exact listener in
-`server.core_https_address`. Wildcard and unspecified listeners are rejected.
-Both modes keep `dedicated_single_purpose_host_required=true`,
-`unix_socket_is_root_equivalent=true`, `server.standalone=true`, and an empty
-`server.cluster_https_address`. This remains a dedicated standalone-host
-baseline, not a cluster placement or failover policy.
+`server.core_https_address`. Setting `inputs.server.standalone` to `false`
+selects the cluster server profile and requires
+`inputs.server.clusterHTTPSAddress` to be the connected member's concrete
+`cluster.https_address`. That profile also requires
+`projects_restricted_virtual_machines_nesting` and
+`restricted.virtual-machines.nesting=block`. It does not add placement or
+failover policy. Wildcard and unspecified listeners are rejected. Both
+profiles keep `dedicated_single_purpose_host_required=true` and
+`unix_socket_is_root_equivalent=true`. The default dedicated-host profile
+keeps the Incus 7.0-7.2 nesting residual and does not require the project-level
+nesting extension.
 
 The module cannot enable NIC-level IPv6 assignment: the profile fixes
 `ipv6.address=none` alongside IPv6 filtering. It does not expose arbitrary ACL
@@ -64,6 +70,19 @@ _deployment: runner.#Deployment & {
 }
 ```
 
+To render a cluster-member HTTPS baseline, use `examples/cluster` or add the
+following unification and replace the documentation addresses:
+
+```cue
+_deployment: runner.#Deployment & {
+	inputs: server: {
+		standalone:          false
+		coreHTTPSAddress:    "192.0.2.20:8443"
+		clusterHTTPSAddress: "192.0.2.20:8444"
+	}
+}
+```
+
 The controller export deliberately does not choose `incus.socket` or
 `incus.url` and does not emit certificate paths. Select one complete
 controller connection mode separately. The baseline only couples the selected
@@ -83,6 +102,9 @@ mise exec -- cue export ./examples/lvm -e controller --out yaml
 mise exec -- cue vet -c ./examples/additional-egress
 mise exec -- cue export ./examples/additional-egress -e baseline --out json
 mise exec -- cue export ./examples/additional-egress -e controller --out yaml
+mise exec -- cue vet -c ./examples/cluster
+mise exec -- cue export ./examples/cluster -e baseline --out json
+mise exec -- cue export ./examples/cluster -e controller --out yaml
 ```
 
 The default and LVM examples use non-routable documentation endpoints and
@@ -90,6 +112,8 @@ render the exact contents of `../baseline.example.json` and
 `../baseline.lvm.example.json`, respectively.
 The additional-egress example demonstrates an optional fourth ACL rule without
 providing another portable JSON fixture.
+The cluster example demonstrates `server.standalone=false` and a concrete
+member cluster listener without providing another portable JSON fixture.
 The controller export is intentionally partial: merge it into the full
 controller configuration alongside one explicit connection mode and
 environment-specific GitHub, image, owner, and minimum-runner settings.

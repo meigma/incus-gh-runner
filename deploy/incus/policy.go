@@ -68,7 +68,7 @@ func ValidateBaseline(filename string, data []byte) error {
 	if err := validateAdditionalEgress(data); err != nil {
 		return fmt.Errorf("baseline violates CUE policy: %w", err)
 	}
-	if err := validateCoreHTTPSAddress(data); err != nil {
+	if err := validateServerListeners(data); err != nil {
 		return fmt.Errorf("baseline violates CUE policy: %w", err)
 	}
 
@@ -120,33 +120,41 @@ func validateAdditionalEgress(data []byte) error {
 	return nil
 }
 
-// validateCoreHTTPSAddress requires an empty listener or a concrete host:port.
-func validateCoreHTTPSAddress(data []byte) error {
+// validateServerListeners requires each configured listener to be empty or a concrete host:port.
+func validateServerListeners(data []byte) error {
 	var manifest struct {
 		Server struct {
-			CoreHTTPSAddress string `json:"core_https_address"`
+			CoreHTTPSAddress    string `json:"core_https_address"`
+			ClusterHTTPSAddress string `json:"cluster_https_address"`
 		} `json:"server"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return fmt.Errorf("decode server listener: %w", err)
 	}
-	address := manifest.Server.CoreHTTPSAddress
+	if err := validateConcreteHostPort("core_https_address", manifest.Server.CoreHTTPSAddress); err != nil {
+		return err
+	}
+	return validateConcreteHostPort("cluster_https_address", manifest.Server.ClusterHTTPSAddress)
+}
+
+// validateConcreteHostPort accepts an empty listener or a concrete host:port.
+func validateConcreteHostPort(field string, address string) error {
 	if address == "" {
 		return nil
 	}
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		return errors.New("core_https_address must be a concrete host:port")
+		return fmt.Errorf("%s must be a concrete host:port", field)
 	}
 	if host == "" || host == "*" {
-		return errors.New("core_https_address must be a concrete host:port")
+		return fmt.Errorf("%s must be a concrete host:port", field)
 	}
 	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
-		return errors.New("core_https_address must be a concrete host:port")
+		return fmt.Errorf("%s must be a concrete host:port", field)
 	}
 	portNumber, err := strconv.Atoi(port)
 	if err != nil || portNumber < 1 || portNumber > 65535 {
-		return errors.New("core_https_address must be a concrete host:port")
+		return fmt.Errorf("%s must be a concrete host:port", field)
 	}
 
 	return nil
