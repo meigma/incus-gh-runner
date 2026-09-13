@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/meigma/incus-gh-runner/compare/v2.0.0...v2.1.0) (2026-09-13)
+
+
+### Features
+
+* **incus:** support cluster-member validation baselines ([#69](https://github.com/meigma/incus-gh-runner/issues/69)) ([25367d6](https://github.com/meigma/incus-gh-runner/commit/25367d6c7478bb7bf1920637cf97dd2a0f3b555a))
+
 ## [2.0.0](https://github.com/meigma/incus-gh-runner/compare/v1.3.0...v2.0.0) (2026-09-11)
 
 
