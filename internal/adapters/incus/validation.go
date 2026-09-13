@@ -33,6 +33,9 @@ func (r *ValidationReader) Close() {
 }
 
 // Read returns a fresh snapshot using only Incus GET operations.
+//
+// Server, storage-pool, and default-project network objects are the connected
+// member's view. The reader does not query other cluster members.
 func (r *ValidationReader) Read(ctx context.Context, names incusvalidate.Names) (incusvalidate.Snapshot, error) {
 	if r == nil || r.server == nil {
 		return incusvalidate.Snapshot{}, errors.New("incus validation reader is not connected")

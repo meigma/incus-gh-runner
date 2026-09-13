@@ -16,9 +16,9 @@ _#BridgeName: (_#DedicatedName & =~"^[a-z][a-z0-9-]{1,14}$") |
 		error("managed bridge name must be 2 to 15 characters to fit the Linux interface limit")
 _#PositiveInt: (int & >=1) | error("value must be a positive integer")
 _#ProxyPort:   (int & >=1 & <=65535 & !=53) |
-			error("proxy port must be between 1 and 65535 and must not be the DNS port")
+		error("proxy port must be between 1 and 65535 and must not be the DNS port")
 _#EndpointPort: (int & >=1 & <=65535) |
-	error("endpoint port must be between 1 and 65535")
+			error("endpoint port must be between 1 and 65535")
 _#IPv4:          (net.IP & !~":") | error("value must be an IPv4 address")
 _#IPv4CIDR:      (net.IPCIDR & !~":") | error("value must be an IPv4 CIDR")
 _#StorageSource: (string & =~"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,254}$") |
@@ -37,6 +37,48 @@ _#LVMStorageInput: {
 	thinPoolName!:  _#StorageName
 	volumeSizeGiB!: int & >=1 & <=16384
 }
+
+_#StandaloneServerInput: {
+	standalone:       true
+	coreHTTPSAddress: *"" | (string & =~"^.+:[0-9]+$") |
+				error("core_https_address must be a concrete host:port")
+	clusterHTTPSAddress: ""
+}
+
+_#ClusterServerInput: {
+	standalone:       false
+	coreHTTPSAddress: *"" | (string & =~"^.+:[0-9]+$") |
+				error("core_https_address must be a concrete host:port")
+	clusterHTTPSAddress: (string & =~"^.+:[0-9]+$") |
+		error("cluster_https_address must be a concrete host:port")
+}
+
+_#DedicatedHostAPIExtensions: [
+	"container_nic_ipfilter",
+	"instance_nic_bridged_port_isolation",
+	"network_acl",
+	"network_bridge_acl",
+	"network_bridge_acl_devices",
+	"projects_limits_disk_pool",
+	"projects_networks",
+	"projects_networks_restricted_access",
+	"projects_restricted_storage_pool_access",
+	"projects_restrictions",
+]
+
+_#ClusterAPIExtensions: [
+	"container_nic_ipfilter",
+	"instance_nic_bridged_port_isolation",
+	"network_acl",
+	"network_bridge_acl",
+	"network_bridge_acl_devices",
+	"projects_limits_disk_pool",
+	"projects_networks",
+	"projects_networks_restricted_access",
+	"projects_restricted_storage_pool_access",
+	"projects_restricted_virtual_machines_nesting",
+	"projects_restrictions",
+]
 
 // #Inputs is the complete operator-controlled configuration surface. Fields
 // absent from this definition are deliberately not configurable.
@@ -121,12 +163,8 @@ _#LVMStorageInput: {
 	// storage selects one narrowly configured dedicated backing store.
 	storage: *_#ZFSStorageInput | _#LVMStorageInput
 
-	// server optionally pins the dedicated-host Incus HTTPS listener compared by the validator.
-	server: {
-		// coreHTTPSAddress is empty for dedicated-host-unix-socket, or the exact host:port that selects dedicated-host-https.
-		coreHTTPSAddress: *"" | (string & =~"^.+:[0-9]+$") |
-					error("core_https_address must be a concrete host:port")
-	}
+	// server selects the Incus topology and pins the listeners compared by the validator.
+	server: *_#StandaloneServerInput | _#ClusterServerInput
 }
 
 _#PositiveDecimalString: string & =~"^[1-9][0-9]*$"
@@ -158,12 +196,12 @@ _#Baseline: {
 	_imageCacheGiB:     _projectDiskGiB - _maximum*_runnerRootDiskGiB
 	_imageCacheGiB:     >=1 & <=16384
 
-	_networkMbit: strconv.Atoi(strings.TrimSuffix(profile.devices.eth0["limits.max"], "Mbit"))
-	_networkMbit: >=1 & <=100000
-	_diskIOMiB:   strconv.Atoi(strings.TrimSuffix(profile.devices.root["limits.max"], "MiB"))
-	_diskIOMiB:   >=1 & <=100000
-	_proxyPort:   strconv.Atoi(network_acl.egress[2].destination_port)
-	_proxyPort:   >=1 & <=65535 & !=53
+	_networkMbit:           strconv.Atoi(strings.TrimSuffix(profile.devices.eth0["limits.max"], "Mbit"))
+	_networkMbit:           >=1 & <=100000
+	_diskIOMiB:             strconv.Atoi(strings.TrimSuffix(profile.devices.root["limits.max"], "MiB"))
+	_diskIOMiB:             >=1 & <=100000
+	_proxyPort:             strconv.Atoi(network_acl.egress[2].destination_port)
+	_proxyPort:             >=1 & <=65535 & !=53
 	_additionalEgressCount: len(network_acl.egress) - 3
 	_additionalEgressCount: >=0 & <=16
 
@@ -193,37 +231,23 @@ _#Baseline: {
 	}
 	// server constrains the Incus daemon features and exposure model.
 	server: {
+		standalone:            bool
+		cluster_https_address: string
+		required_api_extensions: [...string]
 		// minimum_version is the oldest supported Incus server release.
 		minimum_version: "7.0"
-		// required_api_extensions lists every API capability required by the baseline.
-		required_api_extensions: [
-			"container_nic_ipfilter",
-			"instance_nic_bridged_port_isolation",
-			"network_acl",
-			"network_bridge_acl",
-			"network_bridge_acl_devices",
-			"projects_limits_disk_pool",
-			"projects_networks",
-			"projects_networks_restricted_access",
-			"projects_restricted_storage_pool_access",
-			"projects_restrictions",
-		]
 		// firewall_driver is the required host firewall implementation.
 		firewall_driver: "nftables"
-		// standalone requires a non-clustered Incus server.
-		standalone: true
 		// core_https_address must be empty for dedicated-host-unix-socket and the exact host:port for dedicated-host-https.
 		core_https_address: *"" | (string & =~"^.+:[0-9]+$") |
-					error("core_https_address must be a concrete host:port")
-		// cluster_https_address requires the Incus cluster listener to remain disabled.
-		cluster_https_address: ""
+			error("core_https_address must be a concrete host:port")
 	}
 	// residual_controls documents controls that require compatibility handling.
 	residual_controls: {
 		// project_vm_nesting_restriction records the current VM nesting residual.
 		project_vm_nesting_restriction: {
-			// status describes why the project-level control is not emitted.
-			status: "unsupported-by-incus-7.0-through-7.2"
+			// status records the nesting control supported by the selected topology.
+			status: "unsupported-by-incus-7.0-through-7.2" | "enforced-at-project-level"
 			// future_api_extension names the extension that will make the control available.
 			future_api_extension: "projects_restricted_virtual_machines_nesting"
 			// compensating_profile_key names the profile setting used in the interim.
@@ -444,7 +468,19 @@ _#Baseline: {
 	}
 	if authority.mode == "dedicated-host-https" {
 		server: core_https_address: (string & =~"^.+:[0-9]+$") |
-						error("core_https_address must be a concrete host:port")
+			error("core_https_address must be a concrete host:port")
+	}
+	if server.standalone {
+		server: cluster_https_address:   ""
+		server: required_api_extensions: _#DedicatedHostAPIExtensions
+		residual_controls: project_vm_nesting_restriction: status: "unsupported-by-incus-7.0-through-7.2"
+	}
+	if !server.standalone {
+		server: cluster_https_address: (string & =~"^.+:[0-9]+$") |
+							error("cluster_https_address must be a concrete host:port")
+		server: required_api_extensions: _#ClusterAPIExtensions
+		residual_controls: project_vm_nesting_restriction: status: "enforced-at-project-level"
+		project: config: "restricted.virtual-machines.nesting":    "block"
 	}
 }
 
@@ -551,7 +587,11 @@ _#LVMStoragePool: {
 			profile:      inputs.names.profile
 			storage_pool: inputs.names.storagePool
 		}
-		server: core_https_address: inputs.server.coreHTTPSAddress
+		server: {
+			standalone:            inputs.server.standalone
+			core_https_address:    inputs.server.coreHTTPSAddress
+			cluster_https_address: inputs.server.clusterHTTPSAddress
+		}
 		project: config: {
 			"limits.cpu":       "\(_runnerCPU)"
 			"limits.disk":      "\(_runnerDiskGiB)GiB"

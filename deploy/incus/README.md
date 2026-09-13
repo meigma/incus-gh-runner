@@ -1,10 +1,11 @@
 # Incus isolation baseline
 
 This directory contains reviewable desired-state examples, a CUE policy
-module, and a read-only drift validator for one standalone, single-purpose
-Incus 7 runner compute host. The baseline supports either a local Unix socket
-or an exact HTTPS listener without changing the host-isolation policy. None of
-these artifacts configure or mutate Incus. Render or adapt an
+module, and a read-only drift validator for one single-purpose Incus 7
+runner compute host. The baseline supports a dedicated standalone host or
+one clustered member, and either a local Unix socket or an exact HTTPS
+listener, without changing the host-isolation policy. None of these
+artifacts configure or mutate Incus. Render or adapt an
 environment-specific baseline, apply it through a trusted Incus administration
 path, then validate the effective API state.
 
@@ -24,8 +25,8 @@ The example establishes:
   16 optional exact IPv4 TCP or UDP endpoints.
 
 Incus 7.0.1 rejects creation of a managed bridge in a non-default project;
-only OVN networks can be created and managed there. This standalone-host
-baseline therefore sets `features.networks=false` and `limits.networks=0` in
+only OVN networks can be created and managed there. This baseline therefore
+sets `features.networks=false` and `limits.networks=0` in
 the runner project. A host administrator owns the bridge and ACL in the
 `default` project, and `restricted.networks.access` allowlists only that bridge
 for the runner project.
@@ -38,9 +39,13 @@ The baseline accepts two connection authority modes:
 - `dedicated-host-https` requires `core.https_address` to equal one concrete
   host and port.
 
-Both require `dedicated_single_purpose_host_required=true`,
-`unix_socket_is_root_equivalent=true`, a standalone Incus server, and an empty
-`cluster.https_address`. The HTTPS addition is not a cluster validator and does
+Both require `dedicated_single_purpose_host_required=true` and
+`unix_socket_is_root_equivalent=true`. The default server profile keeps
+`server.standalone=true` and an empty `cluster.https_address`. The cluster
+server profile sets `server.standalone=false` and requires
+`server.cluster_https_address` to equal the connected member's
+`cluster.https_address`. The validator compares those values against the
+member it is connected to; it does not validate every cluster member and does
 not add placement or failover semantics. It also does not change the guest
 contract, runner image requirements, project topology, or VM lifecycle.
 
@@ -63,11 +68,14 @@ default actions to reject and log unmatched traffic.
 
 The dependency-free module under [`cue/`](cue/) accepts a closed set of names,
 host capacity, runner sizing, controlled network endpoints, storage inputs,
-and an optional exact HTTPS listener. It derives aggregate limits and emits a
-complete baseline while keeping the security controls non-overridable. Empty
-`inputs.server.coreHTTPSAddress` renders `dedicated-host-unix-socket`; a
-concrete host and port renders `dedicated-host-https` and the same exact
-listener into the baseline. The optional `additionalEgress` list accepts only
+an optional exact HTTPS listener, and an optional cluster server profile. It
+derives aggregate limits and emits a complete baseline while keeping the
+security controls non-overridable. Empty `inputs.server.coreHTTPSAddress`
+renders `dedicated-host-unix-socket`; a concrete host and port renders
+`dedicated-host-https` and the same exact listener into the baseline. The
+default server profile keeps `server.standalone=true` and an empty cluster
+listener; `examples/cluster` sets `standalone=false` and a concrete member
+`cluster.https_address`. The optional `additionalEgress` list accepts only
 named IPv4 `/32` endpoints with one TCP or UDP port each; it cannot express
 CIDR ranges, port ranges, actions, or rule state. The module also emits the
 controller project, sole profile, and `capacity.max_runners` as one partial
@@ -80,7 +88,10 @@ module interface is reviewed and published, `baseline.example.json` and
 `baseline.lvm.example.json` remain the portable Unix-socket deployment
 artifacts. HTTPS deployments must set
 `inputs.server.coreHTTPSAddress` in an environment-specific CUE configuration
-and render a baseline with `dedicated-host-https` authority. Copy or render the
+and render a baseline with `dedicated-host-https` authority. Cluster-member
+deployments must also set `inputs.server.standalone` to `false` and
+`inputs.server.clusterHTTPSAddress` to that member's `cluster.https_address`.
+Copy or render the
 appropriate baseline outside the checkout and change every
 environment-specific value before applying it:
 
@@ -145,18 +156,24 @@ preflight the controller pins this profile's effective configuration and
 devices, revalidates its digest before create, and materializes that snapshot
 directly into each VM with no mutable profile attachment.
 
-The baseline intentionally preserves the Incus 7.0 through 7.2 compatibility
+The dedicated-host baseline preserves the Incus 7.0 through 7.2 compatibility
 path for VM nesting. Those versions do not advertise
 `projects_restricted_virtual_machines_nesting`, so the exact profile setting
 `security.nesting=false` is the compensating control. The validator reports
-this residual on every successful run.
+this residual on every successful dedicated-host run.
 
-The validator also rejects a server that advertises that newer extension,
-forcing a future baseline update to enforce
+The validator also rejects a dedicated-host server that advertises that newer
+extension, forcing a future dedicated-host baseline update to enforce
 `restricted.virtual-machines.nesting=block` rather than silently retaining the
 weaker compatibility path. This is a baseline-version gate, not a general
 controller server-version limit: the controller can connect to newer Incus
-servers even while this specific isolation baseline rejects them.
+servers even while this dedicated-host isolation baseline rejects them.
+
+The cluster server profile requires `projects_restricted_virtual_machines_nesting`
+and sets `restricted.virtual-machines.nesting=block`. Incus still requires
+`security.nesting=false` on the runner profile when that project restriction
+is `block`. A missing extension or project nesting drift fails cluster
+validation.
 
 ## Validate without changing Incus
 
@@ -207,11 +224,19 @@ HTTPS validator and Incus enrollment commands from an existing trusted
 administration workstation.
 
 Validation rejects malformed manifests, missing API extensions, non-`nftables`
-firewalls, clustered hosts, a listener that does not match the selected
-authority mode, and any effective project, network, ACL, profile, or
-storage-pool drift. Unix-socket authority requires both HTTPS listener settings
-empty. HTTPS authority requires the exact `core.https_address` recorded in the
-baseline. Both require `cluster.https_address` empty.
+firewalls, a server topology that does not match `server.standalone`, a
+listener that does not match the selected authority mode or
+`cluster.https_address`, and any effective project, network, ACL, profile, or
+storage-pool drift. Unix-socket authority requires an empty
+`core.https_address`. HTTPS authority requires the exact `core.https_address`
+recorded in the baseline. A standalone profile requires an empty
+`cluster.https_address`. A cluster profile requires the connected member's
+exact `cluster.https_address`.
+
+The validator reads the connected member's server, storage-pool, and
+default-project network objects. Storage `source` and `cluster.https_address`
+are member-local; render the baseline for the member named by `--url` or
+`--socket`.
 
 The storage comparison ignores only the server-generated
 `volatile.initial_source` field observed on Incus 7.0.1; `source`, the selected
